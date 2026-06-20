@@ -30,8 +30,8 @@ final class ProviderSnapshotReportTests: XCTestCase {
             "Latency: 42.25 ms",
             "Download: 12.50 Mbps",
             "Loss: 2.5%",
-            "Battery: 81.0%",
-            "Online: true",
+            "Battery: 81",
+            "Online: Yes",
             "State: connected",
             "Commands: demo.run"
         ])

@@ -1194,7 +1194,7 @@ private struct GenericMetricCard: View {
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            Text(DisplayFormatters.metricValue(metric.value))
+            Text(DisplayFormatters.metricValue(metric))
                 .font(.caption.weight(.bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)

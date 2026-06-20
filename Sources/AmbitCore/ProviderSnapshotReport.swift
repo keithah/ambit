@@ -19,7 +19,7 @@ public enum ProviderSnapshotReport {
         if snapshot.metrics.isEmpty {
             lines.append("Metrics: none")
         } else {
-            lines.append(contentsOf: snapshot.metrics.map { "\($0.label): \($0.value.reportValue)" })
+            lines.append(contentsOf: snapshot.metrics.map { "\($0.label): \(ProviderMetricFormat.string($0))" })
         }
 
         if !commands.isEmpty {
@@ -42,30 +42,5 @@ private extension Health {
         case .unknown:
             return "unknown"
         }
-    }
-}
-
-private extension MetricValue {
-    var reportValue: String {
-        switch self {
-        case .throughput(let bitsPerSecond):
-            return String(format: "%.2f Mbps", Double(bitsPerSecond) / 1_000_000)
-        case .latency(let ms):
-            return "\(Self.format(ms)) ms"
-        case .percent(let value), .level(let value):
-            return "\(Self.format(value))%"
-        case .bool(let value):
-            return String(value)
-        case .text(let value):
-            return value
-        }
-    }
-
-    static func format(_ value: Double) -> String {
-        let rounded = value.rounded()
-        if rounded == value {
-            return String(format: "%.1f", value)
-        }
-        return String(value)
     }
 }

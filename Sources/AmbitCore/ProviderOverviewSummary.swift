@@ -66,7 +66,7 @@ public struct ProviderOverviewSummary: Equatable, Identifiable, Sendable {
         if let errorMessage, !errorMessage.isEmpty {
             return errorMessage
         }
-        let metricSummary = metrics.prefix(3).map { "\($0.label) \(format($0.value))" }
+        let metricSummary = metrics.prefix(3).map { "\($0.label) \(ProviderMetricFormat.string($0))" }
         if !metricSummary.isEmpty {
             return metricSummary.joined(separator: " · ")
         }
@@ -86,24 +86,4 @@ public struct ProviderOverviewSummary: Equatable, Identifiable, Sendable {
         }
     }
 
-    private static func format(_ value: MetricValue) -> String {
-        switch value {
-        case .throughput(let bitsPerSecond):
-            return String(format: "%.2f Mbps", Double(bitsPerSecond) / 1_000_000)
-        case .latency(let ms):
-            return "\(format(ms)) ms"
-        case .percent(let value):
-            return "\(format(value))%"
-        case .level(let value):
-            return format(value)
-        case .bool(let value):
-            return value ? "yes" : "no"
-        case .text(let value):
-            return value
-        }
-    }
-
-    private static func format(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
-    }
 }

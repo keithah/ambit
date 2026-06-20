@@ -21,20 +21,11 @@ enum DisplayFormatters {
     }
 
     static func metricValue(_ value: MetricValue) -> String {
-        switch value {
-        case .throughput(let bitsPerSecond):
-            return throughput(bitsPerSecond) ?? "Unknown"
-        case .latency(let ms):
-            return "\(Int(ms.rounded())) ms"
-        case .percent(let value):
-            return value == value.rounded() ? "\(Int(value))%" : String(format: "%.1f%%", value)
-        case .level(let value):
-            return value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
-        case .bool(let value):
-            return value ? "Yes" : "No"
-        case .text(let value):
-            return value
-        }
+        ProviderMetricFormat.string(value)
+    }
+
+    static func metricValue(_ metric: Metric) -> String {
+        ProviderMetricFormat.string(metric)
     }
 
     static func health(_ health: Health) -> String {
