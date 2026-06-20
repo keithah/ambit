@@ -286,6 +286,58 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshUsesRegisteredEcoFlowProviderInsteadOfLegacyClientFactory() async {
+        let provider = StubProvider(
+            id: ProviderIDs.ecoflow,
+            snapshot: ProviderSnapshot.ecoFlow(
+                EcoFlowSnapshot(
+                    status: EcoFlowDeviceStatus(
+                        battery: EcoFlowBatteryStatus(percent: 88, state: .discharging),
+                        power: EcoFlowPowerStatus(inputWatts: 0, outputWatts: 9, netWatts: -9),
+                        outputs: EcoFlowOutputMap(
+                            ac: EcoFlowOutputStatus(state: .off, watts: 0),
+                            dc: EcoFlowOutputStatus(state: .off, watts: 0),
+                            usb: EcoFlowOutputStatus(state: .on, watts: 9)
+                        ),
+                        updatedAt: "2026-06-20T00:00:00Z"
+                    )
+                )
+            )
+        )
+        let ecoFlowFactoryCounter = CallCounter()
+        let settings = AppSettings(localHost: "router.local", ecoflowEnabled: true)
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: settings),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Legacy")),
+            settings: settings,
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") },
+            ecoFlowClientFactory: { _ in
+                ecoFlowFactoryCounter.increment()
+                return StubEcoFlowClient()
+            }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerEcoFlowSnapshot?.status.battery.percent, 88)
+        XCTAssertEqual(ecoFlowFactoryCounter.count, 0)
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",

@@ -148,7 +148,7 @@ public actor Engine {
 
         let endpoint = await endpointResult
         selectedEndpoint = endpoint.value
-        async let ecoflowResult = loadEcoFlowStatus(routerHost: endpoint.value?.host)
+        async let ecoflowResult = loadLegacyEcoFlowStatusIfNeeded(routerHost: endpoint.value?.host)
 
         if let selection = endpoint.value, let url = URL.routerRPC(host: selection.host) {
             async let speedifyResult = loadLegacySpeedifyStatusIfNeeded(host: selection.host)
@@ -167,7 +167,9 @@ public actor Engine {
                 if let starlink = await starlinkResult {
                     snapshot.starlink = starlink
                 }
-                snapshot.ecoflow = await ecoflowResult
+                if let ecoflow = await ecoflowResult {
+                    snapshot.ecoflow = ecoflow
+                }
                 providerStates = await pollRegisteredProviders(routerHost: endpoint.value?.host)
                 snapshot.lastUpdated = Date()
                 publish()
@@ -202,7 +204,9 @@ public actor Engine {
         if let starlink = await starlinkResult {
             snapshot.starlink = starlink
         }
-        snapshot.ecoflow = await ecoflowResult
+        if let ecoflow = await ecoflowResult {
+            snapshot.ecoflow = ecoflow
+        }
         providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
         snapshot.lastUpdated = Date()
         publish()
@@ -584,6 +588,11 @@ public actor Engine {
             await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: error.localizedDescription)
             return state
         }
+    }
+
+    private func loadLegacyEcoFlowStatusIfNeeded(routerHost: String?) async -> SourceState<EcoFlowSnapshot>? {
+        guard !hasRegisteredProvider(ProviderIDs.ecoflow) else { return nil }
+        return await loadEcoFlowStatus(routerHost: routerHost)
     }
 
     private func markRegisteredProvidersLoading() {
