@@ -24,7 +24,12 @@ struct AmbitCheck {
             settings = AppSettings(username: username, endpointMode: .auto)
         }
 
-        let engine = Engine(settings: settings, routerPassword: password, registerBuiltInProviders: true)
+        let engine = Engine(
+            settings: settings,
+            routerPassword: password,
+            registerBuiltInProviders: true,
+            activeMeasurementProcessRunner: SystemProcessRunner()
+        )
         await engine.refresh()
         let snapshot = await engine.currentSnapshot()
         let selectedHost = await engine.currentSelectedEndpoint()?.host ?? host

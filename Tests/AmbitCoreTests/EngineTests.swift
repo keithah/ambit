@@ -427,6 +427,47 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(factoryCounter.count, 1)
     }
 
+    func testRefreshCanRegisterActiveMeasurementProvidersByDefault() async {
+        let pingOutput = """
+        PING 1.1.1.1 (1.1.1.1): 56 data bytes
+        64 bytes from 1.1.1.1: icmp_seq=0 ttl=58 time=10.000 ms
+
+        --- 1.1.1.1 ping statistics ---
+        3 packets transmitted, 3 packets received, 0.0% packet loss
+        round-trip min/avg/max/stddev = 10.000/10.000/10.000/0.000 ms
+        """
+        let processRunner = StubProcessRunner(results: [
+            "-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 0, stdout: pingOutput, stderr: "")
+        ])
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") },
+            activeMeasurementProcessRunner: processRunner
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providers[ProviderIDs.ping]?.value?.metricValue("latency_ms"), .latency(ms: 10))
+        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.detail, .iperf3(Iperf3Snapshot(host: "")))
+        let commands = await engine.commands(provider: ProviderIDs.iperf3)
+        XCTAssertEqual(commands.map(\.id), [ProviderCommandIDs.iperf3Run])
+    }
+
     func testRefreshUsesRegisteredRouterProviderInsteadOfLegacyRouterPoll() async {
         let provider = StubProvider(
             id: ProviderIDs.router,

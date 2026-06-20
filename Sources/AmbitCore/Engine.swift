@@ -22,6 +22,7 @@ public actor Engine {
     private let resetRouterClients: @Sendable () async -> Void
     private let starlinkStatusProvider: StarlinkStatusProvider
     private let ecoFlowClientFactory: EcoFlowClientFactory
+    private let activeMeasurementProcessRunner: (any ProcessRunner)?
     private let usageMeter: ModuleUsageMeter
 
     private var snapshot = StatusSnapshot()
@@ -52,7 +53,8 @@ public actor Engine {
         },
         ecoFlowClientFactory: @escaping EcoFlowClientFactory = { baseURL in
             EcoFlowHTTPClient(baseURL: baseURL)
-        }
+        },
+        activeMeasurementProcessRunner: (any ProcessRunner)? = nil
     ) {
         let stream = AsyncStream<StatusSnapshot>.makeStream()
         self.snapshots = stream.stream
@@ -88,6 +90,7 @@ public actor Engine {
         self.resetRouterClients = actualResetRouterClients
         self.starlinkStatusProvider = starlinkStatusProvider
         self.ecoFlowClientFactory = ecoFlowClientFactory
+        self.activeMeasurementProcessRunner = activeMeasurementProcessRunner
         self.explicitProviders = providers
         self.registerBuiltInProviders = registerBuiltInProviders
         if registerBuiltInProviders {
@@ -98,7 +101,8 @@ public actor Engine {
                     reachabilityProbe: reachabilityProbe,
                     routerSpeedifyClient: routerSpeedifyClient,
                     starlinkStatusProvider: starlinkStatusProvider,
-                    ecoFlowClientFactory: ecoFlowClientFactory
+                    ecoFlowClientFactory: ecoFlowClientFactory,
+                    activeMeasurementProcessRunner: activeMeasurementProcessRunner
                 ),
                 explicit: providers
             )
@@ -684,7 +688,8 @@ public actor Engine {
                 reachabilityProbe: reachabilityProbe,
                 routerSpeedifyClient: routerSpeedifyClient,
                 starlinkStatusProvider: starlinkStatusProvider,
-                ecoFlowClientFactory: ecoFlowClientFactory
+                ecoFlowClientFactory: ecoFlowClientFactory,
+                activeMeasurementProcessRunner: activeMeasurementProcessRunner
             ),
             explicit: explicitProviders
         )
@@ -788,7 +793,8 @@ public actor Engine {
         reachabilityProbe: ReachabilityProbeProtocol,
         routerSpeedifyClient: any RouterSpeedifyClientProtocol,
         starlinkStatusProvider: @escaping StarlinkStatusProvider,
-        ecoFlowClientFactory: @escaping EcoFlowClientFactory
+        ecoFlowClientFactory: @escaping EcoFlowClientFactory,
+        activeMeasurementProcessRunner: (any ProcessRunner)?
     ) -> [any Provider] {
         var providers: [any Provider] = [
             GLiNetRouterProvider(clientFactory: routerClientFactory),
@@ -799,6 +805,10 @@ public actor Engine {
         ]
         if settings.ecoflowEnabled {
             providers.append(EcoFlowProvider(clientFactory: ecoFlowClientFactory))
+        }
+        if let activeMeasurementProcessRunner {
+            providers.append(PingProvider(processRunner: activeMeasurementProcessRunner))
+            providers.append(Iperf3Provider(processRunner: activeMeasurementProcessRunner))
         }
         return providers
     }
