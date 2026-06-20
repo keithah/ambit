@@ -12,12 +12,17 @@ struct AmbitCheck {
         let shouldPrintUsage = args.contains("--usage")
         let iperf3Host = value(after: "--run-iperf3", in: args)
         let manifestDirectory = value(after: "--validate-manifest", in: args)
+        let runManifestDirectory = value(after: "--run-manifest", in: args)
         if let manifestDirectory {
             validateManifest(at: manifestDirectory)
             return
         }
+        if let runManifestDirectory {
+            await runManifest(at: runManifestDirectory)
+            return
+        }
 
-        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3", "--validate-manifest"])
+        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3", "--validate-manifest", "--run-manifest"])
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
 
@@ -43,7 +48,7 @@ struct AmbitCheck {
             if shouldPrintUsage {
                 await printUsage(engine: engine)
             }
-            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [--validate-manifest dir] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [--validate-manifest dir] [--run-manifest dir] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
             Foundation.exit(2)
         }
         guard let endpoint = URL.routerRPC(host: selectedHost) else {
@@ -148,6 +153,34 @@ struct AmbitCheck {
             print("Commands: \(package.manifest.commands.count)")
         } catch {
             fputs("Manifest invalid: \(error.localizedDescription)\n", stderr)
+            Foundation.exit(1)
+        }
+    }
+
+    private static func runManifest(at path: String) async {
+        do {
+            let package = try ProviderManifestPackage.load(from: URL(fileURLWithPath: path, isDirectory: true))
+            let provider = ManifestProvider(manifest: package.manifest)
+            let engine = Engine(
+                settings: AppSettings(remoteHost: "", endpointMode: .forceRemote),
+                providers: [provider],
+                registerBuiltInProviders: false
+            )
+            await engine.refresh()
+            let snapshot = await engine.currentSnapshot()
+            guard let providerSnapshot = snapshot.providers[provider.id]?.value else {
+                throw JSONRPCClientError.commandFailed(snapshot.providers[provider.id]?.errorMessage ?? "Manifest provider did not publish a snapshot.")
+            }
+            for line in ProviderSnapshotReport.lines(
+                providerID: provider.id,
+                providerName: provider.displayName,
+                snapshot: providerSnapshot,
+                commands: provider.commands
+            ) {
+                print(line)
+            }
+        } catch {
+            fputs("Manifest run failed: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)
         }
     }
