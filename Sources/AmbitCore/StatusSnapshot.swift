@@ -88,6 +88,72 @@ public struct StatusSnapshot: Equatable, Sendable {
     }
 }
 
+public extension StatusSnapshot {
+    var providerRouterStatus: RouterStatus? {
+        if case .router(let status) = providers[ProviderIDs.router]?.value?.detail {
+            return status
+        }
+        return router.value
+    }
+
+    var providerVPNStatus: VPNStatus? {
+        if case .vpn(let status) = providers[ProviderIDs.vpn]?.value?.detail {
+            return status
+        }
+        return vpn.value
+    }
+
+    var providerReachabilityStatus: ReachabilityStatus? {
+        if case .reachability(let status) = providers[ProviderIDs.reachability]?.value?.detail {
+            return status
+        }
+        return reachability.value
+    }
+
+    var providerSpeedifyStatus: SpeedifyStatus? {
+        if case .speedify(let status) = providers[ProviderIDs.speedify]?.value?.detail {
+            return status
+        }
+        return speedify.value
+    }
+
+    var providerStarlinkStatus: StarlinkStatus? {
+        if case .starlink(let status) = providers[ProviderIDs.starlink]?.value?.detail {
+            return status
+        }
+        return starlink.value
+    }
+
+    var providerEcoFlowSnapshot: EcoFlowSnapshot? {
+        if case .ecoflow(let snapshot) = providers[ProviderIDs.ecoflow]?.value?.detail {
+            return snapshot
+        }
+        return ecoflow.value
+    }
+
+    func providerErrorMessage(_ providerID: ProviderID) -> String? {
+        if let error = providers[providerID]?.errorMessage {
+            return error
+        }
+        switch providerID {
+        case ProviderIDs.router:
+            return router.errorMessage
+        case ProviderIDs.vpn:
+            return vpn.errorMessage
+        case ProviderIDs.reachability:
+            return reachability.errorMessage
+        case ProviderIDs.speedify:
+            return speedify.errorMessage
+        case ProviderIDs.starlink:
+            return starlink.errorMessage
+        case ProviderIDs.ecoflow:
+            return ecoflow.errorMessage
+        default:
+            return nil
+        }
+    }
+}
+
 public extension ProviderSnapshot {
     static func router(_ status: RouterStatus) -> ProviderSnapshot {
         var metrics: [Metric] = [

@@ -77,18 +77,18 @@ private struct OverviewMenuView: View {
     @Binding var route: MenuRoute
 
     private var vpnOverview: AggregateVPNStatus {
-        AggregateVPNStatus(routerVPN: viewModel.snapshot.vpn.value, speedify: viewModel.snapshot.speedify.value)
+        AggregateVPNStatus(routerVPN: viewModel.snapshot.providerVPNStatus, speedify: viewModel.snapshot.providerSpeedifyStatus)
     }
 
     private var interfaces: [InternetInterfaceStatus] {
-        InternetInterfaceStatus.overview(router: viewModel.snapshot.router.value, speedify: viewModel.snapshot.speedify.value)
+        InternetInterfaceStatus.overview(router: viewModel.snapshot.providerRouterStatus, speedify: viewModel.snapshot.providerSpeedifyStatus)
     }
 
     private var topologyInterfaces: [InternetInterfaceStatus] {
         InternetInterfaceStatus.topology(
-            router: viewModel.snapshot.router.value,
-            speedify: viewModel.snapshot.speedify.value,
-            starlink: viewModel.snapshot.starlink.value
+            router: viewModel.snapshot.providerRouterStatus,
+            speedify: viewModel.snapshot.providerSpeedifyStatus,
+            starlink: viewModel.snapshot.providerStarlinkStatus
         )
     }
 
@@ -103,7 +103,7 @@ private struct OverviewMenuView: View {
             HStack(spacing: 8) {
                 SummaryTile(title: "SIM", value: simText, subtitle: simDetail, tone: simTone)
                 SummaryTile(title: "WAN", value: primaryInterface?.label ?? "Unknown", subtitle: primaryInterface?.detail ?? "Primary internet", tone: primaryInterface?.isConnected == true ? .good : .warn)
-                SummaryTile(title: "VPN", value: vpnOverview.activeSummary, subtitle: viewModel.snapshot.speedify.value?.bondingMode?.label ?? "Services", tone: vpnOverview.connectedServices.isEmpty ? .warn : .good)
+                SummaryTile(title: "VPN", value: vpnOverview.activeSummary, subtitle: viewModel.snapshot.providerSpeedifyStatus?.bondingMode?.label ?? "Services", tone: vpnOverview.connectedServices.isEmpty ? .warn : .good)
             }
 
             VStack(spacing: 8) {
@@ -114,8 +114,8 @@ private struct OverviewMenuView: View {
                         OverviewRow(
                             title: "Speedify VPN",
                             detail: speedifyDetail,
-                            badge: viewModel.snapshot.speedify.value?.state ?? "Open",
-                            tone: viewModel.snapshot.speedify.value?.isConnected == true ? .good : .warn,
+                            badge: viewModel.snapshot.providerSpeedifyStatus?.state ?? "Open",
+                            tone: viewModel.snapshot.providerSpeedifyStatus?.isConnected == true ? .good : .warn,
                             systemImage: "lock.shield"
                         )
                     }
@@ -167,7 +167,7 @@ private struct OverviewMenuView: View {
                 )
             }
 
-            InternetStatusLine(status: viewModel.snapshot.reachability.value)
+            InternetStatusLine(status: viewModel.snapshot.providerReachabilityStatus)
             FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
         }
         .padding(14)
@@ -207,36 +207,36 @@ private struct OverviewMenuView: View {
     }
 
     private var serviceSummary: String {
-        if viewModel.snapshot.speedify.value?.isConnected == true {
+        if viewModel.snapshot.providerSpeedifyStatus?.isConnected == true {
             return "Speedify active"
         }
-        if viewModel.snapshot.vpn.value?.isConnected == true {
+        if viewModel.snapshot.providerVPNStatus?.isConnected == true {
             return vpnOverview.activeSummary
         }
         return "Router online"
     }
 
     private var speedifyDetail: String {
-        guard let speedify = viewModel.snapshot.speedify.value else { return "No Speedify data yet" }
+        guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return "No Speedify data yet" }
         let server = speedify.server ?? "No server"
         let mode = speedify.bondingMode?.label ?? "Mode unknown"
         return "\(server) · \(mode)"
     }
 
     private var shouldShowSpeedify: Bool {
-        guard let speedify = viewModel.snapshot.speedify.value else { return false }
+        guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return false }
         return speedify.isAvailable && (speedify.isConnected || !speedify.networks.isEmpty)
     }
 
     private var starlinkDetail: String {
-        if let status = viewModel.snapshot.starlink.value, status.isReachable {
+        if let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable {
             let latency = status.popPingLatencyMs.map { "\(Int($0.rounded())) ms" } ?? "latency unknown"
             let drop = status.recentDropRate.map { "\(Int(($0 * 100).rounded()))% drop" } ?? "drop unknown"
             let down = DisplayFormatters.throughput(status.downlinkThroughputBps) ?? DisplayFormatters.throughput(status.recentDownlinkThroughputBps) ?? "down unknown"
             let obstruction = status.obstructionPercent.map { String(format: "%.1f%% obstructed", $0) } ?? "obstruction unknown"
             return "\(latency) · \(drop) · \(down) · \(obstruction)"
         }
-        guard let starlink else { return viewModel.snapshot.starlink.errorMessage ?? "Not visible to Speedify" }
+        guard let starlink else { return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "Not visible to Speedify" }
         let role = starlink.isPrimary ? "Primary" : (starlink.qualityLabel ?? "Secondary")
         if let traffic = trafficText(for: starlink) {
             return "\(starlink.detail ?? "Eth0") · \(role) · \(traffic)"
@@ -245,14 +245,14 @@ private struct OverviewMenuView: View {
     }
 
     private var starlinkBadge: String {
-        if let status = viewModel.snapshot.starlink.value, status.isReachable {
+        if let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable {
             return status.state
         }
         return starlink?.qualityLabel ?? "Unavailable"
     }
 
     private var starlinkTone: StatusTone {
-        if let status = viewModel.snapshot.starlink.value, status.isReachable {
+        if let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable {
             let drop = status.recentDropRate ?? 0
             let obstruction = status.obstructionPercent ?? 0
             return drop > 0.25 || obstruction > 5 ? .warn : .good
@@ -266,7 +266,7 @@ private struct OverviewMenuView: View {
             return "\(interface.label) \(data)"
         }
         if !parts.isEmpty { return parts.joined(separator: " · ") }
-        let speedify = viewModel.snapshot.speedify.value
+        let speedify = viewModel.snapshot.providerSpeedifyStatus
         let down = DisplayFormatters.bytes(speedify?.sessionDownloadBytes)
         let up = DisplayFormatters.bytes(speedify?.sessionUploadBytes)
         if let down, let up {
@@ -276,8 +276,8 @@ private struct OverviewMenuView: View {
     }
 
     private var ecoFlowDetail: String {
-        guard let ecoflow = viewModel.snapshot.ecoflow.value else {
-            return viewModel.snapshot.ecoflow.errorMessage ?? "No EcoFlow data yet"
+        guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else {
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "No EcoFlow data yet"
         }
         let battery = ecoflow.status.battery.percent.map { "\($0)%" } ?? "battery unknown"
         let state = ecoflow.status.battery.state.rawValue
@@ -287,12 +287,12 @@ private struct OverviewMenuView: View {
     }
 
     private var ecoFlowBadge: String {
-        guard let ecoflow = viewModel.snapshot.ecoflow.value else { return "Unavailable" }
+        guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else { return "Unavailable" }
         return ecoflow.status.battery.percent.map { "\($0)%" } ?? ecoflow.status.battery.state.rawValue.capitalized
     }
 
     private var ecoFlowTone: StatusTone {
-        guard let ecoflow = viewModel.snapshot.ecoflow.value else { return .neutral }
+        guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else { return .neutral }
         guard let percent = ecoflow.status.battery.percent else { return .neutral }
         return percent <= 20 ? .warn : .good
     }
@@ -327,7 +327,7 @@ private struct SpeedifyDetailView: View {
                     Task { await viewModel.setSpeedifyNetworkPriority(priority, networkID: id) }
                 }
             } else if panel == .data {
-                SpeedifyDataView(speedify: speedify, starlink: viewModel.snapshot.starlink.value, starlinkError: viewModel.snapshot.starlink.errorMessage)
+                SpeedifyDataView(speedify: speedify, starlink: viewModel.snapshot.providerStarlinkStatus, starlinkError: viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink))
             } else {
                 SpeedifyControlsView(speedify: speedify)
                     .environmentObject(viewModel)
@@ -354,7 +354,7 @@ private struct SpeedifyDetailView: View {
     }
 
     private var speedify: SpeedifyStatus? {
-        viewModel.snapshot.speedify.value
+        viewModel.snapshot.providerSpeedifyStatus
     }
 }
 
@@ -368,7 +368,7 @@ private struct StarlinkDetailView: View {
                 route = .overview
             }
 
-            if let status = viewModel.snapshot.starlink.value, status.isReachable {
+            if let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable {
                 StarlinkHeroView(status: status)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
@@ -397,7 +397,7 @@ private struct StarlinkDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Starlink gRPC unavailable")
                         .font(.headline)
-                    Text(viewModel.snapshot.starlink.errorMessage ?? "No Starlink status has been reported yet.")
+                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "No Starlink status has been reported yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Expected endpoint: 192.168.100.1:9200")
@@ -415,8 +415,8 @@ private struct StarlinkDetailView: View {
     }
 
     private var subtitle: String {
-        guard let status = viewModel.snapshot.starlink.value, status.isReachable else {
-            return viewModel.snapshot.starlink.errorMessage ?? "Unavailable"
+        guard let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable else {
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "Unavailable"
         }
         let latency = status.popPingLatencyMs.map { "\(Int($0.rounded())) ms" } ?? "latency unknown"
         let obstruction = status.obstructionPercent.map { String(format: "%.1f%% obstructed", $0) } ?? "obstruction unknown"
@@ -535,7 +535,7 @@ private struct EcoFlowDetailView: View {
                 route = .overview
             }
 
-            if let ecoflow = viewModel.snapshot.ecoflow.value {
+            if let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot {
                 EcoFlowHeroView(snapshot: ecoflow)
 
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
@@ -580,7 +580,7 @@ private struct EcoFlowDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("EcoFlow daemon unavailable")
                         .font(.headline)
-                    Text(viewModel.snapshot.ecoflow.errorMessage ?? "Enable EcoFlow and point it at the router daemon on port 8787.")
+                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "Enable EcoFlow and point it at the router daemon on port 8787.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Expected API: http://router-ip:8787/v1/status")
@@ -599,8 +599,8 @@ private struct EcoFlowDetailView: View {
 
     private var subtitle: String {
         guard viewModel.settings.ecoflowEnabled else { return "Disabled" }
-        guard let ecoflow = viewModel.snapshot.ecoflow.value else {
-            return viewModel.snapshot.ecoflow.errorMessage ?? "Unavailable"
+        guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else {
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "Unavailable"
         }
         let battery = ecoflow.status.battery.percent.map { "\($0)%" } ?? "battery unknown"
         return "\(battery) · \(ecoflow.status.battery.state.rawValue)"
