@@ -1139,6 +1139,61 @@ private struct GenericProviderDetailView: View {
                 }
             }
 
+            if !providerCommands.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Label("Commands", systemImage: "command")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(providerCommands.count)")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.secondary.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ForEach(providerCommands.prefix(3)) { item in
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 14)
+                            Text(item.command.label)
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                            Spacer()
+                            if !item.command.parameters.isEmpty {
+                                Text("\(item.command.parameters.count) params")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(8)
+                        .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+
+                    Button {
+                        route = .commands
+                    } label: {
+                        HStack {
+                            Text("Open command palette")
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
             FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
         }
         .padding(14)
@@ -1151,8 +1206,16 @@ private struct GenericProviderDetailView: View {
         snapshot?.metrics ?? []
     }
 
+    private var providerCommands: [CommandPaletteItem] {
+        viewModel.commandPalette.filter { $0.providerID == providerID }
+    }
+
     private var subtitle: String {
         if let snapshot {
+            let commandCount = providerCommands.count
+            if commandCount > 0 {
+                return "\(DisplayFormatters.health(snapshot.health)) · \(metrics.count) metrics · \(commandCount) commands"
+            }
             return "\(DisplayFormatters.health(snapshot.health)) · \(metrics.count) metrics"
         }
         if let error = state?.errorMessage, !error.isEmpty {
