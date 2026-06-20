@@ -93,6 +93,43 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshSkipsRegisteredProviderUntilPollIntervalElapses() async {
+        let provider = StubProvider(
+            id: "slow",
+            snapshot: ProviderSnapshot(
+                health: .ok,
+                metrics: [Metric(id: "sample", label: "Sample", value: .level(1))]
+            ),
+            pollInterval: 3_600
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providers["slow"]?.value?.metricValue("sample"), .level(1))
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",
@@ -396,15 +433,16 @@ private extension ProviderSnapshot {
 private actor StubProvider: Provider {
     let id: ProviderID
     let displayName: String
-    let pollInterval: TimeInterval = 10
+    let pollInterval: TimeInterval
     let commands: [CommandDescriptor]
     private let snapshot: ProviderSnapshot
     private(set) var pollCount = 0
     private var executedCommands: [(id: String, arguments: CommandArguments)] = []
 
-    init(id: ProviderID, snapshot: ProviderSnapshot, commands: [CommandDescriptor] = []) {
+    init(id: ProviderID, snapshot: ProviderSnapshot, pollInterval: TimeInterval = 10, commands: [CommandDescriptor] = []) {
         self.id = id
         self.displayName = id
+        self.pollInterval = pollInterval
         self.snapshot = snapshot
         self.commands = commands
     }

@@ -22,6 +22,7 @@ public actor Engine {
 
     private var snapshot = StatusSnapshot()
     private var providerStates: [ProviderID: SourceState<ProviderSnapshot>] = [:]
+    private var lastRegisteredProviderPolls: [ProviderID: Date] = [:]
     private var settings: AppSettings
     private var routerPassword: String
     private var selectedEndpoint: EndpointSelection?
@@ -564,10 +565,18 @@ public actor Engine {
     private func pollRegisteredProviders(routerHost: String?) async -> [ProviderID: SourceState<ProviderSnapshot>] {
         var states: [ProviderID: SourceState<ProviderSnapshot>] = [:]
         let context = EnvironmentContext(routerHost: routerHost, settings: settings)
+        let now = Date()
         for provider in providers {
+            if let lastPoll = lastRegisteredProviderPolls[provider.id],
+               now.timeIntervalSince(lastPoll) < provider.pollInterval,
+               let previous = providerStates[provider.id] {
+                states[provider.id] = SourceState(value: previous.value, errorMessage: previous.errorMessage)
+                continue
+            }
             let started = Date()
             let providerSnapshot = await provider.poll(context: context)
             states[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.id] = Date()
             await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
         }
         return states
