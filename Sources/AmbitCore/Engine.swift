@@ -177,12 +177,16 @@ public actor Engine {
             }
 
             let client = await routerClientFactory(url, settings.username, { [routerPassword] in routerPassword })
-            let router = await loadRouterStatus(client: client)
-            snapshot.router = router
-            if router.errorMessage?.localizedCaseInsensitiveContains("locked") == true {
-                snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: router.errorMessage)
-            } else {
+            if hasRegisteredProvider(ProviderIDs.router) {
                 snapshot.vpn = await loadVPNStatus(client: client)
+            } else {
+                let router = await loadRouterStatus(client: client)
+                snapshot.router = router
+                if router.errorMessage?.localizedCaseInsensitiveContains("locked") == true {
+                    snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: router.errorMessage)
+                } else {
+                    snapshot.vpn = await loadVPNStatus(client: client)
+                }
             }
             if let speedify = await speedifyResult {
                 snapshot.speedify = speedify
