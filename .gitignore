@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+.superpowers/
+.DS_Store
+xcuserdata/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+*.xcscmblueprint
+Package.resolved
