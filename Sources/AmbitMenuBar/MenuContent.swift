@@ -29,6 +29,9 @@ struct MenuContent: View {
             case .measurements:
                 ActiveMeasurementsView(route: $route)
                     .environmentObject(viewModel)
+            case .provider(let providerID):
+                GenericProviderDetailView(providerID: providerID, route: $route)
+                    .environmentObject(viewModel)
             }
         }
         .frame(width: 460)
@@ -41,13 +44,14 @@ struct MenuContent: View {
     }
 }
 
-private enum MenuRoute {
+private enum MenuRoute: Equatable {
     case overview
     case speedify
     case starlink
     case ecoflow
     case commands
     case measurements
+    case provider(ProviderID)
 }
 
 private enum SpeedifyPanel: String, CaseIterable {
@@ -142,13 +146,18 @@ private struct OverviewMenuView: View {
                 .buttonStyle(.plain)
 
                 ForEach(genericProviderSummaries) { summary in
-                    OverviewRow(
-                        title: summary.title,
-                        detail: summary.detail,
-                        badge: summary.badge,
-                        tone: tone(for: summary.health),
-                        systemImage: icon(for: summary)
-                    )
+                    Button {
+                        route = .provider(summary.providerID)
+                    } label: {
+                        OverviewRow(
+                            title: summary.title,
+                            detail: summary.detail,
+                            badge: summary.badge,
+                            tone: tone(for: summary.health),
+                            systemImage: icon(for: summary)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 if shouldShowSpeedify {
@@ -1049,6 +1058,154 @@ private struct ActiveMeasurementCard: View {
         default:
             return "waveform.path.ecg"
         }
+    }
+}
+
+private struct GenericProviderDetailView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let providerID: ProviderID
+    @Binding var route: MenuRoute
+
+    private var state: SourceState<ProviderSnapshot>? {
+        viewModel.snapshot.providers[providerID]
+    }
+
+    private var snapshot: ProviderSnapshot? {
+        state?.value
+    }
+
+    private var providerName: String {
+        viewModel.providerDisplayNames[providerID] ?? providerID
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HeaderView(title: providerName, subtitle: subtitle, showsBack: true) {
+                route = .overview
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(tone.color.opacity(0.18))
+                        Image(systemName: icon)
+                            .foregroundStyle(tone.color)
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    .frame(width: 38, height: 38)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(DisplayFormatters.health(snapshot?.health ?? .unknown))
+                            .font(.headline.weight(.bold))
+                        Text(providerID)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if state?.isLoading == true {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+
+                if let error = state?.errorMessage ?? snapshot?.error, !error.isEmpty {
+                    Text(ProviderDisplayText.singleLine(error))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(3)
+                }
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if metrics.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No metrics reported")
+                        .font(.headline)
+                    Text("This provider has not published normalized metrics yet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(metrics) { metric in
+                        GenericMetricCard(metric: metric)
+                    }
+                }
+            }
+
+            FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
+        }
+        .padding(14)
+        .task {
+            await viewModel.refresh()
+        }
+    }
+
+    private var metrics: [Metric] {
+        snapshot?.metrics ?? []
+    }
+
+    private var subtitle: String {
+        if let snapshot {
+            return "\(DisplayFormatters.health(snapshot.health)) · \(metrics.count) metrics"
+        }
+        if let error = state?.errorMessage, !error.isEmpty {
+            return ProviderDisplayText.singleLine(error)
+        }
+        return "Waiting for provider snapshot"
+    }
+
+    private var tone: StatusTone {
+        switch snapshot?.health ?? .unknown {
+        case .ok:
+            return .good
+        case .degraded:
+            return .warn
+        case .down:
+            return .bad
+        case .unknown:
+            return .neutral
+        }
+    }
+
+    private var icon: String {
+        if providerID.contains("power") || providerID.contains("battery") {
+            return "bolt"
+        }
+        if providerID.contains("ping") || providerID.contains("latency") {
+            return "timer"
+        }
+        return "sensor.tag.radiowaves.forward"
+    }
+}
+
+private struct GenericMetricCard: View {
+    let metric: Metric
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(metric.label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(DisplayFormatters.metricValue(metric.value))
+                .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(metric.id)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
