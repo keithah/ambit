@@ -21,6 +21,49 @@ public enum ProviderCommandIDs {
     public static let ecoFlowSetOutput = "ecoflow.setOutput"
 }
 
+public enum ProviderCommandCatalog {
+    public static func commands(for providerID: ProviderID) -> [CommandDescriptor] {
+        switch providerID {
+        case ProviderIDs.vpn:
+            return [
+                CommandDescriptor(id: ProviderCommandIDs.vpnToggle, label: "Toggle VPN")
+            ]
+        case ProviderIDs.speedify:
+            return [
+                CommandDescriptor(id: ProviderCommandIDs.speedifyToggle, label: "Toggle Speedify"),
+                CommandDescriptor(
+                    id: ProviderCommandIDs.speedifySetBondingMode,
+                    label: "Set Bonding Mode",
+                    parameters: [
+                        CommandParameter(id: "mode", label: "Mode", kind: .option(["SP", "RD", "STR"]))
+                    ]
+                ),
+                CommandDescriptor(
+                    id: ProviderCommandIDs.speedifySetNetworkPriority,
+                    label: "Set Network Priority",
+                    parameters: [
+                        CommandParameter(id: "priority", label: "Priority", kind: .option(["0", "1", "2", "100", "200"])),
+                        CommandParameter(id: "networkID", label: "Network ID", kind: .text)
+                    ]
+                )
+            ]
+        case ProviderIDs.ecoflow:
+            return [
+                CommandDescriptor(
+                    id: ProviderCommandIDs.ecoFlowSetOutput,
+                    label: "Set Output",
+                    parameters: [
+                        CommandParameter(id: "target", label: "Output", kind: .option(["ac", "dc", "usb"])),
+                        CommandParameter(id: "state", label: "State", kind: .option(["on", "off"]))
+                    ]
+                )
+            ]
+        default:
+            return []
+        }
+    }
+}
+
 public protocol Provider: Sendable {
     var id: ProviderID { get }
     var displayName: String { get }

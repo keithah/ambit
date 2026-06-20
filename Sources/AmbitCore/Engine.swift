@@ -113,6 +113,10 @@ public actor Engine {
         await usageMeter.allSnapshots()
     }
 
+    public func commands(provider providerID: ProviderID) -> [CommandDescriptor] {
+        ProviderCommandCatalog.commands(for: providerID)
+    }
+
     public func refresh() async {
         snapshot.router.isLoading = true
         snapshot.vpn.isLoading = true

@@ -230,6 +230,38 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(ecoFlowClient.outputRequests, [.init(target: .ac, state: .off)])
     }
 
+    func testExposesProviderCommandMetadata() async {
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret"
+        )
+
+        let vpnCommands = await engine.commands(provider: ProviderIDs.vpn)
+        let speedifyCommands = await engine.commands(provider: ProviderIDs.speedify)
+        let ecoFlowCommands = await engine.commands(provider: ProviderIDs.ecoflow)
+
+        XCTAssertEqual(vpnCommands.map(\.id), [ProviderCommandIDs.vpnToggle])
+        XCTAssertEqual(speedifyCommands.map(\.id), [
+            ProviderCommandIDs.speedifyToggle,
+            ProviderCommandIDs.speedifySetBondingMode,
+            ProviderCommandIDs.speedifySetNetworkPriority
+        ])
+        XCTAssertEqual(
+            speedifyCommands.first { $0.id == ProviderCommandIDs.speedifySetBondingMode }?.parameters,
+            [CommandParameter(id: "mode", label: "Mode", kind: .option(["SP", "RD", "STR"]))]
+        )
+        XCTAssertEqual(ecoFlowCommands.map(\.id), [ProviderCommandIDs.ecoFlowSetOutput])
+        XCTAssertEqual(
+            ecoFlowCommands.first?.parameters,
+            [
+                CommandParameter(id: "target", label: "Output", kind: .option(["ac", "dc", "usb"])),
+                CommandParameter(id: "state", label: "State", kind: .option(["on", "off"]))
+            ]
+        )
+    }
+
     func testDispatchRejectsUnsupportedProviderCommand() async {
         let engine = Engine(
             settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
