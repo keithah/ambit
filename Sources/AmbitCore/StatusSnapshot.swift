@@ -14,12 +14,6 @@ public struct SourceState<Value: Equatable & Sendable>: Equatable, Sendable {
 
 public struct StatusSnapshot: Equatable, Sendable {
     public var providers: [ProviderID: SourceState<ProviderSnapshot>]
-    public var router: SourceState<RouterStatus>
-    public var vpn: SourceState<VPNStatus>
-    public var reachability: SourceState<ReachabilityStatus>
-    public var speedify: SourceState<SpeedifyStatus>
-    public var starlink: SourceState<StarlinkStatus>
-    public var ecoflow: SourceState<EcoFlowSnapshot>
     public var lastUpdated: Date?
 
     public init(
@@ -33,124 +27,123 @@ public struct StatusSnapshot: Equatable, Sendable {
         lastUpdated: Date? = nil
     ) {
         self.providers = providers
-        self.router = router
-        self.vpn = vpn
-        self.reachability = reachability
-        self.speedify = speedify
-        self.starlink = starlink
-        self.ecoflow = ecoflow
         self.lastUpdated = lastUpdated
+        mergeCompatibilityState(router, providerID: ProviderIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router)
+        mergeCompatibilityState(vpn, providerID: ProviderIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn)
+        mergeCompatibilityState(
+            reachability,
+            providerID: ProviderIDs.reachability,
+            detail: ProviderDetail.reachability,
+            snapshot: ProviderSnapshot.reachability
+        )
+        mergeCompatibilityState(speedify, providerID: ProviderIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify)
+        mergeCompatibilityState(starlink, providerID: ProviderIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink)
+        mergeCompatibilityState(ecoflow, providerID: ProviderIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow)
     }
 
     public var engineSnapshot: EngineSnapshot {
         EngineSnapshot(providers: providers, lastUpdated: lastUpdated)
     }
 
-    public mutating func populateProviderSnapshots() {
-        providers = [
-            ProviderIDs.router: SourceState(
-                providerValue: router.value,
-                errorMessage: router.errorMessage,
-                detail: ProviderDetail.router,
-                snapshot: ProviderSnapshot.router
-            ),
-            ProviderIDs.vpn: SourceState(
-                providerValue: vpn.value,
-                errorMessage: vpn.errorMessage,
-                detail: ProviderDetail.vpn,
-                snapshot: ProviderSnapshot.vpn
-            ),
-            ProviderIDs.reachability: SourceState(
-                providerValue: reachability.value,
-                errorMessage: reachability.errorMessage,
+    public var router: SourceState<RouterStatus> {
+        get { providerState(ProviderIDs.router) { if case .router(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router) }
+    }
+
+    public var vpn: SourceState<VPNStatus> {
+        get { providerState(ProviderIDs.vpn) { if case .vpn(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn) }
+    }
+
+    public var reachability: SourceState<ReachabilityStatus> {
+        get { providerState(ProviderIDs.reachability) { if case .reachability(let value) = $0 { value } else { nil } } }
+        set {
+            setProviderState(
+                newValue,
+                providerID: ProviderIDs.reachability,
                 detail: ProviderDetail.reachability,
                 snapshot: ProviderSnapshot.reachability
-            ),
-            ProviderIDs.speedify: SourceState(
-                providerValue: speedify.value,
-                errorMessage: speedify.errorMessage,
-                detail: ProviderDetail.speedify,
-                snapshot: ProviderSnapshot.speedify
-            ),
-            ProviderIDs.starlink: SourceState(
-                providerValue: starlink.value,
-                errorMessage: starlink.errorMessage,
-                detail: ProviderDetail.starlink,
-                snapshot: ProviderSnapshot.starlink
-            ),
-            ProviderIDs.ecoflow: SourceState(
-                providerValue: ecoflow.value,
-                errorMessage: ecoflow.errorMessage,
-                detail: ProviderDetail.ecoflow,
-                snapshot: ProviderSnapshot.ecoFlow
             )
-        ]
+        }
+    }
+
+    public var speedify: SourceState<SpeedifyStatus> {
+        get { providerState(ProviderIDs.speedify) { if case .speedify(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify) }
+    }
+
+    public var starlink: SourceState<StarlinkStatus> {
+        get { providerState(ProviderIDs.starlink) { if case .starlink(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink) }
+    }
+
+    public var ecoflow: SourceState<EcoFlowSnapshot> {
+        get { providerState(ProviderIDs.ecoflow) { if case .ecoflow(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow) }
+    }
+
+    private func providerState<DetailValue>(
+        _ providerID: ProviderID,
+        extract: (ProviderDetail) -> DetailValue?
+    ) -> SourceState<DetailValue> {
+        guard let state = providers[providerID] else { return SourceState() }
+        let detail = state.value?.detail.flatMap(extract)
+        return SourceState(value: detail, isLoading: state.isLoading, errorMessage: state.errorMessage)
+    }
+
+    private mutating func setProviderState<DetailValue>(
+        _ state: SourceState<DetailValue>,
+        providerID: ProviderID,
+        detail: (DetailValue) -> ProviderDetail,
+        snapshot: (DetailValue) -> ProviderSnapshot
+    ) {
+        providers[providerID] = SourceState(
+            providerValue: state.value,
+            isLoading: state.isLoading,
+            errorMessage: state.errorMessage,
+            detail: detail,
+            snapshot: snapshot
+        )
+    }
+
+    private mutating func mergeCompatibilityState<DetailValue>(
+        _ state: SourceState<DetailValue>,
+        providerID: ProviderID,
+        detail: (DetailValue) -> ProviderDetail,
+        snapshot: (DetailValue) -> ProviderSnapshot
+    ) {
+        guard !state.isEmpty else { return }
+        setProviderState(state, providerID: providerID, detail: detail, snapshot: snapshot)
     }
 }
 
 public extension StatusSnapshot {
     var providerRouterStatus: RouterStatus? {
-        if case .router(let status) = providers[ProviderIDs.router]?.value?.detail {
-            return status
-        }
-        return router.value
+        router.value
     }
 
     var providerVPNStatus: VPNStatus? {
-        if case .vpn(let status) = providers[ProviderIDs.vpn]?.value?.detail {
-            return status
-        }
-        return vpn.value
+        vpn.value
     }
 
     var providerReachabilityStatus: ReachabilityStatus? {
-        if case .reachability(let status) = providers[ProviderIDs.reachability]?.value?.detail {
-            return status
-        }
-        return reachability.value
+        reachability.value
     }
 
     var providerSpeedifyStatus: SpeedifyStatus? {
-        if case .speedify(let status) = providers[ProviderIDs.speedify]?.value?.detail {
-            return status
-        }
-        return speedify.value
+        speedify.value
     }
 
     var providerStarlinkStatus: StarlinkStatus? {
-        if case .starlink(let status) = providers[ProviderIDs.starlink]?.value?.detail {
-            return status
-        }
-        return starlink.value
+        starlink.value
     }
 
     var providerEcoFlowSnapshot: EcoFlowSnapshot? {
-        if case .ecoflow(let snapshot) = providers[ProviderIDs.ecoflow]?.value?.detail {
-            return snapshot
-        }
-        return ecoflow.value
+        ecoflow.value
     }
 
     func providerErrorMessage(_ providerID: ProviderID) -> String? {
-        if let error = providers[providerID]?.errorMessage {
-            return error
-        }
-        switch providerID {
-        case ProviderIDs.router:
-            return router.errorMessage
-        case ProviderIDs.vpn:
-            return vpn.errorMessage
-        case ProviderIDs.reachability:
-            return reachability.errorMessage
-        case ProviderIDs.speedify:
-            return speedify.errorMessage
-        case ProviderIDs.starlink:
-            return starlink.errorMessage
-        case ProviderIDs.ecoflow:
-            return ecoflow.errorMessage
-        default:
-            return nil
-        }
+        providers[providerID]?.errorMessage
     }
 }
 

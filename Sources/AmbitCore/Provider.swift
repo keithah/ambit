@@ -209,6 +209,7 @@ public struct EngineSnapshot: Equatable, Sendable {
 public extension SourceState where Value == ProviderSnapshot {
     init<DetailValue>(
         providerValue: DetailValue?,
+        isLoading: Bool = false,
         errorMessage: String?,
         detail: (DetailValue) -> ProviderDetail,
         snapshot: (DetailValue) -> ProviderSnapshot
@@ -217,9 +218,15 @@ public extension SourceState where Value == ProviderSnapshot {
             var providerSnapshot = snapshot(providerValue)
             providerSnapshot.detail = detail(providerValue)
             providerSnapshot.error = errorMessage
-            self.init(value: providerSnapshot, errorMessage: errorMessage)
+            self.init(value: providerSnapshot, isLoading: isLoading, errorMessage: errorMessage)
         } else {
-            self.init(value: nil, errorMessage: errorMessage)
+            self.init(value: nil, isLoading: isLoading, errorMessage: errorMessage)
         }
+    }
+}
+
+public extension SourceState {
+    var isEmpty: Bool {
+        value == nil && !isLoading && errorMessage == nil
     }
 }

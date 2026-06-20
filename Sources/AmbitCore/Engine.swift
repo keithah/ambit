@@ -715,7 +715,6 @@ public actor Engine {
 
     private func publish() {
         let registeredProviderStates = providerStates
-        snapshot.populateProviderSnapshots()
         for (providerID, state) in registeredProviderStates {
             snapshot.providers[providerID] = state
         }
