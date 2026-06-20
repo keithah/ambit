@@ -7,6 +7,21 @@
 
 This is a **refactor in place** (within this repo), not a rewrite. The app must compile and the test suite must stay green after **every** step. Work step by step, commit per step, preserve exact current behavior unless a step explicitly changes it.
 
+## Migration status
+
+The staged migration below has been executed through Step 5. Current state:
+
+- Framework/package names are Ambit (`AmbitCore`, `AmbitMenuBar`, `ambit-check`).
+- `StatusViewModel` is a thin UI adapter over `AmbitCore.Engine`.
+- `Engine` is provider-registry backed: refresh and command dispatch run through `Provider` instances, not legacy per-service branches.
+- Built-in provider composition lives in `BuiltInProviderFactory`, outside the engine actor.
+- `StatusSnapshot` stores `[ProviderID: SourceState<ProviderSnapshot>]` and keeps typed compatibility accessors for the menubar.
+- Provider snapshots carry normalized metrics/health plus rich `ProviderDetail`.
+- `AlertEngine` evaluates rules over `EngineSnapshot`; notification delivery remains in the menubar layer.
+- `PingProvider` and `Iperf3Provider` are registered when a `ProcessRunner` is supplied; `ambit-check --run-iperf3 <host>` triggers an iperf3 measurement.
+
+Remaining follow-up work is product/UI expansion, not core migration: a first-class command palette, richer generic provider views for active measurements, and future non-native provider packaging.
+
 ---
 
 ## Guiding principles
@@ -19,7 +34,7 @@ This is a **refactor in place** (within this repo), not a rewrite. The app must 
 
 ---
 
-## Current architecture (as seeded — pre-rename)
+## Historical seed architecture (pre-rename)
 
 Swift package `GLiNetTravel` (swift-tools 6.0, macOS 13). Targets:
 
@@ -42,7 +57,7 @@ Key Core types:
 
 ---
 
-## Target architecture (to-be)
+## Implemented architecture
 
 A small set of protocols in the core library. **These signatures are illustrative starting points** — adjust names/shape to fit the real code and Swift 6 concurrency, but keep the intent.
 
@@ -121,7 +136,7 @@ public struct EngineSnapshot: Sendable, Equatable {
 
 Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step until the previous is green.
 
-### Step 0 — Neutral rename to Ambit
+### Step 0 — Neutral rename to Ambit — Complete
 
 **Goal:** rename the framework/package layer from `GLiNet*` to `Ambit*` so the repo reads as its own product. Purely mechanical; no behavior change.
 
@@ -132,7 +147,7 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 **Acceptance:** `swift build` + `swift test` green; app + CLI run identically. Commit: "Step 0: rename to Ambit".
 
-### Step 1 — Extract the engine from the ViewModel into Core (no protocol yet)
+### Step 1 — Extract the engine from the ViewModel into Core (no protocol yet) — Complete
 
 **Goal:** move the poll loop, snapshot assembly, backoff, focus fast-poll, endpoint resolution, and command methods out of `StatusViewModel` into a new `Engine` in `AmbitCore`. **Keep `StatusSnapshot` as-is** (still hardcoded fields) — this step only moves orchestration down a layer.
 
@@ -143,7 +158,7 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 **Acceptance:** build + tests green; menubar identical (data, cadence, controls, backoff, focus-poll); CLI prints a populated snapshot; add `EngineTests` with injected fakes (reuse `TestDoubles`).
 
-### Step 2 — Introduce the `Provider` protocol; replace the hardcoded snapshot with a registry
+### Step 2 — Introduce the `Provider` protocol; replace the hardcoded snapshot with a registry — Complete
 
 **Goal:** turn each source into a `Provider`; replace `StatusSnapshot`'s fixed fields with `[ProviderID: SourceState<ProviderSnapshot>]`; introduce `EnvironmentContext`.
 
@@ -158,9 +173,9 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 - Engine iterates `providers`, polls each per interval, assembles the keyed snapshot. Router backoff stays in the engine (or `GLiNetRouterProvider`), gating only that provider.
 - Update `StatusViewModel` + menubar views to read by `ProviderID` and render `detail`. Keep per-provider detail views.
 
-**Acceptance:** build + tests green; full behavior parity; adding a provider now requires **zero** changes to `Engine` or the snapshot type.
+**Acceptance:** build + tests green; full behavior parity; adding a provider now requires **zero** changes to `Engine`. `ProviderDetail` remains an enum for rich first-party details; generic providers can still publish metrics/health without changing the snapshot storage model.
 
-### Step 3 — Normalized metric vocabulary
+### Step 3 — Normalized metric vocabulary — Complete
 
 **Goal:** populate `ProviderSnapshot.metrics` and `health` for each provider alongside the rich `detail`.
 
@@ -168,7 +183,7 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 **Acceptance:** build + tests green; tests asserting metric extraction per provider; menubar unchanged (still renders `detail`).
 
-### Step 4 — Alerting engine over the snapshot stream
+### Step 4 — Alerting engine over the snapshot stream — Complete
 
 **Goal:** a rules layer in `AmbitCore` consuming `EngineSnapshot` — the platform's most differentiating feature.
 
@@ -176,13 +191,13 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 **Acceptance:** build + tests green; unit tests per rule type with synthetic streams; a real alert fires in the running app.
 
-### Step 5 — Add `ping` and `iperf3` providers (active-measurement archetype)
+### Step 5 — Add `ping` and `iperf3` providers (active-measurement archetype) — Complete
 
 **Goal:** validate the model against *active, on-demand measurement* vs. passive polling. `iperf3` is a Command that produces a Metric (a triggered, time-bounded test), not a continuous poll.
 
 **Changes:** `PingProvider` (periodic) and `Iperf3Provider` (command-triggered measurement recording the latest result as metrics/detail, via `ProcessRunner`). If "run iperf3 → emit a throughput sample" is awkward in the protocol, **that's the signal to refine the Provider/Command/Metric shape** — fix it here while it's cheap.
 
-**Acceptance:** build + tests green; ping polls continuously; an iperf3 run is triggerable and its result appears as metrics + detail; note any protocol refinements needed.
+**Acceptance:** build + tests green; ping polls continuously; an iperf3 run is triggerable and its result appears as metrics + detail. Protocol refinement made during implementation: command behavior remains on `Provider.execute(...)`, with post-command polling publishing the resulting metric/detail snapshot.
 
 ---
 
