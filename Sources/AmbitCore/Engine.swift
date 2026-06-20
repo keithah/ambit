@@ -236,32 +236,14 @@ public actor Engine {
             return
         }
 
-        switch (provider, commandID) {
-        case (ProviderIDs.vpn, ProviderCommandIDs.vpnToggle):
-            await toggleVPN()
-        case (ProviderIDs.speedify, ProviderCommandIDs.speedifyToggle):
-            await toggleSpeedify()
-        case (ProviderIDs.speedify, ProviderCommandIDs.speedifySetBondingMode):
-            let mode = try requireString("mode", in: arguments)
-            await setSpeedifyBondingMode(SpeedifyBondingMode(code: mode))
-        case (ProviderIDs.speedify, ProviderCommandIDs.speedifySetNetworkPriority):
-            let priority = try requireInt("priority", in: arguments)
-            let networkID = try requireString("networkID", in: arguments)
-            await setSpeedifyNetworkPriority(SpeedifyNetworkPriority(value: priority), networkID: networkID)
-        case (ProviderIDs.ecoflow, ProviderCommandIDs.ecoFlowSetOutput):
-            let target = try requireEcoFlowOutputTarget(in: arguments)
-            let state = try requireEcoFlowOutputState(in: arguments)
-            _ = await setEcoFlowOutput(target, state: state)
-        default:
-            guard let registeredProvider = providers.first(where: { $0.id == provider }) else {
-                throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
-            }
-            try await executeRegisteredProviderCommand(
-                registeredProvider,
-                commandID: commandID,
-                arguments: arguments
-            )
+        guard let registeredProvider = providers.first(where: { $0.id == provider }) else {
+            throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
         }
+        try await executeRegisteredProviderCommand(
+            registeredProvider,
+            commandID: commandID,
+            arguments: arguments
+        )
     }
 
     private func registeredProvider(_ providerID: ProviderID, supporting commandID: String) -> (any Provider)? {
@@ -290,147 +272,37 @@ public actor Engine {
         }
     }
 
-    private func requireString(_ key: String, in arguments: CommandArguments) throws -> String {
-        guard let value = arguments.values[key]?.stringValue, !value.isEmpty else {
-            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a non-empty string.")
-        }
-        return value
-    }
-
-    private func requireInt(_ key: String, in arguments: CommandArguments) throws -> Int {
-        guard let value = arguments.values[key]?.intValue else {
-            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a number.")
-        }
-        return value
-    }
-
-    private func requireEcoFlowOutputTarget(in arguments: CommandArguments) throws -> EcoFlowOutputTarget {
-        let rawValue = try requireString("target", in: arguments)
-        guard let target = EcoFlowOutputTarget(rawValue: rawValue) else {
-            throw JSONRPCClientError.commandFailed("Provider command argument target is not a supported EcoFlow output.")
-        }
-        return target
-    }
-
-    private func requireEcoFlowOutputState(in arguments: CommandArguments) throws -> EcoFlowOutputState {
-        let rawValue = try requireString("state", in: arguments)
-        guard let state = EcoFlowOutputState(rawValue: rawValue), state != .unknown else {
-            throw JSONRPCClientError.commandFailed("Provider command argument state must be on or off.")
-        }
-        return state
-    }
-
     public func toggleVPN() async {
-        let started = Date()
-        guard
-            let selection = selectedEndpoint,
-            let url = URL.routerRPC(host: selection.host),
-            let status = snapshot.vpn.value
-        else {
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started, error: "VPN command prerequisites unavailable.")
-            return
-        }
-        let client = await routerClientFactory(url, settings.username, { [routerPassword] in routerPassword })
-        do {
-            try await client.setVPNEnabled(!status.isConnected, protocol: status.vpnProtocol)
-            snapshot.vpn = await loadVPNStatus(client: client)
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started)
-            publish()
-        } catch {
-            snapshot.vpn.errorMessage = error.localizedDescription
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started, error: error.localizedDescription)
-            publish()
-        }
+        try? await dispatch(provider: ProviderIDs.vpn, commandID: ProviderCommandIDs.vpnToggle)
     }
 
     public func toggleSpeedify() async {
-        let started = Date()
-        guard let selection = selectedEndpoint, let status = snapshot.speedify.value else {
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify command prerequisites unavailable.")
-            return
-        }
-        snapshot.speedify.isLoading = true
-        publish()
-        do {
-            if status.isConnected {
-                try await routerSpeedifyClient.disconnect(host: selection.host)
-            } else {
-                try await routerSpeedifyClient.connect(host: selection.host)
-            }
-            snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
-        } catch {
-            snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
-        }
-        publish()
+        try? await dispatch(provider: ProviderIDs.speedify, commandID: ProviderCommandIDs.speedifyToggle)
     }
 
     public func setSpeedifyBondingMode(_ mode: SpeedifyBondingMode) async {
-        let started = Date()
-        guard let selection = selectedEndpoint else {
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify endpoint unavailable.")
-            return
-        }
-        snapshot.speedify.isLoading = true
-        publish()
-        do {
-            try await routerSpeedifyClient.setBondingMode(mode, host: selection.host)
-            snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
-        } catch {
-            snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
-        }
-        publish()
+        try? await dispatch(
+            provider: ProviderIDs.speedify,
+            commandID: ProviderCommandIDs.speedifySetBondingMode,
+            arguments: CommandArguments(values: ["mode": .string(mode.commandCode)])
+        )
     }
 
     public func setSpeedifyNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String) async {
-        let started = Date()
-        guard let selection = selectedEndpoint else {
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify endpoint unavailable.")
-            return
-        }
-        snapshot.speedify.isLoading = true
-        publish()
-        do {
-            try await routerSpeedifyClient.setNetworkPriority(priority, networkID: networkID, host: selection.host)
-            snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
-        } catch {
-            snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
-        }
-        publish()
+        try? await dispatch(
+            provider: ProviderIDs.speedify,
+            commandID: ProviderCommandIDs.speedifySetNetworkPriority,
+            arguments: CommandArguments(values: ["priority": .number(Double(priority.rawValue)), "networkID": .string(networkID)])
+        )
     }
 
     public func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
-        let started = Date()
-        guard settings.ecoflowEnabled else {
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: "EcoFlow is disabled.")
-            return nil
-        }
-        let host = settings.ecoflowHost == "auto" ? selectedEndpoint?.host : settings.ecoflowHost
-        guard let host, !host.isEmpty, let baseURL = URL(string: "http://\(host):\(settings.ecoflowPort)") else {
-            snapshot.ecoflow.errorMessage = "EcoFlow daemon endpoint unresolved."
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: snapshot.ecoflow.errorMessage)
-            publish()
-            return nil
-        }
-
-        let client = ecoFlowClientFactory(baseURL)
-        do {
-            let response = try await client.setOutput(target, state: state)
-            snapshot.ecoflow = await loadEcoFlowStatus(routerHost: selectedEndpoint?.host)
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started)
-            publish()
-            return response
-        } catch {
-            snapshot.ecoflow = SourceState(value: snapshot.ecoflow.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: error.localizedDescription)
-            publish()
-            return nil
-        }
+        try? await dispatch(
+            provider: ProviderIDs.ecoflow,
+            commandID: ProviderCommandIDs.ecoFlowSetOutput,
+            arguments: CommandArguments(values: ["target": .string(target.rawValue), "state": .string(state.rawValue)])
+        )
+        return nil
     }
 
     private func refreshSpeedifyOnly(markLoading: Bool) async {
@@ -467,128 +339,6 @@ public actor Engine {
         }
     }
 
-    private func loadRouterStatus(client: any GLiNetClientProtocol) async -> SourceState<RouterStatus> {
-        let started = Date()
-        do {
-            let state = SourceState(value: try await client.routerStatus())
-            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: started)
-            return state
-        } catch {
-            noteRouterError(error)
-            let state = SourceState(value: snapshot.router.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: started, error: error.localizedDescription)
-            return state
-        }
-    }
-
-    private func loadVPNStatus(client: any GLiNetClientProtocol) async -> SourceState<VPNStatus> {
-        let started = Date()
-        do {
-            let state = SourceState(value: try await client.vpnStatus())
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: started)
-            return state
-        } catch {
-            noteRouterError(error)
-            let state = SourceState(value: snapshot.vpn.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: started, error: error.localizedDescription)
-            return state
-        }
-    }
-
-    private func loadReachabilityStatus() async -> SourceState<ReachabilityStatus> {
-        let started = Date()
-        let status = await reachabilityProbe.probe()
-        await recordUsage(providerID: ProviderIDs.reachability, operation: .poll, started: started)
-        return SourceState(value: status)
-    }
-
-    private func loadLegacyReachabilityStatusIfNeeded() async -> SourceState<ReachabilityStatus>? {
-        guard !hasRegisteredProvider(ProviderIDs.reachability) else { return nil }
-        return await loadReachabilityStatus()
-    }
-
-    private func loadSpeedifyStatus(host: String) async -> SourceState<SpeedifyStatus> {
-        let started = Date()
-        do {
-            let status = try await routerSpeedifyClient.status(host: host)
-                .mergingLiveSamples(from: snapshot.speedify.value)
-            let state = SourceState(value: status)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: started)
-            return state
-        } catch {
-            let state = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: started, error: error.localizedDescription)
-            return state
-        }
-    }
-
-    private func loadLegacySpeedifyStatusIfNeeded(host: String) async -> SourceState<SpeedifyStatus>? {
-        guard !hasRegisteredProvider(ProviderIDs.speedify) else { return nil }
-        return await loadSpeedifyStatus(host: host)
-    }
-
-    private func loadStarlinkStatus() async -> SourceState<StarlinkStatus> {
-        let started = Date()
-        let status = await starlinkStatusProvider(settings.grpcurlPath)
-        if status.isReachable {
-            let state = SourceState(value: status)
-            await recordUsage(providerID: ProviderIDs.starlink, operation: .poll, started: started)
-            return state
-        }
-        let state = SourceState(value: snapshot.starlink.value, errorMessage: status.state)
-        await recordUsage(providerID: ProviderIDs.starlink, operation: .poll, started: started, error: status.state)
-        return state
-    }
-
-    private func loadLegacyStarlinkStatusIfNeeded() async -> SourceState<StarlinkStatus>? {
-        guard !hasRegisteredProvider(ProviderIDs.starlink) else { return nil }
-        return await loadStarlinkStatus()
-    }
-
-    private func loadEcoFlowStatus(routerHost: String?) async -> SourceState<EcoFlowSnapshot> {
-        let started = Date()
-        guard settings.ecoflowEnabled else {
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started)
-            return SourceState()
-        }
-        let host = settings.ecoflowHost == "auto" ? routerHost : settings.ecoflowHost
-        guard let host, !host.isEmpty else {
-            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint unresolved.")
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: state.errorMessage)
-            return state
-        }
-        guard let baseURL = URL(string: "http://\(host):\(settings.ecoflowPort)") else {
-            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint is invalid.")
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: state.errorMessage)
-            return state
-        }
-
-        let client = ecoFlowClientFactory(baseURL)
-        do {
-            async let device = try? client.device()
-            async let status = client.status()
-            async let outputs = try? client.outputs()
-            async let stats = try? client.stats()
-            let state = SourceState(value: try await EcoFlowSnapshot(
-                device: await device,
-                status: status,
-                outputs: await outputs,
-                stats: await stats
-            ))
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started)
-            return state
-        } catch {
-            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: error.localizedDescription)
-            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: error.localizedDescription)
-            return state
-        }
-    }
-
-    private func loadLegacyEcoFlowStatusIfNeeded(routerHost: String?) async -> SourceState<EcoFlowSnapshot>? {
-        guard !hasRegisteredProvider(ProviderIDs.ecoflow) else { return nil }
-        return await loadEcoFlowStatus(routerHost: routerHost)
-    }
-
     private func markRegisteredProvidersLoading() {
         for provider in providers {
             let previous = providerStates[provider.id]
@@ -598,10 +348,6 @@ public actor Engine {
                 errorMessage: previous?.errorMessage
             )
         }
-    }
-
-    private func hasRegisteredProvider(_ providerID: ProviderID) -> Bool {
-        providers.contains { $0.id == providerID }
     }
 
     private func rebuildBuiltInProvidersIfNeeded() {
@@ -658,14 +404,6 @@ public actor Engine {
             await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
         }
         return states
-    }
-
-    private func noteRouterError(_ error: Error) {
-        guard
-            let clientError = error as? JSONRPCClientError,
-            let wait = clientError.retryAfterSeconds
-        else { return }
-        routerBackoffUntil = Date().addingTimeInterval(TimeInterval(wait))
     }
 
     private static func usesRouterLogin(_ providerID: ProviderID) -> Bool {
