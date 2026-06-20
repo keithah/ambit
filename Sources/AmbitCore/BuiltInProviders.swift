@@ -1,5 +1,63 @@
 import Foundation
 
+public struct BuiltInProviderFactory: Sendable {
+    private let routerClientFactory: RouterClientFactory
+    private let reachabilityProbe: ReachabilityProbeProtocol
+    private let routerSpeedifyClient: any RouterSpeedifyClientProtocol
+    private let starlinkStatusProvider: StarlinkStatusProvider
+    private let ecoFlowClientFactory: EcoFlowClientFactory
+    private let activeMeasurementProcessRunner: (any ProcessRunner)?
+
+    public init(
+        routerClientFactory: @escaping RouterClientFactory,
+        reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe(),
+        routerSpeedifyClient: any RouterSpeedifyClientProtocol = RouterSpeedifyClient(),
+        starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
+            await StarlinkClient(path: path).status()
+        },
+        ecoFlowClientFactory: @escaping EcoFlowClientFactory = { baseURL in
+            EcoFlowHTTPClient(baseURL: baseURL)
+        },
+        activeMeasurementProcessRunner: (any ProcessRunner)? = nil
+    ) {
+        self.routerClientFactory = routerClientFactory
+        self.reachabilityProbe = reachabilityProbe
+        self.routerSpeedifyClient = routerSpeedifyClient
+        self.starlinkStatusProvider = starlinkStatusProvider
+        self.ecoFlowClientFactory = ecoFlowClientFactory
+        self.activeMeasurementProcessRunner = activeMeasurementProcessRunner
+    }
+
+    public func providers(settings: AppSettings) -> [any Provider] {
+        var providers: [any Provider] = [
+            GLiNetRouterProvider(clientFactory: routerClientFactory),
+            GLiNetVPNProvider(clientFactory: routerClientFactory),
+            ReachabilityProvider(probe: reachabilityProbe),
+            SpeedifyProvider(client: routerSpeedifyClient),
+            StarlinkProvider(statusProvider: starlinkStatusProvider)
+        ]
+        if settings.ecoflowEnabled {
+            providers.append(EcoFlowProvider(clientFactory: ecoFlowClientFactory))
+        }
+        if let activeMeasurementProcessRunner {
+            providers.append(PingProvider(processRunner: activeMeasurementProcessRunner))
+            providers.append(Iperf3Provider(processRunner: activeMeasurementProcessRunner))
+        }
+        return providers
+    }
+
+    public static let providerIDs: Set<ProviderID> = [
+        ProviderIDs.router,
+        ProviderIDs.vpn,
+        ProviderIDs.reachability,
+        ProviderIDs.speedify,
+        ProviderIDs.starlink,
+        ProviderIDs.ecoflow,
+        ProviderIDs.ping,
+        ProviderIDs.iperf3
+    ]
+}
+
 public struct GLiNetRouterProvider: Provider {
     public let id: ProviderID = ProviderIDs.router
     public let displayName = "Router"
