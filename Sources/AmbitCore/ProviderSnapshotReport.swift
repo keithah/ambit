@@ -13,7 +13,7 @@ public enum ProviderSnapshotReport {
         ]
 
         if let error = snapshot.error, !error.isEmpty {
-            lines.append("Error: \(error)")
+            lines.append("Error: \(ProviderDisplayText.singleLine(error))")
         }
 
         if snapshot.metrics.isEmpty {

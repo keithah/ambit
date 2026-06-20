@@ -35,16 +35,9 @@ public enum ModuleUsageReportFormatter {
             parts.append("last \(lastOperation.rawValue)")
         }
         if let lastError = snapshot.lastError {
-            parts.append("last error: \(singleLine(lastError))")
+            parts.append("last error: \(ProviderDisplayText.singleLine(lastError))")
         }
         return parts.joined(separator: ", ")
-    }
-
-    private static func singleLine(_ value: String) -> String {
-        value
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
     }
 
     private static let providerOrder: [ProviderID: Int] = [

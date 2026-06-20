@@ -261,7 +261,7 @@ private struct OverviewMenuView: View {
     }
 
     private var speedifyDetail: String {
-        if let error = viewModel.snapshot.providerErrorMessage(ProviderIDs.speedify), !error.isEmpty {
+        if let error = viewModel.snapshot.providerErrorMessage(ProviderIDs.speedify).map({ ProviderDisplayText.singleLine($0) }), !error.isEmpty {
             return error
         }
         guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return "No Speedify data yet" }
@@ -298,7 +298,7 @@ private struct OverviewMenuView: View {
             let obstruction = status.obstructionPercent.map { String(format: "%.1f%% obstructed", $0) } ?? "obstruction unknown"
             return "\(latency) · \(drop) · \(down) · \(obstruction)"
         }
-        guard let starlink else { return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "Not visible to Speedify" }
+        guard let starlink else { return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink).map { ProviderDisplayText.singleLine($0) } ?? "Not visible to Speedify" }
         let role = starlink.isPrimary ? "Primary" : (starlink.qualityLabel ?? "Secondary")
         if let traffic = trafficText(for: starlink) {
             return "\(starlink.detail ?? "Eth0") · \(role) · \(traffic)"
@@ -374,7 +374,7 @@ private struct OverviewMenuView: View {
 
     private var ecoFlowDetail: String {
         guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else {
-            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "No EcoFlow data yet"
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow).map { ProviderDisplayText.singleLine($0) } ?? "No EcoFlow data yet"
         }
         let battery = ecoflow.status.battery.percent.map { "\($0)%" } ?? "battery unknown"
         let state = ecoflow.status.battery.state.rawValue
@@ -447,7 +447,7 @@ private struct SpeedifyDetailView: View {
                     Task { await viewModel.setSpeedifyNetworkPriority(priority, networkID: id) }
                 }
             } else if panel == .data {
-                SpeedifyDataView(speedify: speedify, starlink: viewModel.snapshot.providerStarlinkStatus, starlinkError: viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink))
+                SpeedifyDataView(speedify: speedify, starlink: viewModel.snapshot.providerStarlinkStatus, starlinkError: viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink).map { ProviderDisplayText.singleLine($0) })
             } else {
                 SpeedifyControlsView(speedify: speedify)
                     .environmentObject(viewModel)
@@ -517,7 +517,7 @@ private struct StarlinkDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Starlink gRPC unavailable")
                         .font(.headline)
-                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "No Starlink status has been reported yet.")
+                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink).map { ProviderDisplayText.singleLine($0) } ?? "No Starlink status has been reported yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Expected endpoint: 192.168.100.1:9200")
@@ -536,7 +536,7 @@ private struct StarlinkDetailView: View {
 
     private var subtitle: String {
         guard let status = viewModel.snapshot.providerStarlinkStatus, status.isReachable else {
-            return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink) ?? "Unavailable"
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.starlink).map { ProviderDisplayText.singleLine($0) } ?? "Unavailable"
         }
         let latency = status.popPingLatencyMs.map { "\(Int($0.rounded())) ms" } ?? "latency unknown"
         let obstruction = status.obstructionPercent.map { String(format: "%.1f%% obstructed", $0) } ?? "obstruction unknown"
@@ -700,7 +700,7 @@ private struct EcoFlowDetailView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("EcoFlow daemon unavailable")
                         .font(.headline)
-                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "Enable EcoFlow and point it at the router daemon on port 8787.")
+                    Text(viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow).map { ProviderDisplayText.singleLine($0) } ?? "Enable EcoFlow and point it at the router daemon on port 8787.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("Expected API: http://router-ip:8787/v1/status")
@@ -720,7 +720,7 @@ private struct EcoFlowDetailView: View {
     private var subtitle: String {
         guard viewModel.settings.ecoflowEnabled else { return "Disabled" }
         guard let ecoflow = viewModel.snapshot.providerEcoFlowSnapshot else {
-            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow) ?? "Unavailable"
+            return viewModel.snapshot.providerErrorMessage(ProviderIDs.ecoflow).map { ProviderDisplayText.singleLine($0) } ?? "Unavailable"
         }
         let battery = ecoflow.status.battery.percent.map { "\($0)%" } ?? "battery unknown"
         return "\(battery) · \(ecoflow.status.battery.state.rawValue)"

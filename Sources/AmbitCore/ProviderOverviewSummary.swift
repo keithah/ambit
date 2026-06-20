@@ -36,7 +36,7 @@ public struct ProviderOverviewSummary: Equatable, Identifiable, Sendable {
             guard state.value != nil || state.errorMessage != nil else { return nil }
             let providerSnapshot = state.value
             let health = providerSnapshot?.health ?? .down
-            let errorMessage = state.errorMessage ?? providerSnapshot?.error
+            let errorMessage = (state.errorMessage ?? providerSnapshot?.error).map { ProviderDisplayText.singleLine($0) }
             return ProviderOverviewSummary(
                 providerID: providerID,
                 title: providerNames[providerID] ?? providerID,

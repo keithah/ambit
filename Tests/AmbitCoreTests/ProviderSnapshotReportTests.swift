@@ -41,13 +41,13 @@ final class ProviderSnapshotReportTests: XCTestCase {
         let lines = ProviderSnapshotReport.lines(
             providerID: "demo.provider",
             providerName: "Demo Provider",
-            snapshot: ProviderSnapshot(health: .down, error: "timeout")
+            snapshot: ProviderSnapshot(health: .down, error: "context deadline\n\nexceeded")
         )
 
         XCTAssertEqual(lines, [
             "Provider: Demo Provider (demo.provider)",
             "Health: down",
-            "Error: timeout",
+            "Error: context deadline exceeded",
             "Metrics: none"
         ])
     }

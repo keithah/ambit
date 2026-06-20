@@ -32,7 +32,7 @@ final class ProviderOverviewSummaryTests: XCTestCase {
 
     func testGenericSummariesIncludeErrorOnlyProviders() {
         let snapshot = StatusSnapshot(providers: [
-            "demo.power": SourceState<ProviderSnapshot>(errorMessage: "connection refused")
+            "demo.power": SourceState<ProviderSnapshot>(errorMessage: "connection\n\nrefused")
         ])
 
         let summaries = ProviderOverviewSummary.genericSummaries(from: snapshot)
