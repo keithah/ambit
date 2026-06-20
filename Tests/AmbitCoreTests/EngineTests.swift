@@ -167,6 +167,50 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshUsesRegisteredSpeedifyProviderInsteadOfLegacyPoller() async {
+        let provider = StubProvider(
+            id: ProviderIDs.speedify,
+            snapshot: ProviderSnapshot.speedify(
+                SpeedifyStatus(
+                    isInstalled: true,
+                    isAvailable: true,
+                    isConnected: true,
+                    state: "Connected",
+                    server: "Provider"
+                )
+            )
+        )
+        let speedifyClient = StubRouterSpeedifyClient(
+            status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Legacy")
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: speedifyClient,
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerSpeedifyStatus?.server, "Provider")
+        XCTAssertEqual(speedifyClient.statusCallCount, 0)
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",
@@ -576,6 +620,7 @@ private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unc
     }
 
     var status: SpeedifyStatus
+    private(set) var statusCallCount = 0
     private(set) var connectHosts: [String] = []
     private(set) var bondingModeRequests: [BondingModeRequest] = []
     private(set) var networkPriorityRequests: [NetworkPriorityRequest] = []
@@ -585,7 +630,8 @@ private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unc
     }
 
     func status(host: String) async throws -> SpeedifyStatus {
-        status
+        statusCallCount += 1
+        return status
     }
 
     func connect(host: String, server: String) async throws {
