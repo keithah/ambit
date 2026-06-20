@@ -16,7 +16,9 @@ public actor Engine {
     private let reachabilityProbe: ReachabilityProbeProtocol
     private let routerSpeedifyClient: any RouterSpeedifyClientProtocol
     private let routerClientFactory: RouterClientFactory
-    private let providers: [any Provider]
+    private let explicitProviders: [any Provider]
+    private let registerBuiltInProviders: Bool
+    private var providers: [any Provider]
     private let resetRouterClients: @Sendable () async -> Void
     private let starlinkStatusProvider: StarlinkStatusProvider
     private let ecoFlowClientFactory: EcoFlowClientFactory
@@ -86,9 +88,12 @@ public actor Engine {
         self.resetRouterClients = actualResetRouterClients
         self.starlinkStatusProvider = starlinkStatusProvider
         self.ecoFlowClientFactory = ecoFlowClientFactory
+        self.explicitProviders = providers
+        self.registerBuiltInProviders = registerBuiltInProviders
         if registerBuiltInProviders {
             self.providers = Self.mergedProviders(
                 builtIns: Self.builtInProviders(
+                    settings: loadedSettings,
                     routerClientFactory: actualRouterClientFactory,
                     reachabilityProbe: reachabilityProbe,
                     routerSpeedifyClient: routerSpeedifyClient,
@@ -241,6 +246,7 @@ public actor Engine {
     public func updateSettings(_ settings: AppSettings, routerPassword: String) {
         self.settings = settings
         self.routerPassword = routerPassword
+        rebuildBuiltInProvidersIfNeeded()
     }
 
     public func saveSettings(_ settings: AppSettings, routerPassword: String) async -> String? {
@@ -249,6 +255,7 @@ public actor Engine {
             try credentialStore.setPassword(routerPassword.isEmpty ? nil : routerPassword, account: settings.username)
             self.settings = settings
             self.routerPassword = routerPassword
+            rebuildBuiltInProvidersIfNeeded()
             await resetRouterClients()
             return nil
         } catch {
@@ -664,6 +671,28 @@ public actor Engine {
         providers.contains { $0.id == providerID }
     }
 
+    private func rebuildBuiltInProvidersIfNeeded() {
+        guard registerBuiltInProviders else { return }
+        providers = Self.mergedProviders(
+            builtIns: Self.builtInProviders(
+                settings: settings,
+                routerClientFactory: routerClientFactory,
+                reachabilityProbe: reachabilityProbe,
+                routerSpeedifyClient: routerSpeedifyClient,
+                starlinkStatusProvider: starlinkStatusProvider,
+                ecoFlowClientFactory: ecoFlowClientFactory
+            ),
+            explicit: explicitProviders
+        )
+        let activeProviderIDs = Set(providers.map(\.id))
+        let inactiveBuiltInIDs = Self.builtInProviderIDs.subtracting(activeProviderIDs)
+        for providerID in inactiveBuiltInIDs {
+            providerStates[providerID] = nil
+            lastRegisteredProviderPolls[providerID] = nil
+            snapshot.providers[providerID] = nil
+        }
+    }
+
     private func pollRegisteredProviders(routerHost: String?) async -> [ProviderID: SourceState<ProviderSnapshot>] {
         var states: [ProviderID: SourceState<ProviderSnapshot>] = [:]
         let context = EnvironmentContext(routerHost: routerHost, settings: settings, routerPassword: routerPassword)
@@ -750,24 +779,37 @@ public actor Engine {
     }
 
     private static func builtInProviders(
+        settings: AppSettings,
         routerClientFactory: @escaping RouterClientFactory,
         reachabilityProbe: ReachabilityProbeProtocol,
         routerSpeedifyClient: any RouterSpeedifyClientProtocol,
         starlinkStatusProvider: @escaping StarlinkStatusProvider,
         ecoFlowClientFactory: @escaping EcoFlowClientFactory
     ) -> [any Provider] {
-        [
+        var providers: [any Provider] = [
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
             SpeedifyProvider(client: routerSpeedifyClient),
-            StarlinkProvider(statusProvider: starlinkStatusProvider),
-            EcoFlowProvider(clientFactory: ecoFlowClientFactory)
+            StarlinkProvider(statusProvider: starlinkStatusProvider)
         ]
+        if settings.ecoflowEnabled {
+            providers.append(EcoFlowProvider(clientFactory: ecoFlowClientFactory))
+        }
+        return providers
     }
 
     private static func mergedProviders(builtIns: [any Provider], explicit: [any Provider]) -> [any Provider] {
         let explicitIDs = Set(explicit.map(\.id))
         return builtIns.filter { !explicitIDs.contains($0.id) } + explicit
     }
+
+    private static let builtInProviderIDs: Set<ProviderID> = [
+        ProviderIDs.router,
+        ProviderIDs.vpn,
+        ProviderIDs.reachability,
+        ProviderIDs.speedify,
+        ProviderIDs.starlink,
+        ProviderIDs.ecoflow
+    ]
 }

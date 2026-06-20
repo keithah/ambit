@@ -381,6 +381,52 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testBuiltInEcoFlowProviderFollowsSettingsToggle() async {
+        let factoryCounter = CallCounter()
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local", ecoflowEnabled: false)),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: AppSettings(localHost: "router.local", ecoflowEnabled: false),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") },
+            ecoFlowClientFactory: { _ in
+                factoryCounter.increment()
+                return StubEcoFlowClient()
+            }
+        )
+
+        await engine.refresh()
+
+        var snapshot = await engine.currentSnapshot()
+        XCTAssertNil(snapshot.providers[ProviderIDs.ecoflow])
+        XCTAssertEqual(factoryCounter.count, 0)
+
+        await engine.updateSettings(AppSettings(localHost: "router.local", ecoflowEnabled: true), routerPassword: "secret")
+        await engine.refresh()
+
+        snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerEcoFlowSnapshot?.status.battery.percent, 75)
+        XCTAssertEqual(factoryCounter.count, 1)
+
+        await engine.updateSettings(AppSettings(localHost: "router.local", ecoflowEnabled: false), routerPassword: "secret")
+        await engine.refresh()
+
+        snapshot = await engine.currentSnapshot()
+        XCTAssertNil(snapshot.providers[ProviderIDs.ecoflow])
+        XCTAssertEqual(factoryCounter.count, 1)
+    }
+
     func testRefreshUsesRegisteredRouterProviderInsteadOfLegacyRouterPoll() async {
         let provider = StubProvider(
             id: ProviderIDs.router,

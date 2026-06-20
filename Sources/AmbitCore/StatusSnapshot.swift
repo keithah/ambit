@@ -97,6 +97,10 @@ public struct StatusSnapshot: Equatable, Sendable {
         detail: (DetailValue) -> ProviderDetail,
         snapshot: (DetailValue) -> ProviderSnapshot
     ) {
+        guard !state.isEmpty else {
+            providers[providerID] = nil
+            return
+        }
         providers[providerID] = SourceState(
             providerValue: state.value,
             isLoading: state.isLoading,
