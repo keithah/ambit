@@ -1105,6 +1105,25 @@ final class EngineTests: XCTestCase {
         ])
     }
 
+    func testCommandPaletteItemMatchesProviderCommandAndParameters() {
+        let item = CommandPaletteItem(
+            providerID: ProviderIDs.iperf3,
+            providerName: "iperf3",
+            command: CommandDescriptor(
+                id: ProviderCommandIDs.iperf3Run,
+                label: "Run iperf3",
+                parameters: [CommandParameter(id: "host", label: "Host", kind: .text)]
+            )
+        )
+
+        XCTAssertTrue(item.matches("iperf"))
+        XCTAssertTrue(item.matches("run"))
+        XCTAssertTrue(item.matches("host"))
+        XCTAssertTrue(item.matches("IPERF3.RUN"))
+        XCTAssertTrue(item.matches(""))
+        XCTAssertFalse(item.matches("ecoflow"))
+    }
+
     func testExplicitProviderCommandsReplaceBuiltInProviderCommands() async {
         let provider = StubProvider(
             id: ProviderIDs.speedify,

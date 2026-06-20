@@ -197,6 +197,20 @@ public struct CommandPaletteItem: Equatable, Identifiable, Sendable {
         self.providerName = providerName
         self.command = command
     }
+
+    public func matches(_ query: String) -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedQuery.isEmpty else { return true }
+        let searchableText = ([
+            providerID,
+            providerName,
+            command.id,
+            command.label
+        ] + command.parameters.flatMap { [$0.id, $0.label] })
+            .joined(separator: " ")
+            .lowercased()
+        return searchableText.contains(normalizedQuery)
+    }
 }
 
 public struct CommandParameter: Equatable, Identifiable, Sendable {

@@ -996,10 +996,15 @@ private struct CommandPaletteView: View {
     @Binding var route: MenuRoute
     @State private var selectedItemID: CommandPaletteItem.ID?
     @State private var parameterValues: [String: String] = [:]
+    @State private var query = ""
 
     private var selectedItem: CommandPaletteItem? {
-        guard let selectedItemID else { return viewModel.commandPalette.first }
-        return viewModel.commandPalette.first { $0.id == selectedItemID } ?? viewModel.commandPalette.first
+        guard let selectedItemID else { return filteredItems.first }
+        return filteredItems.first { $0.id == selectedItemID } ?? filteredItems.first
+    }
+
+    private var filteredItems: [CommandPaletteItem] {
+        viewModel.commandPalette.filter { $0.matches(query) }
     }
 
     var body: some View {
@@ -1020,29 +1025,47 @@ private struct CommandPaletteView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search commands", text: $query)
+                        .textFieldStyle(.plain)
+                }
+                .padding(9)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
                 HStack(alignment: .top, spacing: 10) {
-                    VStack(spacing: 6) {
-                        ForEach(viewModel.commandPalette) { item in
-                            CommandPaletteRow(
-                                item: item,
-                                isSelected: item.id == selectedItem?.id,
-                                isExecuting: item.id == viewModel.executingCommandID
-                            ) {
-                                selectedItemID = item.id
-                                seedParameterValues(for: item)
+                    if filteredItems.isEmpty {
+                        Text("No commands match that search.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    } else {
+                        VStack(spacing: 6) {
+                            ForEach(filteredItems) { item in
+                                CommandPaletteRow(
+                                    item: item,
+                                    isSelected: item.id == selectedItem?.id,
+                                    isExecuting: item.id == viewModel.executingCommandID
+                                ) {
+                                    selectedItemID = item.id
+                                    seedParameterValues(for: item)
+                                }
                             }
                         }
-                    }
-                    .frame(width: 190)
+                        .frame(width: 190)
 
-                    if let selectedItem {
-                        CommandParameterPanel(
-                            item: selectedItem,
-                            values: $parameterValues,
-                            isExecuting: selectedItem.id == viewModel.executingCommandID,
-                            canRun: canRun(selectedItem)
-                        ) {
-                            await viewModel.executeCommand(selectedItem, arguments: arguments(for: selectedItem))
+                        if let selectedItem {
+                            CommandParameterPanel(
+                                item: selectedItem,
+                                values: $parameterValues,
+                                isExecuting: selectedItem.id == viewModel.executingCommandID,
+                                canRun: canRun(selectedItem)
+                            ) {
+                                await viewModel.executeCommand(selectedItem, arguments: arguments(for: selectedItem))
+                            }
                         }
                     }
                 }
@@ -1083,10 +1106,24 @@ private struct CommandPaletteView: View {
                 seedParameterValues(for: items[0])
             }
         }
+        .onChange(of: query) { _ in
+            guard let first = filteredItems.first else {
+                selectedItemID = nil
+                parameterValues = [:]
+                return
+            }
+            if selectedItemID == nil || !filteredItems.contains(where: { $0.id == selectedItemID }) {
+                selectedItemID = first.id
+                seedParameterValues(for: first)
+            }
+        }
     }
 
     private var subtitle: String {
         if viewModel.commandPalette.isEmpty { return "No provider actions" }
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "\(filteredItems.count) matching actions"
+        }
         let providerCount = Set(viewModel.commandPalette.map(\.providerID)).count
         return "\(viewModel.commandPalette.count) actions · \(providerCount) providers"
     }
