@@ -33,7 +33,6 @@ final class StatusViewModel: ObservableObject {
             reachabilityProbe: reachabilityProbe,
             settings: settings,
             routerPassword: routerPassword,
-            registerBuiltInProviders: true,
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
     }

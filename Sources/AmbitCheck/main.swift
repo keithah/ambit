@@ -10,7 +10,8 @@ struct AmbitCheck {
         let shouldDumpSpeedifyNetworks = args.contains("--dump-speedify-networks")
         let shouldProbeStarlink = args.contains("--probe-starlink")
         let shouldPrintUsage = args.contains("--usage")
-        let positionalArgs = args.dropFirst().filter { !$0.hasPrefix("--") }
+        let iperf3Host = value(after: "--run-iperf3", in: args)
+        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3"])
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
 
@@ -27,7 +28,6 @@ struct AmbitCheck {
         let engine = Engine(
             settings: settings,
             routerPassword: password,
-            registerBuiltInProviders: true,
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
         await engine.refresh()
@@ -37,7 +37,7 @@ struct AmbitCheck {
             if shouldPrintUsage {
                 await printUsage(engine: engine)
             }
-            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
             Foundation.exit(2)
         }
         guard let endpoint = URL.routerRPC(host: selectedHost) else {
@@ -90,6 +90,10 @@ struct AmbitCheck {
                 await probeStarlink()
             }
 
+            if let iperf3Host {
+                try await runIperf3(host: iperf3Host, engine: engine)
+            }
+
             if shouldPrintUsage {
                 await printUsage(engine: engine)
             }
@@ -100,6 +104,56 @@ struct AmbitCheck {
             fputs("Router check failed: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)
         }
+    }
+
+    private static func value(after flag: String, in args: [String]) -> String? {
+        guard let index = args.firstIndex(of: flag) else { return nil }
+        let valueIndex = args.index(after: index)
+        guard valueIndex < args.endIndex else { return nil }
+        let value = args[valueIndex]
+        return value.hasPrefix("--") ? nil : value
+    }
+
+    private static func positionalArguments(from args: [String], valueFlags: Set<String>) -> [String] {
+        var positional: [String] = []
+        var shouldSkipNext = false
+        for arg in args.dropFirst() {
+            if shouldSkipNext {
+                shouldSkipNext = false
+                continue
+            }
+            if valueFlags.contains(arg) {
+                shouldSkipNext = true
+                continue
+            }
+            if arg.hasPrefix("--") {
+                continue
+            }
+            positional.append(arg)
+        }
+        return positional
+    }
+
+    private static func runIperf3(host: String, engine: Engine) async throws {
+        try await engine.dispatch(
+            provider: ProviderIDs.iperf3,
+            commandID: ProviderCommandIDs.iperf3Run,
+            arguments: CommandArguments(values: ["host": .string(host)])
+        )
+        let snapshot = await engine.currentSnapshot()
+        guard let iperf3 = snapshot.providerIperf3Snapshot else {
+            print("iperf3: completed but no measurement snapshot was published")
+            return
+        }
+        print("iperf3 host: \(iperf3.host)")
+        print("iperf3 download: \(formatBitsPerSecond(iperf3.downloadBps))")
+        print("iperf3 upload: \(formatBitsPerSecond(iperf3.uploadBps))")
+    }
+
+    private static func formatBitsPerSecond(_ value: Int?) -> String {
+        guard let value else { return "not reported" }
+        let mbps = Double(value) / 1_000_000
+        return String(format: "%.2f Mbps", mbps)
     }
 
     private static func printUsage(engine: Engine) async {
