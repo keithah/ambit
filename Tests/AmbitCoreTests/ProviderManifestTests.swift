@@ -120,4 +120,20 @@ final class ProviderManifestTests: XCTestCase {
         XCTAssertEqual(package.manifest.id, "demo.package")
         XCTAssertEqual(package.manifest.displayName, "Packaged Demo")
     }
+
+    func testExampleManifestPackageStaysValid() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let repoRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let exampleDirectory = repoRoot
+            .appendingPathComponent("Examples/provider-manifests/ping-demo", isDirectory: true)
+
+        let package = try ProviderManifestPackage.load(from: exampleDirectory)
+
+        XCTAssertEqual(package.manifest.id, "demo.ping")
+        XCTAssertEqual(package.manifest.metrics.map(\.id), ["latency_ms", "packet_loss"])
+        XCTAssertEqual(package.manifest.commandDescriptors.map(\.id), ["demo.ping.run"])
+    }
 }

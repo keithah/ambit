@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "demo.ping",
+  "displayName": "Demo Ping",
+  "pollInterval": 30,
+  "endpoint": {
+    "method": "GET",
+    "url": "https://example.test/status"
+  },
+  "metrics": [
+    {
+      "id": "latency_ms",
+      "label": "Latency",
+      "value": {
+        "type": "latency",
+        "path": "latency.avg"
+      }
+    },
+    {
+      "id": "packet_loss",
+      "label": "Packet Loss",
+      "value": {
+        "type": "percent",
+        "path": "loss.percent"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "id": "demo.ping.run",
+      "label": "Run Ping",
+      "requiresConfirmation": false,
+      "parameters": [
+        {
+          "id": "host",
+          "label": "Host",
+          "kind": {
+            "type": "text"
+          }
+        }
+      ]
+    }
+  ]
+}
