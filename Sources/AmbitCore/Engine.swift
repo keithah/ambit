@@ -144,7 +144,7 @@ public actor Engine {
 
         async let endpointResult = resolveEndpoint()
         async let reachabilityResult = loadLegacyReachabilityStatusIfNeeded()
-        async let starlinkResult = loadStarlinkStatus()
+        async let starlinkResult = loadLegacyStarlinkStatusIfNeeded()
 
         let endpoint = await endpointResult
         selectedEndpoint = endpoint.value
@@ -164,7 +164,9 @@ public actor Engine {
                 if let speedify = await speedifyResult {
                     snapshot.speedify = speedify
                 }
-                snapshot.starlink = await starlinkResult
+                if let starlink = await starlinkResult {
+                    snapshot.starlink = starlink
+                }
                 snapshot.ecoflow = await ecoflowResult
                 providerStates = await pollRegisteredProviders(routerHost: endpoint.value?.host)
                 snapshot.lastUpdated = Date()
@@ -197,7 +199,9 @@ public actor Engine {
         if let reachability = await reachabilityResult {
             snapshot.reachability = reachability
         }
-        snapshot.starlink = await starlinkResult
+        if let starlink = await starlinkResult {
+            snapshot.starlink = starlink
+        }
         snapshot.ecoflow = await ecoflowResult
         providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
         snapshot.lastUpdated = Date()
@@ -536,6 +540,11 @@ public actor Engine {
         let state = SourceState(value: snapshot.starlink.value, errorMessage: status.state)
         await recordUsage(providerID: ProviderIDs.starlink, operation: .poll, started: started, error: status.state)
         return state
+    }
+
+    private func loadLegacyStarlinkStatusIfNeeded() async -> SourceState<StarlinkStatus>? {
+        guard !hasRegisteredProvider(ProviderIDs.starlink) else { return nil }
+        return await loadStarlinkStatus()
     }
 
     private func loadEcoFlowStatus(routerHost: String?) async -> SourceState<EcoFlowSnapshot> {
