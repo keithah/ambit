@@ -6,6 +6,8 @@ final class StatusSnapshotProviderDetailTests: XCTestCase {
     func testTypedProviderDetailsReadFromProviderMap() {
         let speedify = SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected", server: "Seattle")
         let starlink = StarlinkStatus(isReachable: true, state: "Online", popPingLatencyMs: 34)
+        let ping = PingSnapshot(host: "1.1.1.1", averageLatencyMs: 12.3)
+        let iperf3 = Iperf3Snapshot(host: "iperf.example", downloadBps: 10_000_000, uploadBps: 8_000_000)
         let ecoflow = EcoFlowSnapshot(
             status: EcoFlowDeviceStatus(
                 battery: EcoFlowBatteryStatus(percent: 82, state: .discharging),
@@ -21,12 +23,16 @@ final class StatusSnapshotProviderDetailTests: XCTestCase {
         let snapshot = StatusSnapshot(providers: [
             ProviderIDs.speedify: SourceState(value: ProviderSnapshot.speedify(speedify)),
             ProviderIDs.starlink: SourceState(value: ProviderSnapshot.starlink(starlink)),
-            ProviderIDs.ecoflow: SourceState(value: ProviderSnapshot.ecoFlow(ecoflow))
+            ProviderIDs.ecoflow: SourceState(value: ProviderSnapshot.ecoFlow(ecoflow)),
+            ProviderIDs.ping: SourceState(value: ProviderSnapshot.ping(ping)),
+            ProviderIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(iperf3))
         ])
 
         XCTAssertEqual(snapshot.providerSpeedifyStatus?.server, "Seattle")
         XCTAssertEqual(snapshot.providerStarlinkStatus?.popPingLatencyMs, 34)
         XCTAssertEqual(snapshot.providerEcoFlowSnapshot?.status.battery.percent, 82)
+        XCTAssertEqual(snapshot.providerPingSnapshot?.averageLatencyMs, 12.3)
+        XCTAssertEqual(snapshot.providerIperf3Snapshot?.downloadBps, 10_000_000)
     }
 
     func testProviderErrorMessageFallsBackToLegacySourceState() {

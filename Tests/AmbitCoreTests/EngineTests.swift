@@ -468,6 +468,52 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(commands.map(\.id), [ProviderCommandIDs.iperf3Run])
     }
 
+    func testDispatchRunsBuiltInIperf3ProviderAndPublishesMetrics() async throws {
+        let iperfOutput = """
+        {
+          "end": {
+            "sum_sent": { "bits_per_second": 12000000 },
+            "sum_received": { "bits_per_second": 11000000 }
+          }
+        }
+        """
+        let processRunner = StubProcessRunner(results: [
+            "-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 127, stdout: "", stderr: "not run"),
+            "-J -t 5 -c iperf.example": ProcessResult(exitCode: 0, stdout: iperfOutput, stderr: "")
+        ])
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") },
+            activeMeasurementProcessRunner: processRunner
+        )
+        await engine.refresh()
+
+        try await engine.dispatch(
+            provider: ProviderIDs.iperf3,
+            commandID: ProviderCommandIDs.iperf3Run,
+            arguments: CommandArguments(values: ["host": .string("iperf.example")])
+        )
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.metricValue("download_bps"), .throughput(bitsPerSecond: 11_000_000))
+        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.metricValue("upload_bps"), .throughput(bitsPerSecond: 12_000_000))
+        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.errorMessage, nil)
+    }
+
     func testRefreshUsesRegisteredRouterProviderInsteadOfLegacyRouterPoll() async {
         let provider = StubProvider(
             id: ProviderIDs.router,

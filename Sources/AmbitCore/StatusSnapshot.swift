@@ -82,6 +82,16 @@ public struct StatusSnapshot: Equatable, Sendable {
         set { setProviderState(newValue, providerID: ProviderIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow) }
     }
 
+    public var ping: SourceState<PingSnapshot> {
+        get { providerState(ProviderIDs.ping) { if case .ping(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.ping, detail: ProviderDetail.ping, snapshot: ProviderSnapshot.ping) }
+    }
+
+    public var iperf3: SourceState<Iperf3Snapshot> {
+        get { providerState(ProviderIDs.iperf3) { if case .iperf3(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, providerID: ProviderIDs.iperf3, detail: ProviderDetail.iperf3, snapshot: ProviderSnapshot.iperf3) }
+    }
+
     private func providerState<DetailValue>(
         _ providerID: ProviderID,
         extract: (ProviderDetail) -> DetailValue?
@@ -144,6 +154,14 @@ public extension StatusSnapshot {
 
     var providerEcoFlowSnapshot: EcoFlowSnapshot? {
         ecoflow.value
+    }
+
+    var providerPingSnapshot: PingSnapshot? {
+        ping.value
+    }
+
+    var providerIperf3Snapshot: Iperf3Snapshot? {
+        iperf3.value
     }
 
     func providerErrorMessage(_ providerID: ProviderID) -> String? {
