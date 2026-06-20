@@ -251,7 +251,11 @@ public struct SpeedifyProvider: Provider {
     }
 }
 
-public struct EcoFlowProvider: Provider {
+public protocol EcoFlowOutputControllingProvider: Provider {
+    func setOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState, context: EnvironmentContext) async throws -> EcoFlowControlResponse
+}
+
+public struct EcoFlowProvider: EcoFlowOutputControllingProvider {
     public let id: ProviderID = ProviderIDs.ecoflow
     public let displayName = "EcoFlow"
     public let pollInterval: TimeInterval
@@ -298,16 +302,19 @@ public struct EcoFlowProvider: Provider {
         guard commandID == ProviderCommandIDs.ecoFlowSetOutput else {
             throw JSONRPCClientError.commandFailed("Unsupported EcoFlow command \(commandID).")
         }
+        let target = try Self.requireOutputTarget(in: arguments)
+        let state = try Self.requireOutputState(in: arguments)
+        _ = try await setOutput(target, state: state, context: context)
+    }
+
+    public func setOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState, context: EnvironmentContext) async throws -> EcoFlowControlResponse {
         guard context.settings.ecoflowEnabled else {
             throw JSONRPCClientError.commandFailed("EcoFlow is disabled.")
         }
         guard let baseURL = Self.baseURL(context: context) else {
             throw JSONRPCClientError.commandFailed(Self.unresolvedEndpointMessage(context: context))
         }
-
-        let target = try Self.requireOutputTarget(in: arguments)
-        let state = try Self.requireOutputState(in: arguments)
-        _ = try await clientFactory(baseURL).setOutput(target, state: state)
+        return try await clientFactory(baseURL).setOutput(target, state: state)
     }
 
     private static func baseURL(context: EnvironmentContext) -> URL? {

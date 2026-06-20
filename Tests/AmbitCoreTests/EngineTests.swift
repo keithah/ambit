@@ -967,6 +967,36 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(ecoFlowClient.outputRequests, [.init(target: .ac, state: .off)])
     }
 
+    func testSetEcoFlowOutputReturnsProviderControlResponse() async {
+        let ecoFlowClient = StubEcoFlowClient()
+        let settings = AppSettings(localHost: "router.local", ecoflowEnabled: true)
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: settings),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: settings,
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") },
+            ecoFlowClientFactory: { _ in ecoFlowClient }
+        )
+        await engine.refresh()
+
+        let response = await engine.setEcoFlowOutput(.ac, state: .on)
+
+        XCTAssertEqual(ecoFlowClient.outputRequests, [.init(target: .ac, state: .on)])
+        XCTAssertEqual(response?.result, .applied)
+        XCTAssertEqual(response?.target, .ac)
+    }
+
     func testExposesProviderCommandMetadata() async {
         let processRunner = StubProcessRunner(results: [:])
         let engine = Engine(

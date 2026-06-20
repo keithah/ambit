@@ -287,12 +287,32 @@ public actor Engine {
     }
 
     public func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
-        try? await dispatch(
-            provider: ProviderIDs.ecoflow,
-            commandID: ProviderCommandIDs.ecoFlowSetOutput,
-            arguments: CommandArguments(values: ["target": .string(target.rawValue), "state": .string(state.rawValue)])
-        )
-        return nil
+        guard let provider = providers.first(where: { $0.id == ProviderIDs.ecoflow }) else {
+            return nil
+        }
+        guard let outputProvider = provider as? any EcoFlowOutputControllingProvider else {
+            try? await dispatch(
+                provider: ProviderIDs.ecoflow,
+                commandID: ProviderCommandIDs.ecoFlowSetOutput,
+                arguments: CommandArguments(values: ["target": .string(target.rawValue), "state": .string(state.rawValue)])
+            )
+            return nil
+        }
+
+        let started = Date()
+        let context = EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
+        do {
+            let response = try await outputProvider.setOutput(target, state: state, context: context)
+            let providerSnapshot = await provider.poll(context: context)
+            providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.id] = Date()
+            await recordUsage(providerID: provider.id, operation: .command, started: started)
+            publish()
+            return response
+        } catch {
+            await recordUsage(providerID: provider.id, operation: .command, started: started, error: error.localizedDescription)
+            return nil
+        }
     }
 
     private func refreshSpeedifyOnly(markLoading: Bool) async {
