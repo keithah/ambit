@@ -143,7 +143,7 @@ public actor Engine {
         publish()
 
         async let endpointResult = resolveEndpoint()
-        async let reachabilityResult = loadReachabilityStatus()
+        async let reachabilityResult = loadLegacyReachabilityStatusIfNeeded()
         async let starlinkResult = loadStarlinkStatus()
 
         let endpoint = await endpointResult
@@ -158,7 +158,9 @@ public actor Engine {
                 await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: Date(), error: message)
                 snapshot.router = SourceState(value: snapshot.router.value, errorMessage: message)
                 snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: message)
-                snapshot.reachability = await reachabilityResult
+                if let reachability = await reachabilityResult {
+                    snapshot.reachability = reachability
+                }
                 if let speedify = await speedifyResult {
                     snapshot.speedify = speedify
                 }
@@ -192,7 +194,9 @@ public actor Engine {
             }
         }
 
-        snapshot.reachability = await reachabilityResult
+        if let reachability = await reachabilityResult {
+            snapshot.reachability = reachability
+        }
         snapshot.starlink = await starlinkResult
         snapshot.ecoflow = await ecoflowResult
         providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
@@ -494,6 +498,11 @@ public actor Engine {
         let status = await reachabilityProbe.probe()
         await recordUsage(providerID: ProviderIDs.reachability, operation: .poll, started: started)
         return SourceState(value: status)
+    }
+
+    private func loadLegacyReachabilityStatusIfNeeded() async -> SourceState<ReachabilityStatus>? {
+        guard !hasRegisteredProvider(ProviderIDs.reachability) else { return nil }
+        return await loadReachabilityStatus()
     }
 
     private func loadSpeedifyStatus(host: String) async -> SourceState<SpeedifyStatus> {

@@ -211,6 +211,42 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshUsesRegisteredReachabilityProviderInsteadOfLegacyProbe() async {
+        let provider = StubProvider(
+            id: ProviderIDs.reachability,
+            snapshot: ProviderSnapshot.reachability(
+                ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.123))
+            )
+        )
+        let reachabilityProbe = StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: false, state: .offline))
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: reachabilityProbe,
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Legacy")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerReachabilityStatus?.state, .online(latency: 0.123))
+        XCTAssertEqual(reachabilityProbe.callCount, 0)
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",
@@ -572,11 +608,17 @@ private final class InMemoryCredentialStore: CredentialStore, @unchecked Sendabl
     }
 }
 
-private struct StubReachabilityProbe: ReachabilityProbeProtocol {
+private final class StubReachabilityProbe: ReachabilityProbeProtocol, @unchecked Sendable {
     var status: ReachabilityStatus
+    private(set) var callCount = 0
+
+    init(status: ReachabilityStatus) {
+        self.status = status
+    }
 
     func probe() async -> ReachabilityStatus {
-        status
+        callCount += 1
+        return status
     }
 }
 
