@@ -9,6 +9,7 @@ struct AmbitCheck {
         let shouldProbeSpeedify = args.contains("--probe-speedify")
         let shouldDumpSpeedifyNetworks = args.contains("--dump-speedify-networks")
         let shouldProbeStarlink = args.contains("--probe-starlink")
+        let shouldPrintUsage = args.contains("--usage")
         let positionalArgs = args.dropFirst().filter { !$0.hasPrefix("--") }
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
@@ -28,10 +29,16 @@ struct AmbitCheck {
         let snapshot = await engine.currentSnapshot()
         let selectedHost = await engine.currentSelectedEndpoint()?.host ?? host
         guard let selectedHost else {
-            fputs("Usage: ambit-check [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            if shouldPrintUsage {
+                await printUsage(engine: engine)
+            }
+            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
             Foundation.exit(2)
         }
         guard let endpoint = URL.routerRPC(host: selectedHost) else {
+            if shouldPrintUsage {
+                await printUsage(engine: engine)
+            }
             fputs("Invalid host: \(selectedHost)\n", stderr)
             Foundation.exit(2)
         }
@@ -77,10 +84,22 @@ struct AmbitCheck {
             if shouldProbeStarlink {
                 await probeStarlink()
             }
+
+            if shouldPrintUsage {
+                await printUsage(engine: engine)
+            }
         } catch {
+            if shouldPrintUsage {
+                await printUsage(engine: engine)
+            }
             fputs("Router check failed: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)
         }
+    }
+
+    private static func printUsage(engine: Engine) async {
+        let snapshots = await engine.usageSnapshots()
+        print(ModuleUsageReportFormatter.format(Array(snapshots.values)))
     }
 
     private static func probeVPNMethods(client: GLiNetClient) async {
