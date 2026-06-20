@@ -1,10 +1,10 @@
 import AppKit
 import Combine
-import GLiNetCore
+import AmbitCore
 import SwiftUI
 
 @main
-struct GLiNetMenuBarApp: App {
+struct AmbitMenuBarApp: App {
     @StateObject private var appModel = MenuBarAppModel()
 
     var body: some Scene {

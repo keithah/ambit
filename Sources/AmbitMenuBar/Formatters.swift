@@ -1,5 +1,5 @@
 import Foundation
-import GLiNetCore
+import AmbitCore
 
 enum DisplayFormatters {
     static func latency(_ seconds: TimeInterval) -> String {

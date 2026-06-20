@@ -1,5 +1,5 @@
 import AppKit
-import GLiNetCore
+import AmbitCore
 import SwiftUI
 
 struct MenuContent: View {

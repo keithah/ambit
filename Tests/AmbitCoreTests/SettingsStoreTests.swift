@@ -1,9 +1,9 @@
 import XCTest
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class SettingsStoreTests: XCTestCase {
     func testSettingsPersistNonSecretFieldsOnly() throws {
-        let defaults = UserDefaults(suiteName: "GLiNetCoreTests.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: "AmbitCoreTests.\(UUID().uuidString)")!
         let store = UserDefaultsSettingsStore(defaults: defaults)
         let settings = AppSettings(
             localHost: "192.168.8.1",

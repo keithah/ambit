@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class RouterSpeedifyClientTests: XCTestCase {
     func testStatusRequestsRouterSpeedifyStateAndParsesReports() async throws {

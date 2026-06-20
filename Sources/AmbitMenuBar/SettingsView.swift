@@ -1,4 +1,4 @@
-import GLiNetCore
+import AmbitCore
 import SwiftUI
 
 struct SettingsView: View {

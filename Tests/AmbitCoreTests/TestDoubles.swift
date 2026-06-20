@@ -1,5 +1,5 @@
 import Foundation
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class MockRouterTransport: RouterTransport, @unchecked Sendable {
     enum Response: Sendable {

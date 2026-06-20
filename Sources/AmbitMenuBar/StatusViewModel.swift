@@ -1,5 +1,5 @@
 import Foundation
-import GLiNetCore
+import AmbitCore
 import SwiftUI
 
 @MainActor

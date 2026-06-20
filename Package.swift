@@ -2,25 +2,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "GLiNetTravel",
+    name: "Ambit",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .library(name: "GLiNetCore", targets: ["GLiNetCore"]),
-        .executable(name: "GLiNetMenuBar", targets: ["GLiNetMenuBar"]),
-        .executable(name: "glinet-router-check", targets: ["RouterCheck"])
+        .library(name: "AmbitCore", targets: ["AmbitCore"]),
+        .executable(name: "AmbitMenuBar", targets: ["AmbitMenuBar"]),
+        .executable(name: "ambit-check", targets: ["AmbitCheck"])
     ],
     targets: [
-        .target(name: "GLiNetCore"),
+        .target(name: "AmbitCore"),
         .executableTarget(
-            name: "GLiNetMenuBar",
-            dependencies: ["GLiNetCore"],
+            name: "AmbitMenuBar",
+            dependencies: ["AmbitCore"],
             resources: [
                 .process("Resources")
             ]
         ),
-        .executableTarget(name: "RouterCheck", dependencies: ["GLiNetCore"]),
-        .testTarget(name: "GLiNetCoreTests", dependencies: ["GLiNetCore"])
+        .executableTarget(name: "AmbitCheck", dependencies: ["AmbitCore"]),
+        .testTarget(name: "AmbitCoreTests", dependencies: ["AmbitCore"])
     ]
 )

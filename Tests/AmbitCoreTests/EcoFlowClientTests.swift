@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class EcoFlowClientTests: XCTestCase {
     func testDecodesStatusAndOutputsUsingDocumentedRiver3PlusShape() async throws {

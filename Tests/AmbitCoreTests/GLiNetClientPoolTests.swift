@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class GLiNetClientPoolTests: XCTestCase {
     func testReturnsSameClientForSameEndpointAndUsername() async throws {

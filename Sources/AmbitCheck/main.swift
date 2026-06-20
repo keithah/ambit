@@ -1,8 +1,8 @@
 import Foundation
-import GLiNetCore
+import AmbitCore
 
 @main
-struct RouterCheck {
+struct AmbitCheck {
     static func main() async {
         let args = CommandLine.arguments
         let shouldProbeVPNMethods = args.contains("--probe-vpn-methods")
@@ -20,7 +20,7 @@ struct RouterCheck {
             do {
                 host = try await EndpointSelector().select(settings: AppSettings(username: username, endpointMode: .auto)).host
             } catch {
-                fputs("Usage: glinet-router-check [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(error.localizedDescription)\n", stderr)
+                fputs("Usage: ambit-check [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(error.localizedDescription)\n", stderr)
                 Foundation.exit(2)
             }
         }

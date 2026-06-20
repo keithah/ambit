@@ -1,5 +1,5 @@
 import XCTest
-@testable import GLiNetCore
+@testable import AmbitCore
 
 final class RouterStatusParsingTests: XCTestCase {
     func testParsesLiveSystemStatusShape() {
