@@ -1,6 +1,7 @@
 import AmbitCore
 import Foundation
 import SwiftUI
+import UserNotifications
 
 @MainActor
 final class StatusViewModel: ObservableObject {
@@ -10,6 +11,8 @@ final class StatusViewModel: ObservableObject {
     @Published var selectedEndpoint: EndpointSelection?
 
     private let engine: Engine
+    private let alertEngine = AlertEngine()
+    private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
 
     init(
@@ -22,6 +25,7 @@ final class StatusViewModel: ObservableObject {
         let routerPassword = (try? credentialStore.password(account: settings.username)) ?? RouterDefaults.routerPassword
         self.settings = settings
         self.routerPassword = routerPassword
+        self.alertNotifier = AlertNotifier()
         self.engine = Engine(
             settingsStore: settingsStore,
             credentialStore: credentialStore,
@@ -43,6 +47,8 @@ final class StatusViewModel: ObservableObject {
             for await snapshot in self.engine.snapshots {
                 self.snapshot = snapshot
                 self.selectedEndpoint = await self.engine.currentSelectedEndpoint()
+                let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
+                await self.alertNotifier.deliver(events)
             }
         }
         Task { await engine.start() }
@@ -89,5 +95,23 @@ final class StatusViewModel: ObservableObject {
 
     func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
         await engine.setEcoFlowOutput(target, state: state)
+    }
+}
+
+private struct AlertNotifier: Sendable {
+    func deliver(_ events: [AlertEvent]) async {
+        guard !events.isEmpty else { return }
+        let center = UNUserNotificationCenter.current()
+        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        guard granted else { return }
+
+        for event in events {
+            let content = UNMutableNotificationContent()
+            content.title = event.title
+            content.body = event.message
+            content.sound = event.severity == .critical ? .defaultCritical : .default
+            let request = UNNotificationRequest(identifier: event.id, content: content, trigger: nil)
+            try? await center.add(request)
+        }
     }
 }
