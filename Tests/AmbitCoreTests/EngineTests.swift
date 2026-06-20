@@ -817,6 +817,33 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(commands, provider.commands)
     }
 
+    func testExposesRegisteredCommandsForBuiltInProviderID() async {
+        let provider = StubProvider(
+            id: ProviderIDs.speedify,
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [
+                CommandDescriptor(id: ProviderCommandIDs.speedifyToggle, label: "Custom Toggle"),
+                CommandDescriptor(id: "speedify.custom", label: "Custom Speedify Command")
+            ]
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            providers: [provider]
+        )
+
+        let commands = await engine.commands(provider: ProviderIDs.speedify)
+
+        XCTAssertEqual(commands.map(\.id), [
+            ProviderCommandIDs.speedifyToggle,
+            ProviderCommandIDs.speedifySetBondingMode,
+            ProviderCommandIDs.speedifySetNetworkPriority,
+            "speedify.custom"
+        ])
+    }
+
     func testDispatchRejectsUnsupportedProviderCommand() async {
         let engine = Engine(
             settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),

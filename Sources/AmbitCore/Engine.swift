@@ -147,10 +147,14 @@ public actor Engine {
 
     public func commands(provider providerID: ProviderID) -> [CommandDescriptor] {
         let builtInCommands = ProviderCommandCatalog.commands(for: providerID)
-        if !builtInCommands.isEmpty {
-            return builtInCommands
+        let registeredCommands = providers.first { $0.id == providerID }?.commands ?? []
+        var seenCommandIDs = Set(builtInCommands.map(\.id))
+        var commands = builtInCommands
+        for command in registeredCommands where !seenCommandIDs.contains(command.id) {
+            commands.append(command)
+            seenCommandIDs.insert(command.id)
         }
-        return providers.first { $0.id == providerID }?.commands ?? []
+        return commands
     }
 
     public func refresh() async {
