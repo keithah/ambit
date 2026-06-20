@@ -1,5 +1,83 @@
 import Foundation
 
+public struct GLiNetRouterProvider: Provider {
+    public let id: ProviderID = ProviderIDs.router
+    public let displayName = "Router"
+    public let pollInterval: TimeInterval
+
+    private let clientFactory: RouterClientFactory
+    private let passwordProvider: @Sendable () throws -> String?
+
+    public init(
+        pollInterval: TimeInterval = 5,
+        clientFactory: RouterClientFactory? = nil,
+        passwordProvider: @escaping @Sendable () throws -> String? = { nil }
+    ) {
+        self.pollInterval = pollInterval
+        self.clientFactory = Self.makeClientFactory(clientFactory)
+        self.passwordProvider = passwordProvider
+    }
+
+    public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
+        do {
+            let client = try await GLiNetProviderClient.client(
+                context: context,
+                clientFactory: clientFactory,
+                passwordProvider: passwordProvider
+            )
+            return ProviderSnapshot.router(try await client.routerStatus())
+        } catch {
+            return ProviderSnapshot(health: .unknown, error: error.localizedDescription)
+        }
+    }
+}
+
+public struct GLiNetVPNProvider: Provider {
+    public let id: ProviderID = ProviderIDs.vpn
+    public let displayName = "VPN"
+    public let pollInterval: TimeInterval
+    public let commands = ProviderCommandCatalog.commands(for: ProviderIDs.vpn)
+
+    private let clientFactory: RouterClientFactory
+    private let passwordProvider: @Sendable () throws -> String?
+
+    public init(
+        pollInterval: TimeInterval = 5,
+        clientFactory: RouterClientFactory? = nil,
+        passwordProvider: @escaping @Sendable () throws -> String? = { nil }
+    ) {
+        self.pollInterval = pollInterval
+        self.clientFactory = Self.makeClientFactory(clientFactory)
+        self.passwordProvider = passwordProvider
+    }
+
+    public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
+        do {
+            let client = try await GLiNetProviderClient.client(
+                context: context,
+                clientFactory: clientFactory,
+                passwordProvider: passwordProvider
+            )
+            return ProviderSnapshot.vpn(try await client.vpnStatus())
+        } catch {
+            return ProviderSnapshot(health: .unknown, error: error.localizedDescription)
+        }
+    }
+
+    public func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
+        guard commandID == ProviderCommandIDs.vpnToggle else {
+            throw JSONRPCClientError.commandFailed("Unsupported VPN command \(commandID).")
+        }
+        let client = try await GLiNetProviderClient.client(
+            context: context,
+            clientFactory: clientFactory,
+            passwordProvider: passwordProvider
+        )
+        let status = try await client.vpnStatus()
+        try await client.setVPNEnabled(!status.isConnected, protocol: status.vpnProtocol)
+    }
+}
+
 public struct ReachabilityProvider: Provider {
     public let id: ProviderID = ProviderIDs.reachability
     public let displayName = "Internet"
@@ -201,5 +279,30 @@ public struct EcoFlowProvider: Provider {
             throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a non-empty string.")
         }
         return value
+    }
+}
+
+private enum GLiNetProviderClient {
+    static func client(
+        context: EnvironmentContext,
+        clientFactory: RouterClientFactory,
+        passwordProvider: @escaping @Sendable () throws -> String?
+    ) async throws -> any GLiNetClientProtocol {
+        guard let host = context.routerHost, !host.isEmpty, let endpoint = URL.routerRPC(host: host) else {
+            throw JSONRPCClientError.commandFailed("Router endpoint unavailable.")
+        }
+        return await clientFactory(endpoint, context.settings.username, passwordProvider)
+    }
+}
+
+private extension Provider {
+    static func makeClientFactory(_ clientFactory: RouterClientFactory?) -> RouterClientFactory {
+        if let clientFactory {
+            return clientFactory
+        }
+        let pool = GLiNetClientPool()
+        return { endpoint, username, passwordProvider in
+            await pool.client(endpoint: endpoint, username: username, passwordProvider: passwordProvider)
+        }
     }
 }

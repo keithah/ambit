@@ -162,6 +162,61 @@ final class ProviderAdapterTests: XCTestCase {
         XCTAssertEqual(client.outputRequests, [.init(target: .ac, state: .on)])
     }
 
+    func testGLiNetRouterProviderPollsRouterStatus() async {
+        let client = StubGLiNetClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem, publicIP: "203.0.113.10"),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let provider = GLiNetRouterProvider(
+            clientFactory: Self.routerClientFactory(expectedHost: "router.local", client: client),
+            passwordProvider: { "secret" }
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: "router.local", settings: AppSettings(username: "root")))
+
+        XCTAssertEqual(provider.id, ProviderIDs.router)
+        XCTAssertEqual(provider.displayName, "Router")
+        XCTAssertEqual(snapshot.health, .ok)
+        XCTAssertEqual(snapshot.metricValue("active_wan"), .text("Modem"))
+        XCTAssertEqual(snapshot.detail, .router(RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem, publicIP: "203.0.113.10")))
+        XCTAssertEqual(client.routerStatusCallCount, 1)
+    }
+
+    func testGLiNetVPNProviderPollsVPNStatusAndTogglesFromCurrentState() async throws {
+        let client = StubGLiNetClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000"),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let provider = GLiNetVPNProvider(
+            clientFactory: Self.routerClientFactory(expectedHost: "router.local", client: client),
+            passwordProvider: { "secret" }
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: "router.local", settings: AppSettings(username: "root")))
+        try await provider.execute(
+            commandID: ProviderCommandIDs.vpnToggle,
+            arguments: CommandArguments(),
+            context: EnvironmentContext(routerHost: "router.local", settings: AppSettings(username: "root"))
+        )
+
+        XCTAssertEqual(provider.id, ProviderIDs.vpn)
+        XCTAssertEqual(provider.displayName, "VPN")
+        XCTAssertEqual(snapshot.health, .ok)
+        XCTAssertEqual(snapshot.metricValue("connected"), .bool(true))
+        XCTAssertEqual(snapshot.detail, .vpn(VPNStatus(protocol: .wireGuard, isConnected: true)))
+        XCTAssertEqual(client.vpnStatusCallCount, 2)
+        XCTAssertEqual(client.vpnEnabledRequests, [false])
+    }
+
+    private static func routerClientFactory(expectedHost: String, client: StubGLiNetClient) -> RouterClientFactory {
+        { endpoint, username, passwordProvider in
+            XCTAssertEqual(endpoint, URL.routerRPC(host: expectedHost))
+            XCTAssertEqual(username, "root")
+            XCTAssertEqual(try? passwordProvider(), "secret")
+            return client
+        }
+    }
+
     private static func ecoFlowStatus(batteryPercent: Int, outputWatts: Int) -> EcoFlowDeviceStatus {
         EcoFlowDeviceStatus(
             battery: EcoFlowBatteryStatus(percent: batteryPercent, state: .discharging),
@@ -228,6 +283,37 @@ private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unc
 
     func setNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String, host: String) async throws {
         networkPriorityRequests.append(NetworkPriorityRequest(priority: priority, networkID: networkID, host: host))
+    }
+}
+
+private final class StubGLiNetClient: GLiNetClientProtocol, @unchecked Sendable {
+    var routerStatusResult: RouterStatus
+    var vpnStatusResult: VPNStatus
+    private(set) var routerStatusCallCount = 0
+    private(set) var vpnStatusCallCount = 0
+    private(set) var vpnEnabledRequests: [Bool] = []
+
+    init(routerStatus: RouterStatus, vpnStatus: VPNStatus) {
+        self.routerStatusResult = routerStatus
+        self.vpnStatusResult = vpnStatus
+    }
+
+    func call(service: String, method: String, args: JSONObject) async throws -> JSONObject {
+        [:]
+    }
+
+    func routerStatus() async throws -> RouterStatus {
+        routerStatusCallCount += 1
+        return routerStatusResult
+    }
+
+    func vpnStatus() async throws -> VPNStatus {
+        vpnStatusCallCount += 1
+        return vpnStatusResult
+    }
+
+    func setVPNEnabled(_ enabled: Bool, protocol vpnProtocol: VPNProtocol) async throws {
+        vpnEnabledRequests.append(enabled)
     }
 }
 
