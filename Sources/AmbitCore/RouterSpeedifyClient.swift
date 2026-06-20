@@ -10,6 +10,20 @@ public protocol RouterSpeedifySocketFactory: Sendable {
     func makeSocket(url: URL) async throws -> RouterSpeedifySocket
 }
 
+public protocol RouterSpeedifyClientProtocol: Sendable {
+    func status(host: String) async throws -> SpeedifyStatus
+    func connect(host: String, server: String) async throws
+    func disconnect(host: String) async throws
+    func setBondingMode(_ mode: SpeedifyBondingMode, host: String) async throws
+    func setNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String, host: String) async throws
+}
+
+public extension RouterSpeedifyClientProtocol {
+    func connect(host: String) async throws {
+        try await connect(host: host, server: "auto")
+    }
+}
+
 public struct URLSessionRouterSpeedifySocketFactory: RouterSpeedifySocketFactory {
     public init() {}
 
@@ -55,7 +69,7 @@ public final class URLSessionRouterSpeedifySocket: RouterSpeedifySocket, @unchec
     }
 }
 
-public struct RouterSpeedifyClient: Sendable {
+public struct RouterSpeedifyClient: RouterSpeedifyClientProtocol, Sendable {
     private let socketFactory: RouterSpeedifySocketFactory
     private let timeout: TimeInterval
 

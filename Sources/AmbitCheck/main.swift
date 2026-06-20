@@ -13,33 +13,40 @@ struct AmbitCheck {
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
 
-        let host: String
+        let settings: AppSettings
+        let host: String?
         if let first = positionalArgs.first {
             host = first
+            settings = AppSettings(remoteHost: first, username: username, endpointMode: .forceRemote)
         } else {
-            do {
-                host = try await EndpointSelector().select(settings: AppSettings(username: username, endpointMode: .auto)).host
-            } catch {
-                fputs("Usage: ambit-check [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(error.localizedDescription)\n", stderr)
-                Foundation.exit(2)
-            }
+            host = nil
+            settings = AppSettings(username: username, endpointMode: .auto)
         }
 
-        guard let endpoint = URL.routerRPC(host: host) else {
-            fputs("Invalid host: \(host)\n", stderr)
+        let engine = Engine(settings: settings, routerPassword: password)
+        await engine.refresh()
+        let snapshot = await engine.currentSnapshot()
+        let selectedHost = await engine.currentSelectedEndpoint()?.host ?? host
+        guard let selectedHost else {
+            fputs("Usage: ambit-check [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            Foundation.exit(2)
+        }
+        guard let endpoint = URL.routerRPC(host: selectedHost) else {
+            fputs("Invalid host: \(selectedHost)\n", stderr)
             Foundation.exit(2)
         }
         let client = GLiNetClient(endpoint: endpoint, username: username, passwordProvider: { password })
         do {
-            let status = try await client.routerStatus()
+            guard let status = snapshot.router.value else {
+                throw JSONRPCClientError.commandFailed(snapshot.router.errorMessage ?? "Router status unavailable.")
+            }
             print("Router reachable: \(status.reachable)")
-            print("Endpoint: \(host)")
+            print("Endpoint: \(selectedHost)")
             print("LAN IP: \(status.lanIP ?? "not reported")")
             print("Active WAN: \(status.activeWAN?.label ?? "unknown")")
             print("Public IP: \(status.publicIP ?? "not reported")")
 
-            do {
-                let vpn = try await client.vpnStatus()
+            if let vpn = snapshot.vpn.value {
                 if vpn.isAvailable {
                     print("VPN: \(vpn.vpnProtocol.rawValue) \(vpn.isConnected ? "connected" : "disconnected")")
                     if let server = vpn.server {
@@ -51,8 +58,8 @@ struct AmbitCheck {
                 } else {
                     print("VPN: unavailable (\(vpn.unavailableReason ?? "VPN client API unavailable"))")
                 }
-            } catch {
-                print("VPN: unavailable (\(error.localizedDescription))")
+            } else if let error = snapshot.vpn.errorMessage {
+                print("VPN: unavailable (\(error))")
             }
 
             if shouldProbeVPNMethods {
@@ -60,11 +67,11 @@ struct AmbitCheck {
             }
 
             if shouldProbeSpeedify {
-                await probeSpeedify(host: host)
+                await probeSpeedify(host: selectedHost)
             }
 
             if shouldDumpSpeedifyNetworks {
-                await dumpSpeedifyNetworks(host: host)
+                await dumpSpeedifyNetworks(host: selectedHost)
             }
 
             if shouldProbeStarlink {
