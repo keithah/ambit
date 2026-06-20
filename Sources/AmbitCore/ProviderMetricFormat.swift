@@ -26,13 +26,15 @@ public enum ProviderMetricFormat {
     }
 
     private static func number(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value).trimmedTrailingZeros()
-    }
-}
+        guard value != value.rounded() else { return String(Int(value)) }
 
-private extension String {
-    func trimmedTrailingZeros() -> String {
-        guard contains(".") else { return self }
-        return trimmingCharacters(in: CharacterSet(charactersIn: "0")).trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        var formatted = String(format: "%.2f", value)
+        while formatted.last == "0" {
+            formatted.removeLast()
+        }
+        if formatted.last == "." {
+            formatted.removeLast()
+        }
+        return formatted
     }
 }
