@@ -9,6 +9,8 @@ public enum ProviderIDs {
     public static let speedify: ProviderID = "speedify"
     public static let starlink: ProviderID = "starlink"
     public static let ecoflow: ProviderID = "ecoflow"
+    public static let ping: ProviderID = "ping"
+    public static let iperf3: ProviderID = "iperf3"
 }
 
 public protocol Provider: Sendable {
@@ -59,6 +61,8 @@ public enum ProviderDetail: Equatable, Sendable {
     case speedify(SpeedifyStatus)
     case starlink(StarlinkStatus)
     case ecoflow(EcoFlowSnapshot)
+    case ping(PingSnapshot)
+    case iperf3(Iperf3Snapshot)
 }
 
 public enum Health: Equatable, Sendable {
