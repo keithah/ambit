@@ -14,12 +14,14 @@ public actor Engine {
     private let reachabilityProbe: ReachabilityProbeProtocol
     private let routerSpeedifyClient: any RouterSpeedifyClientProtocol
     private let routerClientFactory: RouterClientFactory
+    private let providers: [any Provider]
     private let resetRouterClients: @Sendable () async -> Void
     private let starlinkStatusProvider: StarlinkStatusProvider
     private let ecoFlowClientFactory: EcoFlowClientFactory
     private let usageMeter: ModuleUsageMeter
 
     private var snapshot = StatusSnapshot()
+    private var providerStates: [ProviderID: SourceState<ProviderSnapshot>] = [:]
     private var settings: AppSettings
     private var routerPassword: String
     private var selectedEndpoint: EndpointSelection?
@@ -36,6 +38,7 @@ public actor Engine {
         settings: AppSettings? = nil,
         routerPassword: String? = nil,
         routerClientFactory: RouterClientFactory? = nil,
+        providers: [any Provider] = [],
         resetRouterClients: (@Sendable () async -> Void)? = nil,
         usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
@@ -54,6 +57,7 @@ public actor Engine {
         self.endpointSelector = endpointSelector
         self.reachabilityProbe = reachabilityProbe
         self.routerSpeedifyClient = routerSpeedifyClient
+        self.providers = providers
         self.settings = loadedSettings
         self.routerPassword = routerPassword ?? ((try? credentialStore.password(account: loadedSettings.username)) ?? RouterDefaults.routerPassword)
         self.usageMeter = usageMeter
@@ -114,7 +118,11 @@ public actor Engine {
     }
 
     public func commands(provider providerID: ProviderID) -> [CommandDescriptor] {
-        ProviderCommandCatalog.commands(for: providerID)
+        let builtInCommands = ProviderCommandCatalog.commands(for: providerID)
+        if !builtInCommands.isEmpty {
+            return builtInCommands
+        }
+        return providers.first { $0.id == providerID }?.commands ?? []
     }
 
     public func refresh() async {
@@ -124,6 +132,7 @@ public actor Engine {
         snapshot.speedify.isLoading = true
         snapshot.starlink.isLoading = true
         snapshot.ecoflow.isLoading = settings.ecoflowEnabled
+        markRegisteredProvidersLoading()
         publish()
 
         async let endpointResult = resolveEndpoint()
@@ -146,6 +155,7 @@ public actor Engine {
                 snapshot.speedify = await speedifyResult
                 snapshot.starlink = await starlinkResult
                 snapshot.ecoflow = await ecoflowResult
+                providerStates = await pollRegisteredProviders(routerHost: endpoint.value?.host)
                 snapshot.lastUpdated = Date()
                 publish()
                 return
@@ -172,6 +182,7 @@ public actor Engine {
         snapshot.reachability = await reachabilityResult
         snapshot.starlink = await starlinkResult
         snapshot.ecoflow = await ecoflowResult
+        providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
         snapshot.lastUpdated = Date()
         publish()
     }
@@ -243,7 +254,21 @@ public actor Engine {
             let state = try requireEcoFlowOutputState(in: arguments)
             _ = await setEcoFlowOutput(target, state: state)
         default:
-            throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
+            guard let registeredProvider = providers.first(where: { $0.id == provider }) else {
+                throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
+            }
+            let started = Date()
+            do {
+                try await registeredProvider.execute(
+                    commandID: commandID,
+                    arguments: arguments,
+                    context: EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings)
+                )
+                await recordUsage(providerID: provider, operation: .command, started: started)
+            } catch {
+                await recordUsage(providerID: provider, operation: .command, started: started, error: error.localizedDescription)
+                throw error
+            }
         }
     }
 
@@ -525,6 +550,29 @@ public actor Engine {
         }
     }
 
+    private func markRegisteredProvidersLoading() {
+        for provider in providers {
+            let previous = providerStates[provider.id]
+            providerStates[provider.id] = SourceState(
+                value: previous?.value,
+                isLoading: true,
+                errorMessage: previous?.errorMessage
+            )
+        }
+    }
+
+    private func pollRegisteredProviders(routerHost: String?) async -> [ProviderID: SourceState<ProviderSnapshot>] {
+        var states: [ProviderID: SourceState<ProviderSnapshot>] = [:]
+        let context = EnvironmentContext(routerHost: routerHost, settings: settings)
+        for provider in providers {
+            let started = Date()
+            let providerSnapshot = await provider.poll(context: context)
+            states[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
+        }
+        return states
+    }
+
     private func noteRouterError(_ error: Error) {
         guard
             let clientError = error as? JSONRPCClientError,
@@ -534,7 +582,11 @@ public actor Engine {
     }
 
     private func publish() {
+        let registeredProviderStates = providerStates
         snapshot.populateProviderSnapshots()
+        for (providerID, state) in registeredProviderStates {
+            snapshot.providers[providerID] = state
+        }
         snapshotContinuation.yield(snapshot)
     }
 

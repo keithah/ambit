@@ -57,6 +57,67 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(usage[ProviderIDs.starlink]?.pollCount, 1)
     }
 
+    func testRefreshPollsRegisteredProviderIntoProviderSnapshotMap() async {
+        let provider = StubProvider(
+            id: "demo",
+            snapshot: ProviderSnapshot(
+                health: .ok,
+                metrics: [Metric(id: "sample", label: "Sample", value: .level(1))]
+            )
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providers["demo"]?.value?.health, .ok)
+        XCTAssertEqual(snapshot.providers["demo"]?.value?.metricValue("sample"), .level(1))
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
+    func testDispatchRoutesRegisteredProviderCommand() async throws {
+        let provider = StubProvider(
+            id: "demo",
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [CommandDescriptor(id: "demo.run", label: "Run Demo")]
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            providers: [provider]
+        )
+
+        try await engine.dispatch(
+            provider: "demo",
+            commandID: "demo.run",
+            arguments: CommandArguments(values: ["sample": .string("value")])
+        )
+
+        let command = await provider.lastCommand()
+        XCTAssertEqual(command?.id, "demo.run")
+        XCTAssertEqual(command?.arguments, CommandArguments(values: ["sample": .string("value")]))
+    }
+
     func testCommandUsageIsRecorded() async {
         let routerClient = StubRouterClient(
             routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
@@ -262,6 +323,31 @@ final class EngineTests: XCTestCase {
         )
     }
 
+    func testExposesRegisteredProviderCommandMetadata() async {
+        let provider = StubProvider(
+            id: "demo",
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [
+                CommandDescriptor(
+                    id: "demo.run",
+                    label: "Run Demo",
+                    parameters: [CommandParameter(id: "sample", label: "Sample", kind: .text)]
+                )
+            ]
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            providers: [provider]
+        )
+
+        let commands = await engine.commands(provider: "demo")
+
+        XCTAssertEqual(commands, provider.commands)
+    }
+
     func testDispatchRejectsUnsupportedProviderCommand() async {
         let engine = Engine(
             settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
@@ -304,6 +390,40 @@ final class EngineTests: XCTestCase {
 private extension ProviderSnapshot {
     func metricValue(_ id: String) -> MetricValue? {
         metrics.first { $0.id == id }?.value
+    }
+}
+
+private actor StubProvider: Provider {
+    let id: ProviderID
+    let displayName: String
+    let pollInterval: TimeInterval = 10
+    let commands: [CommandDescriptor]
+    private let snapshot: ProviderSnapshot
+    private(set) var pollCount = 0
+    private var executedCommands: [(id: String, arguments: CommandArguments)] = []
+
+    init(id: ProviderID, snapshot: ProviderSnapshot, commands: [CommandDescriptor] = []) {
+        self.id = id
+        self.displayName = id
+        self.snapshot = snapshot
+        self.commands = commands
+    }
+
+    func poll(context: EnvironmentContext) async -> ProviderSnapshot {
+        pollCount += 1
+        return snapshot
+    }
+
+    func currentPollCount() -> Int {
+        pollCount
+    }
+
+    func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
+        executedCommands.append((id: commandID, arguments: arguments))
+    }
+
+    func lastCommand() -> (id: String, arguments: CommandArguments)? {
+        executedCommands.last
     }
 }
 
