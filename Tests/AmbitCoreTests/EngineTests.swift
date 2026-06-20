@@ -167,6 +167,49 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshCanRegisterBuiltInProvidersByDefault() async {
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let reachabilityProbe = StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01)))
+        let speedifyClient = StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected"))
+        let starlinkCounter = CallCounter()
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: reachabilityProbe,
+            routerSpeedifyClient: speedifyClient,
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in
+                starlinkCounter.increment()
+                return StarlinkStatus(isReachable: true, state: "Online")
+            }
+        )
+
+        await engine.refresh()
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerRouterStatus?.hostname, "GL-X3000")
+        XCTAssertEqual(snapshot.providerVPNStatus?.isConnected, true)
+        XCTAssertEqual(snapshot.providerSpeedifyStatus?.isConnected, true)
+        XCTAssertEqual(snapshot.providerReachabilityStatus?.state, .online(latency: 0.01))
+        XCTAssertEqual(snapshot.providerStarlinkStatus?.state, "Online")
+        XCTAssertEqual(routerClient.routerStatusCallCount, 1)
+        XCTAssertEqual(routerClient.vpnStatusCallCount, 1)
+        XCTAssertEqual(speedifyClient.statusCallCount, 1)
+        XCTAssertEqual(reachabilityProbe.callCount, 1)
+        XCTAssertEqual(starlinkCounter.count, 1)
+    }
+
     func testRefreshUsesRegisteredSpeedifyProviderInsteadOfLegacyPoller() async {
         let provider = StubProvider(
             id: ProviderIDs.speedify,

@@ -32,7 +32,8 @@ final class StatusViewModel: ObservableObject {
             endpointSelector: endpointSelector,
             reachabilityProbe: reachabilityProbe,
             settings: settings,
-            routerPassword: routerPassword
+            routerPassword: routerPassword,
+            registerBuiltInProviders: true
         )
     }
 

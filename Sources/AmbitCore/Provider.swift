@@ -85,10 +85,12 @@ public extension Provider {
 public struct EnvironmentContext: Sendable {
     public var routerHost: String?
     public var settings: AppSettings
+    public var routerPassword: String?
 
-    public init(routerHost: String?, settings: AppSettings) {
+    public init(routerHost: String?, settings: AppSettings, routerPassword: String? = nil) {
         self.routerHost = routerHost
         self.settings = settings
+        self.routerPassword = routerPassword
     }
 }
 

@@ -42,6 +42,7 @@ public actor Engine {
         routerPassword: String? = nil,
         routerClientFactory: RouterClientFactory? = nil,
         providers: [any Provider] = [],
+        registerBuiltInProviders: Bool = false,
         resetRouterClients: (@Sendable () async -> Void)? = nil,
         usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
@@ -63,27 +64,42 @@ public actor Engine {
         self.endpointSelector = endpointSelector
         self.reachabilityProbe = reachabilityProbe
         self.routerSpeedifyClient = routerSpeedifyClient
-        self.providers = providers
         self.settings = loadedSettings
-        self.routerPassword = routerPassword ?? ((try? credentialStore.password(account: loadedSettings.username)) ?? RouterDefaults.routerPassword)
+        let loadedRouterPassword = routerPassword ?? ((try? credentialStore.password(account: loadedSettings.username)) ?? RouterDefaults.routerPassword)
+        self.routerPassword = loadedRouterPassword
         self.usageMeter = usageMeter
+        let actualRouterClientFactory: RouterClientFactory
+        let actualResetRouterClients: @Sendable () async -> Void
         if let routerClientFactory {
-            self.routerClientFactory = routerClientFactory
+            actualRouterClientFactory = routerClientFactory
+            actualResetRouterClients = resetRouterClients ?? {}
         } else {
             let pool = GLiNetClientPool()
-            self.routerClientFactory = { endpoint, username, passwordProvider in
+            actualRouterClientFactory = { endpoint, username, passwordProvider in
                 await pool.client(endpoint: endpoint, username: username, passwordProvider: passwordProvider)
             }
-            self.resetRouterClients = {
+            actualResetRouterClients = {
                 await pool.removeAll()
             }
-            self.starlinkStatusProvider = starlinkStatusProvider
-            self.ecoFlowClientFactory = ecoFlowClientFactory
-            return
         }
-        self.resetRouterClients = resetRouterClients ?? {}
+        self.routerClientFactory = actualRouterClientFactory
+        self.resetRouterClients = actualResetRouterClients
         self.starlinkStatusProvider = starlinkStatusProvider
         self.ecoFlowClientFactory = ecoFlowClientFactory
+        if registerBuiltInProviders {
+            self.providers = Self.mergedProviders(
+                builtIns: Self.builtInProviders(
+                    routerClientFactory: actualRouterClientFactory,
+                    reachabilityProbe: reachabilityProbe,
+                    routerSpeedifyClient: routerSpeedifyClient,
+                    starlinkStatusProvider: starlinkStatusProvider,
+                    ecoFlowClientFactory: ecoFlowClientFactory
+                ),
+                explicit: providers
+            )
+        } else {
+            self.providers = providers
+        }
     }
 
     deinit {
@@ -297,7 +313,7 @@ public actor Engine {
                 try await registeredProvider.execute(
                     commandID: commandID,
                     arguments: arguments,
-                    context: EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings)
+                    context: EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
                 )
                 await recordUsage(providerID: provider, operation: .command, started: started)
             } catch {
@@ -622,7 +638,7 @@ public actor Engine {
 
     private func pollRegisteredProviders(routerHost: String?) async -> [ProviderID: SourceState<ProviderSnapshot>] {
         var states: [ProviderID: SourceState<ProviderSnapshot>] = [:]
-        let context = EnvironmentContext(routerHost: routerHost, settings: settings)
+        let context = EnvironmentContext(routerHost: routerHost, settings: settings, routerPassword: routerPassword)
         let now = Date()
         for provider in providers {
             if let lastPoll = lastRegisteredProviderPolls[provider.id],
@@ -683,5 +699,27 @@ public actor Engine {
             return "\(minutes)m"
         }
         return "\(minutes)m \(remainder)s"
+    }
+
+    private static func builtInProviders(
+        routerClientFactory: @escaping RouterClientFactory,
+        reachabilityProbe: ReachabilityProbeProtocol,
+        routerSpeedifyClient: any RouterSpeedifyClientProtocol,
+        starlinkStatusProvider: @escaping StarlinkStatusProvider,
+        ecoFlowClientFactory: @escaping EcoFlowClientFactory
+    ) -> [any Provider] {
+        [
+            GLiNetRouterProvider(clientFactory: routerClientFactory),
+            GLiNetVPNProvider(clientFactory: routerClientFactory),
+            ReachabilityProvider(probe: reachabilityProbe),
+            SpeedifyProvider(client: routerSpeedifyClient),
+            StarlinkProvider(statusProvider: starlinkStatusProvider),
+            EcoFlowProvider(clientFactory: ecoFlowClientFactory)
+        ]
+    }
+
+    private static func mergedProviders(builtIns: [any Provider], explicit: [any Provider]) -> [any Provider] {
+        let explicitIDs = Set(explicit.map(\.id))
+        return builtIns.filter { !explicitIDs.contains($0.id) } + explicit
     }
 }

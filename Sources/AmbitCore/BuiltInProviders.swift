@@ -291,7 +291,13 @@ private enum GLiNetProviderClient {
         guard let host = context.routerHost, !host.isEmpty, let endpoint = URL.routerRPC(host: host) else {
             throw JSONRPCClientError.commandFailed("Router endpoint unavailable.")
         }
-        return await clientFactory(endpoint, context.settings.username, passwordProvider)
+        let contextPassword = context.routerPassword
+        return await clientFactory(endpoint, context.settings.username) {
+            if let password = try passwordProvider(), !password.isEmpty {
+                return password
+            }
+            return contextPassword
+        }
     }
 }
 
