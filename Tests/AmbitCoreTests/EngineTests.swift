@@ -453,6 +453,42 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRegisteredRouterProviderLoginLimitActivatesBackoff() async {
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "Legacy Router", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        routerClient.routerStatusError = JSONRPCClientError.rpc(
+            JSONRPCError(
+                code: -32003,
+                message: "Login fail number over limit",
+                data: .object(["wait": .number(5)])
+            )
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(routerClient.routerStatusCallCount, 1)
+        XCTAssertEqual(snapshot.providerErrorMessage(ProviderIDs.router)?.hasPrefix("Router login paused for "), true)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",
@@ -866,6 +902,8 @@ private final class CallCounter: @unchecked Sendable {
 private final class StubRouterClient: GLiNetClientProtocol, @unchecked Sendable {
     var routerStatusResult: RouterStatus
     var vpnStatusResult: VPNStatus
+    var routerStatusError: Error?
+    var vpnStatusError: Error?
     private(set) var routerStatusCallCount = 0
     private(set) var vpnStatusCallCount = 0
     private(set) var vpnEnabledRequests: [Bool] = []
@@ -881,11 +919,17 @@ private final class StubRouterClient: GLiNetClientProtocol, @unchecked Sendable 
 
     func routerStatus() async throws -> RouterStatus {
         routerStatusCallCount += 1
+        if let routerStatusError {
+            throw routerStatusError
+        }
         return routerStatusResult
     }
 
     func vpnStatus() async throws -> VPNStatus {
         vpnStatusCallCount += 1
+        if let vpnStatusError {
+            throw vpnStatusError
+        }
         return vpnStatusResult
     }
 

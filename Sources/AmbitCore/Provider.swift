@@ -99,12 +99,20 @@ public struct ProviderSnapshot: Equatable, Sendable {
     public var metrics: [Metric]
     public var detail: ProviderDetail?
     public var error: String?
+    public var retryAfterSeconds: Int?
 
-    public init(health: Health = .unknown, metrics: [Metric] = [], detail: ProviderDetail? = nil, error: String? = nil) {
+    public init(
+        health: Health = .unknown,
+        metrics: [Metric] = [],
+        detail: ProviderDetail? = nil,
+        error: String? = nil,
+        retryAfterSeconds: Int? = nil
+    ) {
         self.health = health
         self.metrics = metrics
         self.detail = detail
         self.error = error
+        self.retryAfterSeconds = retryAfterSeconds
     }
 }
 

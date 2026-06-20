@@ -27,7 +27,11 @@ public struct GLiNetRouterProvider: Provider {
             )
             return ProviderSnapshot.router(try await client.routerStatus())
         } catch {
-            return ProviderSnapshot(health: .unknown, error: error.localizedDescription)
+            return ProviderSnapshot(
+                health: .unknown,
+                error: error.localizedDescription,
+                retryAfterSeconds: (error as? JSONRPCClientError)?.retryAfterSeconds
+            )
         }
     }
 }
@@ -60,7 +64,11 @@ public struct GLiNetVPNProvider: Provider {
             )
             return ProviderSnapshot.vpn(try await client.vpnStatus())
         } catch {
-            return ProviderSnapshot(health: .unknown, error: error.localizedDescription)
+            return ProviderSnapshot(
+                health: .unknown,
+                error: error.localizedDescription,
+                retryAfterSeconds: (error as? JSONRPCClientError)?.retryAfterSeconds
+            )
         }
     }
 

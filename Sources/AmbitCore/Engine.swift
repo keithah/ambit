@@ -669,6 +669,15 @@ public actor Engine {
         let context = EnvironmentContext(routerHost: routerHost, settings: settings, routerPassword: routerPassword)
         let now = Date()
         for provider in providers {
+            if Self.usesRouterLogin(provider.id),
+               let backoff = routerBackoffUntil,
+               backoff > Date() {
+                states[provider.id] = SourceState(
+                    value: providerStates[provider.id]?.value,
+                    errorMessage: Self.routerBackoffMessage(until: backoff)
+                )
+                continue
+            }
             if let lastPoll = lastRegisteredProviderPolls[provider.id],
                now.timeIntervalSince(lastPoll) < provider.pollInterval,
                let previous = providerStates[provider.id] {
@@ -677,6 +686,10 @@ public actor Engine {
             }
             let started = Date()
             let providerSnapshot = await provider.poll(context: context)
+            if Self.usesRouterLogin(provider.id),
+               let wait = providerSnapshot.retryAfterSeconds {
+                routerBackoffUntil = Date().addingTimeInterval(TimeInterval(wait))
+            }
             states[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
             lastRegisteredProviderPolls[provider.id] = Date()
             await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
@@ -690,6 +703,14 @@ public actor Engine {
             let wait = clientError.retryAfterSeconds
         else { return }
         routerBackoffUntil = Date().addingTimeInterval(TimeInterval(wait))
+    }
+
+    private static func usesRouterLogin(_ providerID: ProviderID) -> Bool {
+        providerID == ProviderIDs.router || providerID == ProviderIDs.vpn
+    }
+
+    private static func routerBackoffMessage(until date: Date) -> String {
+        "Router login paused for \(formatRemaining(until: date))."
     }
 
     private func publish() {
