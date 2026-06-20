@@ -43,7 +43,7 @@ public enum ProviderCommandCatalog {
                     id: ProviderCommandIDs.speedifySetNetworkPriority,
                     label: "Set Network Priority",
                     parameters: [
-                        CommandParameter(id: "priority", label: "Priority", kind: .option(["0", "1", "2", "100", "200"])),
+                        CommandParameter(id: "priority", label: "Priority", kind: .number),
                         CommandParameter(id: "networkID", label: "Network ID", kind: .text)
                     ]
                 )
@@ -174,6 +174,22 @@ public struct CommandDescriptor: Equatable, Identifiable, Sendable {
         self.label = label
         self.parameters = parameters
         self.requiresConfirmation = requiresConfirmation
+    }
+}
+
+public struct CommandPaletteItem: Equatable, Identifiable, Sendable {
+    public var providerID: ProviderID
+    public var providerName: String
+    public var command: CommandDescriptor
+
+    public var id: String {
+        "\(providerID).\(command.id)"
+    }
+
+    public init(providerID: ProviderID, providerName: String, command: CommandDescriptor) {
+        self.providerID = providerID
+        self.providerName = providerName
+        self.command = command
     }
 }
 

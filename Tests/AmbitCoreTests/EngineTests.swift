@@ -1022,6 +1022,13 @@ final class EngineTests: XCTestCase {
             speedifyCommands.first { $0.id == ProviderCommandIDs.speedifySetBondingMode }?.parameters,
             [CommandParameter(id: "mode", label: "Mode", kind: .option(["SP", "RD", "STR"]))]
         )
+        XCTAssertEqual(
+            speedifyCommands.first { $0.id == ProviderCommandIDs.speedifySetNetworkPriority }?.parameters,
+            [
+                CommandParameter(id: "priority", label: "Priority", kind: .number),
+                CommandParameter(id: "networkID", label: "Network ID", kind: .text)
+            ]
+        )
         XCTAssertEqual(ecoFlowCommands.map(\.id), [ProviderCommandIDs.ecoFlowSetOutput])
         XCTAssertEqual(
             ecoFlowCommands.first?.parameters,
@@ -1060,6 +1067,42 @@ final class EngineTests: XCTestCase {
         let commands = await engine.commands(provider: "demo")
 
         XCTAssertEqual(commands, provider.commands)
+    }
+
+    func testCommandPaletteFlattensRegisteredProviderCommands() async {
+        let controllable = StubProvider(
+            id: "demo",
+            displayName: "Demo Device",
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [
+                CommandDescriptor(id: "demo.restart", label: "Restart"),
+                CommandDescriptor(id: "demo.rename", label: "Rename", parameters: [
+                    CommandParameter(id: "name", label: "Name", kind: .text)
+                ])
+            ]
+        )
+        let passive = StubProvider(
+            id: "passive",
+            displayName: "Passive Sensor",
+            snapshot: ProviderSnapshot(health: .ok)
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            providers: [controllable, passive],
+            registerBuiltInProviders: false
+        )
+
+        let palette = await engine.commandPalette()
+
+        XCTAssertEqual(palette.map(\.providerID), ["demo", "demo"])
+        XCTAssertEqual(palette.map(\.providerName), ["Demo Device", "Demo Device"])
+        XCTAssertEqual(palette.map(\.command.id), ["demo.restart", "demo.rename"])
+        XCTAssertEqual(palette[1].command.parameters, [
+            CommandParameter(id: "name", label: "Name", kind: .text)
+        ])
     }
 
     func testExplicitProviderCommandsReplaceBuiltInProviderCommands() async {
@@ -1141,9 +1184,15 @@ private actor StubProvider: Provider {
     private(set) var pollCount = 0
     private var executedCommands: [(id: String, arguments: CommandArguments)] = []
 
-    init(id: ProviderID, snapshot: ProviderSnapshot, pollInterval: TimeInterval = 10, commands: [CommandDescriptor] = []) {
+    init(
+        id: ProviderID,
+        displayName: String? = nil,
+        snapshot: ProviderSnapshot,
+        pollInterval: TimeInterval = 10,
+        commands: [CommandDescriptor] = []
+    ) {
         self.id = id
-        self.displayName = id
+        self.displayName = displayName ?? id
         self.pollInterval = pollInterval
         self.snapshot = snapshot
         self.commands = commands

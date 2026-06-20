@@ -23,6 +23,9 @@ struct MenuContent: View {
             case .ecoflow:
                 EcoFlowDetailView(route: $route)
                     .environmentObject(viewModel)
+            case .commands:
+                CommandPaletteView(route: $route)
+                    .environmentObject(viewModel)
             }
         }
         .frame(width: 460)
@@ -40,6 +43,7 @@ private enum MenuRoute {
     case speedify
     case starlink
     case ecoflow
+    case commands
 }
 
 private enum SpeedifyPanel: String, CaseIterable {
@@ -107,6 +111,19 @@ private struct OverviewMenuView: View {
             }
 
             VStack(spacing: 8) {
+                Button {
+                    route = .commands
+                } label: {
+                    OverviewRow(
+                        title: "Command Palette",
+                        detail: commandPaletteDetail,
+                        badge: "\(viewModel.commandPalette.count)",
+                        tone: viewModel.commandPalette.isEmpty ? .neutral : .good,
+                        systemImage: "command"
+                    )
+                }
+                .buttonStyle(.plain)
+
                 if shouldShowSpeedify {
                     Button {
                         route = .speedify
@@ -242,6 +259,14 @@ private struct OverviewMenuView: View {
             return "\(starlink.detail ?? "Eth0") · \(role) · \(traffic)"
         }
         return "\(starlink.detail ?? "Eth0") · \(role)"
+    }
+
+    private var commandPaletteDetail: String {
+        if viewModel.commandPalette.isEmpty {
+            return "No provider commands registered"
+        }
+        let providers = Array(Set(viewModel.commandPalette.map(\.providerName))).sorted()
+        return providers.prefix(3).joined(separator: " · ")
     }
 
     private var starlinkBadge: String {
@@ -765,6 +790,319 @@ private struct EcoFlowControlResultView: View {
 
     private var message: String {
         response.result == .unknown ? "Command sent, waiting for confirmation." : "Observed state: \(response.observedState.rawValue)"
+    }
+}
+
+private struct CommandPaletteView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    @Binding var route: MenuRoute
+    @State private var selectedItemID: CommandPaletteItem.ID?
+    @State private var parameterValues: [String: String] = [:]
+
+    private var selectedItem: CommandPaletteItem? {
+        guard let selectedItemID else { return viewModel.commandPalette.first }
+        return viewModel.commandPalette.first { $0.id == selectedItemID } ?? viewModel.commandPalette.first
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HeaderView(title: "Commands", subtitle: subtitle, showsBack: true) {
+                route = .overview
+            }
+
+            if viewModel.commandPalette.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No commands registered")
+                        .font(.headline)
+                    Text("Providers with actions will appear here after the engine refreshes.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(spacing: 6) {
+                        ForEach(viewModel.commandPalette) { item in
+                            CommandPaletteRow(
+                                item: item,
+                                isSelected: item.id == selectedItem?.id,
+                                isExecuting: item.id == viewModel.executingCommandID
+                            ) {
+                                selectedItemID = item.id
+                                seedParameterValues(for: item)
+                            }
+                        }
+                    }
+                    .frame(width: 190)
+
+                    if let selectedItem {
+                        CommandParameterPanel(
+                            item: selectedItem,
+                            values: $parameterValues,
+                            isExecuting: selectedItem.id == viewModel.executingCommandID,
+                            canRun: canRun(selectedItem)
+                        ) {
+                            await viewModel.executeCommand(selectedItem, arguments: arguments(for: selectedItem))
+                        }
+                    }
+                }
+            }
+
+            if let message = viewModel.commandMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                }
+                .padding(10)
+                .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
+        }
+        .padding(14)
+        .onAppear {
+            viewModel.refreshCommandPalette()
+            if selectedItemID == nil, let first = viewModel.commandPalette.first {
+                selectedItemID = first.id
+                seedParameterValues(for: first)
+            }
+        }
+        .onChange(of: viewModel.commandPalette) { items in
+            guard !items.isEmpty else {
+                selectedItemID = nil
+                parameterValues = [:]
+                return
+            }
+            if selectedItemID == nil || !items.contains(where: { $0.id == selectedItemID }) {
+                selectedItemID = items[0].id
+                seedParameterValues(for: items[0])
+            }
+        }
+    }
+
+    private var subtitle: String {
+        if viewModel.commandPalette.isEmpty { return "No provider actions" }
+        let providerCount = Set(viewModel.commandPalette.map(\.providerID)).count
+        return "\(viewModel.commandPalette.count) actions · \(providerCount) providers"
+    }
+
+    private func seedParameterValues(for item: CommandPaletteItem) {
+        var values = parameterValues
+        for parameter in item.command.parameters where values[parameter.id] == nil {
+            values[parameter.id] = defaultValue(for: parameter)
+        }
+        parameterValues = values.filter { key, _ in
+            item.command.parameters.contains { $0.id == key }
+        }
+    }
+
+    private func defaultValue(for parameter: CommandParameter) -> String {
+        switch parameter.kind {
+        case .text, .number:
+            return ""
+        case .bool:
+            return "false"
+        case .option(let options):
+            return options.first ?? ""
+        }
+    }
+
+    private func canRun(_ item: CommandPaletteItem) -> Bool {
+        item.command.parameters.allSatisfy { parameter in
+            switch parameter.kind {
+            case .bool, .option:
+                return true
+            case .text:
+                return parameterValues[parameter.id]?.isEmpty == false
+            case .number:
+                guard let value = parameterValues[parameter.id], !value.isEmpty else { return false }
+                return Double(value) != nil
+            }
+        }
+    }
+
+    private func arguments(for item: CommandPaletteItem) -> CommandArguments {
+        var values: [String: JSONValue] = [:]
+        for parameter in item.command.parameters {
+            let rawValue = parameterValues[parameter.id] ?? defaultValue(for: parameter)
+            switch parameter.kind {
+            case .text, .option:
+                values[parameter.id] = .string(rawValue)
+            case .bool:
+                values[parameter.id] = .bool(rawValue == "true")
+            case .number:
+                values[parameter.id] = .number(Double(rawValue) ?? 0)
+            }
+        }
+        return CommandArguments(values: values)
+    }
+}
+
+private struct CommandPaletteRow: View {
+    let item: CommandPaletteItem
+    let isSelected: Bool
+    let isExecuting: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .frame(width: 18)
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.command.label)
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                    Text(item.providerName)
+                        .font(.caption2)
+                        .foregroundStyle(isSelected ? .white.opacity(0.72) : .secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if isExecuting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .foregroundStyle(isSelected ? .white : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var icon: String {
+        switch item.providerID {
+        case ProviderIDs.speedify, ProviderIDs.vpn:
+            return "lock.shield"
+        case ProviderIDs.ecoflow:
+            return "bolt"
+        case ProviderIDs.iperf3:
+            return "speedometer"
+        default:
+            return "play"
+        }
+    }
+}
+
+private struct CommandParameterPanel: View {
+    let item: CommandPaletteItem
+    @Binding var values: [String: String]
+    let isExecuting: Bool
+    let canRun: Bool
+    let run: () async -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.command.label)
+                    .font(.subheadline.weight(.bold))
+                    .lineLimit(1)
+                Text(item.providerName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if item.command.parameters.isEmpty {
+                Text("No parameters required.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(item.command.parameters) { parameter in
+                    CommandParameterField(parameter: parameter, value: binding(for: parameter))
+                }
+            }
+
+            Button {
+                Task { await run() }
+            } label: {
+                HStack {
+                    if isExecuting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "play.fill")
+                    }
+                    Text(isExecuting ? "Running" : "Run")
+                        .font(.caption.weight(.bold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .disabled(!canRun || isExecuting)
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func binding(for parameter: CommandParameter) -> Binding<String> {
+        Binding(
+            get: { values[parameter.id] ?? defaultValue(for: parameter) },
+            set: { values[parameter.id] = $0 }
+        )
+    }
+
+    private func defaultValue(for parameter: CommandParameter) -> String {
+        switch parameter.kind {
+        case .text, .number:
+            return ""
+        case .bool:
+            return "false"
+        case .option(let options):
+            return options.first ?? ""
+        }
+    }
+}
+
+private struct CommandParameterField: View {
+    let parameter: CommandParameter
+    @Binding var value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(parameter.label)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.secondary)
+            switch parameter.kind {
+            case .text:
+                TextField(parameter.label, text: $value)
+                    .textFieldStyle(.roundedBorder)
+            case .number:
+                TextField(parameter.label, text: $value)
+                    .textFieldStyle(.roundedBorder)
+            case .bool:
+                Toggle(isOn: boolBinding) {
+                    Text(value == "true" ? "On" : "Off")
+                        .font(.caption)
+                }
+            case .option(let options):
+                Picker(parameter.label, selection: $value) {
+                    ForEach(options, id: \.self) { option in
+                        Text(option).tag(option)
+                    }
+                }
+                .labelsHidden()
+            }
+        }
+    }
+
+    private var boolBinding: Binding<Bool> {
+        Binding(
+            get: { value == "true" },
+            set: { value = $0 ? "true" : "false" }
+        )
     }
 }
 

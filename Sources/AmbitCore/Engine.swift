@@ -154,6 +154,14 @@ public actor Engine {
         return commands
     }
 
+    public func commandPalette() -> [CommandPaletteItem] {
+        providers.flatMap { provider in
+            commands(provider: provider.id).map { command in
+                CommandPaletteItem(providerID: provider.id, providerName: provider.displayName, command: command)
+            }
+        }
+    }
+
     public func refresh() async {
         markRegisteredProvidersLoading()
         publish()

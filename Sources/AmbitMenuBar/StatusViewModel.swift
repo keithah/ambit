@@ -9,6 +9,9 @@ final class StatusViewModel: ObservableObject {
     @Published var settings: AppSettings
     @Published var routerPassword: String
     @Published var selectedEndpoint: EndpointSelection?
+    @Published var commandPalette: [CommandPaletteItem] = []
+    @Published var commandMessage: String?
+    @Published var executingCommandID: String?
 
     private let engine: Engine
     private let alertEngine = AlertEngine()
@@ -53,12 +56,14 @@ final class StatusViewModel: ObservableObject {
             }
         }
         Task { await engine.start() }
+        refreshCommandPalette()
     }
 
     func refresh() async {
         await engine.updateSettings(settings, routerPassword: routerPassword)
         await engine.refresh()
         selectedEndpoint = await engine.currentSelectedEndpoint()
+        refreshCommandPalette()
     }
 
     func saveSettings() {
@@ -67,7 +72,28 @@ final class StatusViewModel: ObservableObject {
             if let error {
                 snapshot.router.errorMessage = error
             }
+            refreshCommandPalette()
         }
+    }
+
+    func refreshCommandPalette() {
+        Task {
+            commandPalette = await engine.commandPalette()
+        }
+    }
+
+    func executeCommand(_ item: CommandPaletteItem, arguments: CommandArguments = CommandArguments()) async {
+        executingCommandID = item.id
+        commandMessage = nil
+        do {
+            try await engine.dispatch(provider: item.providerID, commandID: item.command.id, arguments: arguments)
+            commandMessage = "\(item.command.label) sent to \(item.providerName)."
+            snapshot = await engine.currentSnapshot()
+            selectedEndpoint = await engine.currentSelectedEndpoint()
+        } catch {
+            commandMessage = error.localizedDescription
+        }
+        executingCommandID = nil
     }
 
     func setSpeedifyFocused(_ isFocused: Bool) {
