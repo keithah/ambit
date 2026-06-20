@@ -227,9 +227,50 @@ public actor Engine {
             await toggleVPN()
         case (ProviderIDs.speedify, ProviderCommandIDs.speedifyToggle):
             await toggleSpeedify()
+        case (ProviderIDs.speedify, ProviderCommandIDs.speedifySetBondingMode):
+            let mode = try requireString("mode", in: arguments)
+            await setSpeedifyBondingMode(SpeedifyBondingMode(code: mode))
+        case (ProviderIDs.speedify, ProviderCommandIDs.speedifySetNetworkPriority):
+            let priority = try requireInt("priority", in: arguments)
+            let networkID = try requireString("networkID", in: arguments)
+            await setSpeedifyNetworkPriority(SpeedifyNetworkPriority(value: priority), networkID: networkID)
+        case (ProviderIDs.ecoflow, ProviderCommandIDs.ecoFlowSetOutput):
+            let target = try requireEcoFlowOutputTarget(in: arguments)
+            let state = try requireEcoFlowOutputState(in: arguments)
+            _ = await setEcoFlowOutput(target, state: state)
         default:
             throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
         }
+    }
+
+    private func requireString(_ key: String, in arguments: CommandArguments) throws -> String {
+        guard let value = arguments.values[key]?.stringValue, !value.isEmpty else {
+            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a non-empty string.")
+        }
+        return value
+    }
+
+    private func requireInt(_ key: String, in arguments: CommandArguments) throws -> Int {
+        guard let value = arguments.values[key]?.intValue else {
+            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a number.")
+        }
+        return value
+    }
+
+    private func requireEcoFlowOutputTarget(in arguments: CommandArguments) throws -> EcoFlowOutputTarget {
+        let rawValue = try requireString("target", in: arguments)
+        guard let target = EcoFlowOutputTarget(rawValue: rawValue) else {
+            throw JSONRPCClientError.commandFailed("Provider command argument target is not a supported EcoFlow output.")
+        }
+        return target
+    }
+
+    private func requireEcoFlowOutputState(in arguments: CommandArguments) throws -> EcoFlowOutputState {
+        let rawValue = try requireString("state", in: arguments)
+        guard let state = EcoFlowOutputState(rawValue: rawValue), state != .unknown else {
+            throw JSONRPCClientError.commandFailed("Provider command argument state must be on or off.")
+        }
+        return state
     }
 
     public func toggleVPN() async {

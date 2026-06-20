@@ -16,6 +16,9 @@ public enum ProviderIDs {
 public enum ProviderCommandIDs {
     public static let vpnToggle = "vpn.toggle"
     public static let speedifyToggle = "speedify.toggle"
+    public static let speedifySetBondingMode = "speedify.setBondingMode"
+    public static let speedifySetNetworkPriority = "speedify.setNetworkPriority"
+    public static let ecoFlowSetOutput = "ecoflow.setOutput"
 }
 
 public protocol Provider: Sendable {
