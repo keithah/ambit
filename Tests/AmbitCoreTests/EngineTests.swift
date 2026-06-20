@@ -468,6 +468,35 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(commands.map(\.id), [ProviderCommandIDs.iperf3Run])
     }
 
+    func testBuiltInCommandsFollowRegisteredProviderSet() async {
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local", ecoflowEnabled: false)),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local", ecoflowEnabled: false),
+            routerPassword: "secret",
+            registerBuiltInProviders: true
+        )
+
+        let vpnCommands = await engine.commands(provider: ProviderIDs.vpn)
+        let speedifyCommands = await engine.commands(provider: ProviderIDs.speedify)
+        let disabledEcoFlowCommands = await engine.commands(provider: ProviderIDs.ecoflow)
+        let inactiveIperf3Commands = await engine.commands(provider: ProviderIDs.iperf3)
+
+        XCTAssertEqual(vpnCommands.map(\.id), [ProviderCommandIDs.vpnToggle])
+        XCTAssertEqual(speedifyCommands.map(\.id), [
+            ProviderCommandIDs.speedifyToggle,
+            ProviderCommandIDs.speedifySetBondingMode,
+            ProviderCommandIDs.speedifySetNetworkPriority
+        ])
+        XCTAssertEqual(disabledEcoFlowCommands, [])
+        XCTAssertEqual(inactiveIperf3Commands, [])
+
+        await engine.updateSettings(AppSettings(localHost: "router.local", ecoflowEnabled: true), routerPassword: "secret")
+
+        let enabledEcoFlowCommands = await engine.commands(provider: ProviderIDs.ecoflow)
+        XCTAssertEqual(enabledEcoFlowCommands.map(\.id), [ProviderCommandIDs.ecoFlowSetOutput])
+    }
+
     func testDispatchRunsBuiltInIperf3ProviderAndPublishesMetrics() async throws {
         let iperfOutput = """
         {

@@ -152,6 +152,9 @@ public actor Engine {
     public func commands(provider providerID: ProviderID) -> [CommandDescriptor] {
         let builtInCommands = ProviderCommandCatalog.commands(for: providerID)
         let registeredCommands = providers.first { $0.id == providerID }?.commands ?? []
+        guard !registerBuiltInProviders else {
+            return registeredCommands
+        }
         var seenCommandIDs = Set(builtInCommands.map(\.id))
         var commands = builtInCommands
         for command in registeredCommands where !seenCommandIDs.contains(command.id) {
@@ -824,6 +827,8 @@ public actor Engine {
         ProviderIDs.reachability,
         ProviderIDs.speedify,
         ProviderIDs.starlink,
-        ProviderIDs.ecoflow
+        ProviderIDs.ecoflow,
+        ProviderIDs.ping,
+        ProviderIDs.iperf3
     ]
 }
