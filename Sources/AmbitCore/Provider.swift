@@ -124,6 +124,12 @@ public struct ProviderSnapshot: Equatable, Sendable {
     }
 }
 
+public extension ProviderSnapshot {
+    func metric(_ id: String) -> Metric? {
+        metrics.first { $0.id == id }
+    }
+}
+
 public enum ProviderDetail: Equatable, Sendable {
     case router(RouterStatus)
     case vpn(VPNStatus)

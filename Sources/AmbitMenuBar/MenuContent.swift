@@ -26,6 +26,9 @@ struct MenuContent: View {
             case .commands:
                 CommandPaletteView(route: $route)
                     .environmentObject(viewModel)
+            case .measurements:
+                ActiveMeasurementsView(route: $route)
+                    .environmentObject(viewModel)
             }
         }
         .frame(width: 460)
@@ -44,6 +47,7 @@ private enum MenuRoute {
     case starlink
     case ecoflow
     case commands
+    case measurements
 }
 
 private enum SpeedifyPanel: String, CaseIterable {
@@ -120,6 +124,19 @@ private struct OverviewMenuView: View {
                         badge: "\(viewModel.commandPalette.count)",
                         tone: viewModel.commandPalette.isEmpty ? .neutral : .good,
                         systemImage: "command"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    route = .measurements
+                } label: {
+                    OverviewRow(
+                        title: "Active Measurements",
+                        detail: activeMeasurementDetail,
+                        badge: "\(activeMeasurementSummaries.count)",
+                        tone: activeMeasurementSummaries.contains { $0.health == .down || $0.health == .degraded } ? .warn : .good,
+                        systemImage: "waveform.path.ecg"
                     )
                 }
                 .buttonStyle(.plain)
@@ -267,6 +284,23 @@ private struct OverviewMenuView: View {
         }
         let providers = Array(Set(viewModel.commandPalette.map(\.providerName))).sorted()
         return providers.prefix(3).joined(separator: " · ")
+    }
+
+    private var activeMeasurementSummaries: [ActiveMeasurementSummary] {
+        ActiveMeasurementSummary.summaries(from: viewModel.snapshot)
+    }
+
+    private var activeMeasurementDetail: String {
+        if activeMeasurementSummaries.isEmpty {
+            return "Waiting for ping and throughput samples"
+        }
+        return activeMeasurementSummaries.map { summary in
+            if let metric = summary.primaryMetric {
+                return "\(summary.title) \(DisplayFormatters.metricValue(metric.value))"
+            }
+            return "\(summary.title) \(DisplayFormatters.health(summary.health))"
+        }
+        .joined(separator: " · ")
     }
 
     private var starlinkBadge: String {
@@ -790,6 +824,170 @@ private struct EcoFlowControlResultView: View {
 
     private var message: String {
         response.result == .unknown ? "Command sent, waiting for confirmation." : "Observed state: \(response.observedState.rawValue)"
+    }
+}
+
+private struct ActiveMeasurementsView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    @Binding var route: MenuRoute
+
+    private var summaries: [ActiveMeasurementSummary] {
+        ActiveMeasurementSummary.summaries(from: viewModel.snapshot)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HeaderView(title: "Measurements", subtitle: subtitle, showsBack: true) {
+                route = .overview
+            }
+
+            if summaries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No active measurements yet")
+                        .font(.headline)
+                    Text("Ping and iperf3 providers will appear here after the engine publishes their first snapshots.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                ForEach(summaries) { summary in
+                    ActiveMeasurementCard(summary: summary)
+                }
+            }
+
+            Button {
+                route = .commands
+            } label: {
+                HStack {
+                    Image(systemName: "command")
+                    Text("Run measurement command")
+                        .font(.caption.weight(.bold))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
+        }
+        .padding(14)
+        .task {
+            await viewModel.refresh()
+        }
+    }
+
+    private var subtitle: String {
+        if summaries.isEmpty { return "Waiting for provider snapshots" }
+        let badCount = summaries.filter { $0.health == .down || $0.health == .degraded }.count
+        if badCount > 0 { return "\(badCount) needs attention" }
+        return "\(summaries.count) providers reporting"
+    }
+}
+
+private struct ActiveMeasurementCard: View {
+    let summary: ActiveMeasurementSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(tone.color.opacity(0.18))
+                    Image(systemName: icon)
+                        .foregroundStyle(tone.color)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary.title)
+                        .font(.headline.weight(.bold))
+                    Text(summary.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(DisplayFormatters.health(summary.health))
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tone.color.opacity(0.16), in: Capsule())
+                    .foregroundStyle(tone.color)
+            }
+
+            if let primaryMetric = summary.primaryMetric {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(primaryMetric.label)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(DisplayFormatters.metricValue(primaryMetric.value))
+                        .font(.title3.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+            }
+
+            if !summary.secondaryMetrics.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(summary.secondaryMetrics) { metric in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(metric.label)
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(DisplayFormatters.metricValue(metric.value))
+                                .font(.caption.weight(.bold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+            }
+
+            if let errorMessage = summary.errorMessage, !errorMessage.isEmpty {
+                Text(errorMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
+        }
+        .padding(12)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var tone: StatusTone {
+        switch summary.health {
+        case .ok:
+            return .good
+        case .degraded:
+            return .warn
+        case .down:
+            return .bad
+        case .unknown:
+            return .neutral
+        }
+    }
+
+    private var icon: String {
+        switch summary.providerID {
+        case ProviderIDs.ping:
+            return "timer"
+        case ProviderIDs.iperf3:
+            return "speedometer"
+        default:
+            return "waveform.path.ecg"
+        }
     }
 }
 

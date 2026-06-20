@@ -3,6 +3,34 @@ import XCTest
 @testable import AmbitCore
 
 final class ActiveMeasurementProviderTests: XCTestCase {
+    func testActiveMeasurementSummariesExposePingAndIperfMetrics() {
+        let snapshot = StatusSnapshot(providers: [
+            ProviderIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(
+                host: "1.1.1.1",
+                transmitted: 3,
+                received: 3,
+                lossPercent: 0,
+                averageLatencyMs: 12.4
+            ))),
+            ProviderIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(Iperf3Snapshot(
+                host: "iperf.example",
+                downloadBps: 11_000_000,
+                uploadBps: 8_000_000
+            )))
+        ])
+
+        let summaries = ActiveMeasurementSummary.summaries(from: snapshot)
+
+        XCTAssertEqual(summaries.map(\.providerID), [ProviderIDs.ping, ProviderIDs.iperf3])
+        XCTAssertEqual(summaries.map(\.title), ["Ping", "iperf3"])
+        XCTAssertEqual(summaries[0].subtitle, "1.1.1.1")
+        XCTAssertEqual(summaries[0].primaryMetric?.id, "latency_ms")
+        XCTAssertEqual(summaries[0].secondaryMetrics.map(\.id), ["loss_percent", "received_packets"])
+        XCTAssertEqual(summaries[1].subtitle, "iperf.example")
+        XCTAssertEqual(summaries[1].primaryMetric?.id, "download_bps")
+        XCTAssertEqual(summaries[1].secondaryMetrics.map(\.id), ["upload_bps"])
+    }
+
     func testPingProviderParsesMacOSPingOutputIntoMetrics() async {
         let output = """
         PING 1.1.1.1 (1.1.1.1): 56 data bytes

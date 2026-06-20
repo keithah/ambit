@@ -41,6 +41,69 @@ public struct Iperf3Snapshot: Equatable, Sendable {
     }
 }
 
+public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
+    public var providerID: ProviderID
+    public var title: String
+    public var subtitle: String
+    public var health: Health
+    public var primaryMetric: Metric?
+    public var secondaryMetrics: [Metric]
+    public var errorMessage: String?
+
+    public var id: ProviderID { providerID }
+
+    public init(
+        providerID: ProviderID,
+        title: String,
+        subtitle: String,
+        health: Health,
+        primaryMetric: Metric?,
+        secondaryMetrics: [Metric],
+        errorMessage: String? = nil
+    ) {
+        self.providerID = providerID
+        self.title = title
+        self.subtitle = subtitle
+        self.health = health
+        self.primaryMetric = primaryMetric
+        self.secondaryMetrics = secondaryMetrics
+        self.errorMessage = errorMessage
+    }
+
+    public static func summaries(from snapshot: StatusSnapshot) -> [ActiveMeasurementSummary] {
+        [
+            pingSummary(from: snapshot.providers[ProviderIDs.ping]),
+            iperf3Summary(from: snapshot.providers[ProviderIDs.iperf3])
+        ].compactMap { $0 }
+    }
+
+    private static func pingSummary(from state: SourceState<ProviderSnapshot>?) -> ActiveMeasurementSummary? {
+        guard let state, let provider = state.value, case .ping(let detail) = provider.detail else { return nil }
+        return ActiveMeasurementSummary(
+            providerID: ProviderIDs.ping,
+            title: "Ping",
+            subtitle: detail.host,
+            health: provider.health,
+            primaryMetric: provider.metric("latency_ms"),
+            secondaryMetrics: ["loss_percent", "received_packets"].compactMap(provider.metric),
+            errorMessage: state.errorMessage ?? provider.error
+        )
+    }
+
+    private static func iperf3Summary(from state: SourceState<ProviderSnapshot>?) -> ActiveMeasurementSummary? {
+        guard let state, let provider = state.value, case .iperf3(let detail) = provider.detail else { return nil }
+        return ActiveMeasurementSummary(
+            providerID: ProviderIDs.iperf3,
+            title: "iperf3",
+            subtitle: detail.host.isEmpty ? "No run yet" : detail.host,
+            health: provider.health,
+            primaryMetric: provider.metric("download_bps"),
+            secondaryMetrics: ["upload_bps"].compactMap(provider.metric),
+            errorMessage: state.errorMessage ?? provider.error
+        )
+    }
+}
+
 public actor PingProvider: Provider {
     public let id: ProviderID = ProviderIDs.ping
     public let displayName = "Ping"
