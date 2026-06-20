@@ -288,6 +288,15 @@ public actor Engine {
         commandID: String,
         arguments: CommandArguments = CommandArguments()
     ) async throws {
+        if let registeredProvider = registeredProvider(provider, supporting: commandID) {
+            try await executeRegisteredProviderCommand(
+                registeredProvider,
+                commandID: commandID,
+                arguments: arguments
+            )
+            return
+        }
+
         switch (provider, commandID) {
         case (ProviderIDs.vpn, ProviderCommandIDs.vpnToggle):
             await toggleVPN()
@@ -308,18 +317,37 @@ public actor Engine {
             guard let registeredProvider = providers.first(where: { $0.id == provider }) else {
                 throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
             }
-            let started = Date()
-            do {
-                try await registeredProvider.execute(
-                    commandID: commandID,
-                    arguments: arguments,
-                    context: EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
-                )
-                await recordUsage(providerID: provider, operation: .command, started: started)
-            } catch {
-                await recordUsage(providerID: provider, operation: .command, started: started, error: error.localizedDescription)
-                throw error
-            }
+            try await executeRegisteredProviderCommand(
+                registeredProvider,
+                commandID: commandID,
+                arguments: arguments
+            )
+        }
+    }
+
+    private func registeredProvider(_ providerID: ProviderID, supporting commandID: String) -> (any Provider)? {
+        providers.first { provider in
+            provider.id == providerID && provider.commands.contains { $0.id == commandID }
+        }
+    }
+
+    private func executeRegisteredProviderCommand(
+        _ provider: any Provider,
+        commandID: String,
+        arguments: CommandArguments
+    ) async throws {
+        let started = Date()
+        let context = EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
+        do {
+            try await provider.execute(commandID: commandID, arguments: arguments, context: context)
+            let providerSnapshot = await provider.poll(context: context)
+            providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.id] = Date()
+            await recordUsage(providerID: provider.id, operation: .command, started: started)
+            publish()
+        } catch {
+            await recordUsage(providerID: provider.id, operation: .command, started: started, error: error.localizedDescription)
+            throw error
         }
     }
 

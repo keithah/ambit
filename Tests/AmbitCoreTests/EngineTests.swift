@@ -559,6 +559,33 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(speedifyClient.connectHosts, ["router.local"])
     }
 
+    func testDispatchRoutesBuiltInCommandToRegisteredProviderWhenRegistered() async throws {
+        let speedifyClient = StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected"))
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: speedifyClient,
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            registerBuiltInProviders: true,
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        try await engine.dispatch(provider: ProviderIDs.speedify, commandID: ProviderCommandIDs.speedifyToggle)
+
+        XCTAssertEqual(speedifyClient.connectHosts, ["router.local"])
+    }
+
     func testDispatchRoutesSpeedifyBondingModeCommandWithArguments() async throws {
         let speedifyClient = StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected"))
         let engine = Engine(
