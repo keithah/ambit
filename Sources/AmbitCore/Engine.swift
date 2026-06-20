@@ -45,7 +45,7 @@ public actor Engine {
         routerPassword: String? = nil,
         routerClientFactory: RouterClientFactory? = nil,
         providers: [any Provider] = [],
-        registerBuiltInProviders: Bool = false,
+        registerBuiltInProviders: Bool = true,
         resetRouterClients: (@Sendable () async -> Void)? = nil,
         usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
@@ -165,90 +165,11 @@ public actor Engine {
     }
 
     public func refresh() async {
-        snapshot.router.isLoading = true
-        snapshot.vpn.isLoading = true
-        snapshot.reachability.isLoading = true
-        snapshot.speedify.isLoading = true
-        snapshot.starlink.isLoading = true
-        snapshot.ecoflow.isLoading = settings.ecoflowEnabled
         markRegisteredProvidersLoading()
         publish()
 
-        async let endpointResult = resolveEndpoint()
-        async let reachabilityResult = loadLegacyReachabilityStatusIfNeeded()
-        async let starlinkResult = loadLegacyStarlinkStatusIfNeeded()
-
-        let endpoint = await endpointResult
+        let endpoint = await resolveEndpoint()
         selectedEndpoint = endpoint.value
-        async let ecoflowResult = loadLegacyEcoFlowStatusIfNeeded(routerHost: endpoint.value?.host)
-
-        if let selection = endpoint.value, let url = URL.routerRPC(host: selection.host) {
-            async let speedifyResult = loadLegacySpeedifyStatusIfNeeded(host: selection.host)
-            if let backoff = routerBackoffUntil, backoff > Date() {
-                let message = "Router login paused for \(Self.formatRemaining(until: backoff))."
-                await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: Date(), error: message)
-                await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: Date(), error: message)
-                snapshot.router = SourceState(value: snapshot.router.value, errorMessage: message)
-                snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: message)
-                if let reachability = await reachabilityResult {
-                    snapshot.reachability = reachability
-                }
-                if let speedify = await speedifyResult {
-                    snapshot.speedify = speedify
-                }
-                if let starlink = await starlinkResult {
-                    snapshot.starlink = starlink
-                }
-                if let ecoflow = await ecoflowResult {
-                    snapshot.ecoflow = ecoflow
-                }
-                providerStates = await pollRegisteredProviders(routerHost: endpoint.value?.host)
-                snapshot.lastUpdated = Date()
-                publish()
-                return
-            }
-
-            let client = await routerClientFactory(url, settings.username, { [routerPassword] in routerPassword })
-            if hasRegisteredProvider(ProviderIDs.router) {
-                if !hasRegisteredProvider(ProviderIDs.vpn) {
-                    snapshot.vpn = await loadVPNStatus(client: client)
-                }
-            } else {
-                let router = await loadRouterStatus(client: client)
-                snapshot.router = router
-                if router.errorMessage?.localizedCaseInsensitiveContains("locked") == true {
-                    if !hasRegisteredProvider(ProviderIDs.vpn) {
-                        snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: router.errorMessage)
-                    }
-                } else {
-                    if !hasRegisteredProvider(ProviderIDs.vpn) {
-                        snapshot.vpn = await loadVPNStatus(client: client)
-                    }
-                }
-            }
-            if let speedify = await speedifyResult {
-                snapshot.speedify = speedify
-            }
-        } else {
-            snapshot.router = SourceState(value: snapshot.router.value, errorMessage: endpoint.errorMessage)
-            snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: endpoint.errorMessage)
-            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: Date(), error: endpoint.errorMessage)
-            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: Date(), error: endpoint.errorMessage)
-            if !hasRegisteredProvider(ProviderIDs.speedify) {
-                snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: endpoint.errorMessage)
-                await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: Date(), error: endpoint.errorMessage)
-            }
-        }
-
-        if let reachability = await reachabilityResult {
-            snapshot.reachability = reachability
-        }
-        if let starlink = await starlinkResult {
-            snapshot.starlink = starlink
-        }
-        if let ecoflow = await ecoflowResult {
-            snapshot.ecoflow = ecoflow
-        }
         providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
         snapshot.lastUpdated = Date()
         publish()
@@ -513,25 +434,26 @@ public actor Engine {
     }
 
     private func refreshSpeedifyOnly(markLoading: Bool) async {
+        guard let provider = providers.first(where: { $0.id == ProviderIDs.speedify }) else { return }
         if markLoading {
-            snapshot.speedify.isLoading = true
+            let previous = providerStates[ProviderIDs.speedify]
+            providerStates[ProviderIDs.speedify] = SourceState(
+                value: previous?.value,
+                isLoading: true,
+                errorMessage: previous?.errorMessage
+            )
             publish()
         }
-        let selection: EndpointSelection?
-        if let selectedEndpoint {
-            selection = selectedEndpoint
-        } else {
+        if selectedEndpoint == nil {
             let endpoint = await resolveEndpoint()
             selectedEndpoint = endpoint.value
-            selection = endpoint.value
-            if endpoint.value == nil {
-                snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: endpoint.errorMessage)
-                publish()
-                return
-            }
         }
-        guard let selection else { return }
-        snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
+        let started = Date()
+        let context = EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
+        let providerSnapshot = await provider.poll(context: context)
+        providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+        lastRegisteredProviderPolls[provider.id] = Date()
+        await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
         snapshot.lastUpdated = Date()
         publish()
     }

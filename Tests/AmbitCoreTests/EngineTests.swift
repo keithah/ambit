@@ -210,6 +210,96 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(starlinkCounter.count, 1)
     }
 
+    func testRefreshUsesProviderRegistryWithoutLegacyFallbacks() async {
+        let providers: [any Provider] = [
+            StubProvider(
+                id: ProviderIDs.router,
+                snapshot: ProviderSnapshot.router(RouterStatus(reachable: true, hostname: "Provider Router", activeWAN: .modem))
+            ),
+            StubProvider(
+                id: ProviderIDs.vpn,
+                snapshot: ProviderSnapshot.vpn(VPNStatus(protocol: .wireGuard, isConnected: true, server: "Provider VPN"))
+            ),
+            StubProvider(
+                id: ProviderIDs.reachability,
+                snapshot: ProviderSnapshot.reachability(ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.123)))
+            ),
+            StubProvider(
+                id: ProviderIDs.speedify,
+                snapshot: ProviderSnapshot.speedify(SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Provider"))
+            ),
+            StubProvider(
+                id: ProviderIDs.starlink,
+                snapshot: ProviderSnapshot.starlink(StarlinkStatus(isReachable: true, state: "Provider Starlink"))
+            ),
+            StubProvider(
+                id: ProviderIDs.ecoflow,
+                snapshot: ProviderSnapshot.ecoFlow(
+                    EcoFlowSnapshot(
+                        status: EcoFlowDeviceStatus(
+                            battery: EcoFlowBatteryStatus(percent: 64, state: .discharging),
+                            power: EcoFlowPowerStatus(inputWatts: 0, outputWatts: 12, netWatts: -12),
+                            outputs: EcoFlowOutputMap(
+                                ac: EcoFlowOutputStatus(state: .off, watts: 0),
+                                dc: EcoFlowOutputStatus(state: .off, watts: 0),
+                                usb: EcoFlowOutputStatus(state: .on, watts: 12)
+                            ),
+                            updatedAt: "2026-06-20T00:00:00Z"
+                        )
+                    )
+                )
+            )
+        ]
+        let reachabilityProbe = StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: false, state: .offline))
+        let speedifyClient = StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Legacy"))
+        let routerFactoryCounter = CallCounter()
+        let starlinkCounter = CallCounter()
+        let ecoFlowFactoryCounter = CallCounter()
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local", ecoflowEnabled: true)),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: reachabilityProbe,
+            routerSpeedifyClient: speedifyClient,
+            settings: AppSettings(localHost: "router.local", ecoflowEnabled: true),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in
+                routerFactoryCounter.increment()
+                return StubRouterClient(
+                    routerStatus: RouterStatus(reachable: true, hostname: "Legacy Router", activeWAN: .wired),
+                    vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: false)
+                )
+            },
+            providers: providers,
+            starlinkStatusProvider: { _ in
+                starlinkCounter.increment()
+                return StarlinkStatus(isReachable: false, state: "Legacy Starlink")
+            },
+            ecoFlowClientFactory: { _ in
+                ecoFlowFactoryCounter.increment()
+                return StubEcoFlowClient()
+            }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerRouterStatus?.hostname, "Provider Router")
+        XCTAssertEqual(snapshot.providerVPNStatus?.server, "Provider VPN")
+        XCTAssertEqual(snapshot.providerReachabilityStatus?.state, .online(latency: 0.123))
+        XCTAssertEqual(snapshot.providerSpeedifyStatus?.state, "Provider")
+        XCTAssertEqual(snapshot.providerStarlinkStatus?.state, "Provider Starlink")
+        XCTAssertEqual(snapshot.providerEcoFlowSnapshot?.status.battery.percent, 64)
+        XCTAssertEqual(routerFactoryCounter.count, 0)
+        XCTAssertEqual(reachabilityProbe.callCount, 0)
+        XCTAssertEqual(speedifyClient.statusCallCount, 0)
+        XCTAssertEqual(starlinkCounter.count, 0)
+        XCTAssertEqual(ecoFlowFactoryCounter.count, 0)
+    }
+
     func testRefreshUsesRegisteredSpeedifyProviderInsteadOfLegacyPoller() async {
         let provider = StubProvider(
             id: ProviderIDs.speedify,
@@ -878,11 +968,13 @@ final class EngineTests: XCTestCase {
     }
 
     func testExposesProviderCommandMetadata() async {
+        let processRunner = StubProcessRunner(results: [:])
         let engine = Engine(
-            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local", ecoflowEnabled: true)),
             credentialStore: InMemoryCredentialStore(password: "secret"),
-            settings: AppSettings(localHost: "router.local"),
-            routerPassword: "secret"
+            settings: AppSettings(localHost: "router.local", ecoflowEnabled: true),
+            routerPassword: "secret",
+            activeMeasurementProcessRunner: processRunner
         )
 
         let vpnCommands = await engine.commands(provider: ProviderIDs.vpn)
@@ -940,7 +1032,7 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(commands, provider.commands)
     }
 
-    func testExposesRegisteredCommandsForBuiltInProviderID() async {
+    func testExplicitProviderCommandsReplaceBuiltInProviderCommands() async {
         let provider = StubProvider(
             id: ProviderIDs.speedify,
             snapshot: ProviderSnapshot(health: .ok),
@@ -961,8 +1053,6 @@ final class EngineTests: XCTestCase {
 
         XCTAssertEqual(commands.map(\.id), [
             ProviderCommandIDs.speedifyToggle,
-            ProviderCommandIDs.speedifySetBondingMode,
-            ProviderCommandIDs.speedifySetNetworkPriority,
             "speedify.custom"
         ])
     }
