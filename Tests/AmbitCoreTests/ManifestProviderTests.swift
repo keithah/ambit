@@ -28,7 +28,7 @@ final class ManifestProviderTests: XCTestCase {
         XCTAssertEqual(provider.id, "demo.runtime")
         XCTAssertEqual(provider.displayName, "Runtime Demo")
         XCTAssertEqual(provider.pollInterval, 12)
-        XCTAssertEqual(provider.commands, manifest.commandDescriptors)
+        XCTAssertEqual(provider.commands, [])
         XCTAssertEqual(snapshot.health, .ok)
         XCTAssertNil(snapshot.error)
         XCTAssertEqual(snapshot.metrics, [
@@ -76,6 +76,68 @@ final class ManifestProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.health, .down)
         XCTAssertEqual(snapshot.metrics, [])
         XCTAssertEqual(snapshot.error, "unavailable")
+    }
+
+    func testOnlyExecutableManifestCommandsArePublishedByRuntime() {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo.runtime",
+            displayName: "Runtime Demo",
+            pollInterval: 12,
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [],
+            commands: [
+                ProviderManifest.Command(id: "demo.metadata", label: "Metadata Only"),
+                ProviderManifest.Command(
+                    id: "demo.reboot",
+                    label: "Reboot",
+                    requiresConfirmation: true,
+                    endpoint: ProviderManifest.Endpoint(method: .post, url: "https://example.test/reboot")
+                )
+            ]
+        )
+
+        let provider = ManifestProvider(manifest: manifest, httpClient: StubManifestHTTPClient(responses: []))
+
+        XCTAssertEqual(provider.commands, [
+            CommandDescriptor(id: "demo.reboot", label: "Reboot", requiresConfirmation: true)
+        ])
+    }
+
+    func testExecutesManifestCommandEndpointWithURLArguments() async throws {
+        let client = StubManifestHTTPClient(responses: [
+            .success(#"{ "ok": true }"#)
+        ])
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo.runtime",
+            displayName: "Runtime Demo",
+            pollInterval: 12,
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [],
+            commands: [
+                ProviderManifest.Command(
+                    id: "demo.output",
+                    label: "Set Output",
+                    parameters: [
+                        ProviderManifest.CommandParameter(id: "target", label: "Target", kind: .text),
+                        ProviderManifest.CommandParameter(id: "enabled", label: "Enabled", kind: .bool)
+                    ],
+                    endpoint: ProviderManifest.Endpoint(method: .post, url: "https://example.test/output/{target}/{enabled}")
+                )
+            ]
+        )
+        let provider = ManifestProvider(manifest: manifest, httpClient: client)
+
+        try await provider.execute(
+            commandID: "demo.output",
+            arguments: CommandArguments(values: ["target": .string("ac/outlet"), "enabled": .bool(true)]),
+            context: EnvironmentContext(routerHost: nil, settings: AppSettings())
+        )
+
+        XCTAssertEqual(client.requests, [
+            ManifestHTTPRequest(method: .post, url: URL(string: "https://example.test/output/ac%2Foutlet/true")!)
+        ])
     }
 
     private static func manifest() -> ProviderManifest {

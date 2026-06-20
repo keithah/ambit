@@ -170,17 +170,20 @@ public extension ProviderManifest {
         public var label: String
         public var parameters: [CommandParameter]
         public var requiresConfirmation: Bool
+        public var endpoint: Endpoint?
 
         public init(
             id: String,
             label: String,
             parameters: [CommandParameter] = [],
-            requiresConfirmation: Bool = false
+            requiresConfirmation: Bool = false,
+            endpoint: Endpoint? = nil
         ) {
             self.id = id
             self.label = label
             self.parameters = parameters
             self.requiresConfirmation = requiresConfirmation
+            self.endpoint = endpoint
         }
     }
 
