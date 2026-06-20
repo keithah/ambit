@@ -19,6 +19,7 @@ public enum ProviderCommandIDs {
     public static let speedifySetBondingMode = "speedify.setBondingMode"
     public static let speedifySetNetworkPriority = "speedify.setNetworkPriority"
     public static let ecoFlowSetOutput = "ecoflow.setOutput"
+    public static let iperf3Run = "iperf3.run"
 }
 
 public enum ProviderCommandCatalog {

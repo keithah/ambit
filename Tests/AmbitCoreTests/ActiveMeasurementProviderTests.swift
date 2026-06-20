@@ -42,7 +42,10 @@ final class ActiveMeasurementProviderTests: XCTestCase {
             processRunner: StubProcessRunner(results: ["-J -t 5 -c iperf.example": ProcessResult(exitCode: 0, stdout: output, stderr: "")])
         )
 
-        try await provider.execute(commandID: "iperf3.run", arguments: CommandArguments(), context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let commandIDs = await provider.commands.map(\.id)
+        XCTAssertEqual(commandIDs, [ProviderCommandIDs.iperf3Run])
+
+        try await provider.execute(commandID: ProviderCommandIDs.iperf3Run, arguments: CommandArguments(), context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
         let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
 
         XCTAssertEqual(snapshot.health, .ok)

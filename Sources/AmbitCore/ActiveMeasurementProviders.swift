@@ -92,7 +92,7 @@ public actor Iperf3Provider: Provider {
     public let pollInterval: TimeInterval = 3_600
     public let commands = [
         CommandDescriptor(
-            id: "iperf3.run",
+            id: ProviderCommandIDs.iperf3Run,
             label: "Run iperf3",
             parameters: [CommandParameter(id: "host", label: "Host", kind: .text)]
         )
@@ -117,7 +117,7 @@ public actor Iperf3Provider: Provider {
     }
 
     public func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
-        guard commandID == "iperf3.run" else {
+        guard commandID == ProviderCommandIDs.iperf3Run else {
             throw JSONRPCClientError.commandFailed("Unsupported iperf3 command \(commandID).")
         }
         let host = arguments.values["host"]?.stringValue ?? defaultHost
