@@ -59,6 +59,14 @@ public enum ProviderCommandCatalog {
                     ]
                 )
             ]
+        case ProviderIDs.iperf3:
+            return [
+                CommandDescriptor(
+                    id: ProviderCommandIDs.iperf3Run,
+                    label: "Run iperf3",
+                    parameters: [CommandParameter(id: "host", label: "Host", kind: .text)]
+                )
+            ]
         default:
             return []
         }

@@ -858,6 +858,7 @@ final class EngineTests: XCTestCase {
         let vpnCommands = await engine.commands(provider: ProviderIDs.vpn)
         let speedifyCommands = await engine.commands(provider: ProviderIDs.speedify)
         let ecoFlowCommands = await engine.commands(provider: ProviderIDs.ecoflow)
+        let iperf3Commands = await engine.commands(provider: ProviderIDs.iperf3)
 
         XCTAssertEqual(vpnCommands.map(\.id), [ProviderCommandIDs.vpnToggle])
         XCTAssertEqual(speedifyCommands.map(\.id), [
@@ -876,6 +877,11 @@ final class EngineTests: XCTestCase {
                 CommandParameter(id: "target", label: "Output", kind: .option(["ac", "dc", "usb"])),
                 CommandParameter(id: "state", label: "State", kind: .option(["on", "off"]))
             ]
+        )
+        XCTAssertEqual(iperf3Commands.map(\.id), [ProviderCommandIDs.iperf3Run])
+        XCTAssertEqual(
+            iperf3Commands.first?.parameters,
+            [CommandParameter(id: "host", label: "Host", kind: .text)]
         )
     }
 
