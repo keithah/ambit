@@ -17,6 +17,7 @@ public actor Engine {
     private let resetRouterClients: @Sendable () async -> Void
     private let starlinkStatusProvider: StarlinkStatusProvider
     private let ecoFlowClientFactory: EcoFlowClientFactory
+    private let usageMeter: ModuleUsageMeter
 
     private var snapshot = StatusSnapshot()
     private var settings: AppSettings
@@ -36,6 +37,7 @@ public actor Engine {
         routerPassword: String? = nil,
         routerClientFactory: RouterClientFactory? = nil,
         resetRouterClients: (@Sendable () async -> Void)? = nil,
+        usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
             await StarlinkClient(path: path).status()
         },
@@ -54,6 +56,7 @@ public actor Engine {
         self.routerSpeedifyClient = routerSpeedifyClient
         self.settings = loadedSettings
         self.routerPassword = routerPassword ?? ((try? credentialStore.password(account: loadedSettings.username)) ?? RouterDefaults.routerPassword)
+        self.usageMeter = usageMeter
         if let routerClientFactory {
             self.routerClientFactory = routerClientFactory
         } else {
@@ -106,6 +109,10 @@ public actor Engine {
         selectedEndpoint
     }
 
+    public func usageSnapshots() async -> [ProviderID: ModuleUsageSnapshot] {
+        await usageMeter.allSnapshots()
+    }
+
     public func refresh() async {
         snapshot.router.isLoading = true
         snapshot.vpn.isLoading = true
@@ -116,7 +123,7 @@ public actor Engine {
         publish()
 
         async let endpointResult = resolveEndpoint()
-        async let reachabilityResult = reachabilityProbe.probe()
+        async let reachabilityResult = loadReachabilityStatus()
         async let starlinkResult = loadStarlinkStatus()
 
         let endpoint = await endpointResult
@@ -127,9 +134,11 @@ public actor Engine {
             async let speedifyResult = loadSpeedifyStatus(host: selection.host)
             if let backoff = routerBackoffUntil, backoff > Date() {
                 let message = "Router login paused for \(Self.formatRemaining(until: backoff))."
+                await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: Date(), error: message)
+                await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: Date(), error: message)
                 snapshot.router = SourceState(value: snapshot.router.value, errorMessage: message)
                 snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: message)
-                snapshot.reachability = SourceState(value: await reachabilityResult)
+                snapshot.reachability = await reachabilityResult
                 snapshot.speedify = await speedifyResult
                 snapshot.starlink = await starlinkResult
                 snapshot.ecoflow = await ecoflowResult
@@ -151,9 +160,12 @@ public actor Engine {
             snapshot.router = SourceState(value: snapshot.router.value, errorMessage: endpoint.errorMessage)
             snapshot.vpn = SourceState(value: snapshot.vpn.value, errorMessage: endpoint.errorMessage)
             snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: endpoint.errorMessage)
+            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: Date(), error: endpoint.errorMessage)
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: Date(), error: endpoint.errorMessage)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: Date(), error: endpoint.errorMessage)
         }
 
-        snapshot.reachability = SourceState(value: await reachabilityResult)
+        snapshot.reachability = await reachabilityResult
         snapshot.starlink = await starlinkResult
         snapshot.ecoflow = await ecoflowResult
         snapshot.lastUpdated = Date()
@@ -206,24 +218,34 @@ public actor Engine {
     }
 
     public func toggleVPN() async {
+        let started = Date()
         guard
             let selection = selectedEndpoint,
             let url = URL.routerRPC(host: selection.host),
             let status = snapshot.vpn.value
-        else { return }
+        else {
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started, error: "VPN command prerequisites unavailable.")
+            return
+        }
         let client = await routerClientFactory(url, settings.username, { [routerPassword] in routerPassword })
         do {
             try await client.setVPNEnabled(!status.isConnected, protocol: status.vpnProtocol)
             snapshot.vpn = await loadVPNStatus(client: client)
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started)
             publish()
         } catch {
             snapshot.vpn.errorMessage = error.localizedDescription
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .command, started: started, error: error.localizedDescription)
             publish()
         }
     }
 
     public func toggleSpeedify() async {
-        guard let selection = selectedEndpoint, let status = snapshot.speedify.value else { return }
+        let started = Date()
+        guard let selection = selectedEndpoint, let status = snapshot.speedify.value else {
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify command prerequisites unavailable.")
+            return
+        }
         snapshot.speedify.isLoading = true
         publish()
         do {
@@ -233,43 +255,62 @@ public actor Engine {
                 try await routerSpeedifyClient.connect(host: selection.host)
             }
             snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
         } catch {
             snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
         }
         publish()
     }
 
     public func setSpeedifyBondingMode(_ mode: SpeedifyBondingMode) async {
-        guard let selection = selectedEndpoint else { return }
+        let started = Date()
+        guard let selection = selectedEndpoint else {
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify endpoint unavailable.")
+            return
+        }
         snapshot.speedify.isLoading = true
         publish()
         do {
             try await routerSpeedifyClient.setBondingMode(mode, host: selection.host)
             snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
         } catch {
             snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
         }
         publish()
     }
 
     public func setSpeedifyNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String) async {
-        guard let selection = selectedEndpoint else { return }
+        let started = Date()
+        guard let selection = selectedEndpoint else {
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: "Speedify endpoint unavailable.")
+            return
+        }
         snapshot.speedify.isLoading = true
         publish()
         do {
             try await routerSpeedifyClient.setNetworkPriority(priority, networkID: networkID, host: selection.host)
             snapshot.speedify = await loadSpeedifyStatus(host: selection.host)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started)
         } catch {
             snapshot.speedify = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .command, started: started, error: error.localizedDescription)
         }
         publish()
     }
 
     public func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
-        guard settings.ecoflowEnabled else { return nil }
+        let started = Date()
+        guard settings.ecoflowEnabled else {
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: "EcoFlow is disabled.")
+            return nil
+        }
         let host = settings.ecoflowHost == "auto" ? selectedEndpoint?.host : settings.ecoflowHost
         guard let host, !host.isEmpty, let baseURL = URL(string: "http://\(host):\(settings.ecoflowPort)") else {
             snapshot.ecoflow.errorMessage = "EcoFlow daemon endpoint unresolved."
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: snapshot.ecoflow.errorMessage)
             publish()
             return nil
         }
@@ -278,10 +319,12 @@ public actor Engine {
         do {
             let response = try await client.setOutput(target, state: state)
             snapshot.ecoflow = await loadEcoFlowStatus(routerHost: selectedEndpoint?.host)
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started)
             publish()
             return response
         } catch {
             snapshot.ecoflow = SourceState(value: snapshot.ecoflow.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .command, started: started, error: error.localizedDescription)
             publish()
             return nil
         }
@@ -321,51 +364,84 @@ public actor Engine {
     }
 
     private func loadRouterStatus(client: any GLiNetClientProtocol) async -> SourceState<RouterStatus> {
+        let started = Date()
         do {
-            return SourceState(value: try await client.routerStatus())
+            let state = SourceState(value: try await client.routerStatus())
+            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: started)
+            return state
         } catch {
             noteRouterError(error)
-            return SourceState(value: snapshot.router.value, errorMessage: error.localizedDescription)
+            let state = SourceState(value: snapshot.router.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.router, operation: .poll, started: started, error: error.localizedDescription)
+            return state
         }
     }
 
     private func loadVPNStatus(client: any GLiNetClientProtocol) async -> SourceState<VPNStatus> {
+        let started = Date()
         do {
-            return SourceState(value: try await client.vpnStatus())
+            let state = SourceState(value: try await client.vpnStatus())
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: started)
+            return state
         } catch {
             noteRouterError(error)
-            return SourceState(value: snapshot.vpn.value, errorMessage: error.localizedDescription)
+            let state = SourceState(value: snapshot.vpn.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.vpn, operation: .poll, started: started, error: error.localizedDescription)
+            return state
         }
     }
 
+    private func loadReachabilityStatus() async -> SourceState<ReachabilityStatus> {
+        let started = Date()
+        let status = await reachabilityProbe.probe()
+        await recordUsage(providerID: ProviderIDs.reachability, operation: .poll, started: started)
+        return SourceState(value: status)
+    }
+
     private func loadSpeedifyStatus(host: String) async -> SourceState<SpeedifyStatus> {
+        let started = Date()
         do {
             let status = try await routerSpeedifyClient.status(host: host)
                 .mergingLiveSamples(from: snapshot.speedify.value)
-            return SourceState(value: status)
+            let state = SourceState(value: status)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: started)
+            return state
         } catch {
-            return SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
+            let state = SourceState(value: snapshot.speedify.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.speedify, operation: .poll, started: started, error: error.localizedDescription)
+            return state
         }
     }
 
     private func loadStarlinkStatus() async -> SourceState<StarlinkStatus> {
+        let started = Date()
         let status = await starlinkStatusProvider(settings.grpcurlPath)
         if status.isReachable {
-            return SourceState(value: status)
+            let state = SourceState(value: status)
+            await recordUsage(providerID: ProviderIDs.starlink, operation: .poll, started: started)
+            return state
         }
-        return SourceState(value: snapshot.starlink.value, errorMessage: status.state)
+        let state = SourceState(value: snapshot.starlink.value, errorMessage: status.state)
+        await recordUsage(providerID: ProviderIDs.starlink, operation: .poll, started: started, error: status.state)
+        return state
     }
 
     private func loadEcoFlowStatus(routerHost: String?) async -> SourceState<EcoFlowSnapshot> {
+        let started = Date()
         guard settings.ecoflowEnabled else {
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started)
             return SourceState()
         }
         let host = settings.ecoflowHost == "auto" ? routerHost : settings.ecoflowHost
         guard let host, !host.isEmpty else {
-            return SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint unresolved.")
+            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint unresolved.")
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: state.errorMessage)
+            return state
         }
         guard let baseURL = URL(string: "http://\(host):\(settings.ecoflowPort)") else {
-            return SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint is invalid.")
+            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: "EcoFlow daemon endpoint is invalid.")
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: state.errorMessage)
+            return state
         }
 
         let client = ecoFlowClientFactory(baseURL)
@@ -374,14 +450,18 @@ public actor Engine {
             async let status = client.status()
             async let outputs = try? client.outputs()
             async let stats = try? client.stats()
-            return SourceState(value: try await EcoFlowSnapshot(
+            let state = SourceState(value: try await EcoFlowSnapshot(
                 device: await device,
                 status: status,
                 outputs: await outputs,
                 stats: await stats
             ))
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started)
+            return state
         } catch {
-            return SourceState(value: snapshot.ecoflow.value, errorMessage: error.localizedDescription)
+            let state = SourceState(value: snapshot.ecoflow.value, errorMessage: error.localizedDescription)
+            await recordUsage(providerID: ProviderIDs.ecoflow, operation: .poll, started: started, error: error.localizedDescription)
+            return state
         }
     }
 
@@ -396,6 +476,20 @@ public actor Engine {
     private func publish() {
         snapshot.populateProviderSnapshots()
         snapshotContinuation.yield(snapshot)
+    }
+
+    private func recordUsage(
+        providerID: ProviderID,
+        operation: ModuleUsageOperation,
+        started: Date,
+        error: String? = nil
+    ) async {
+        await usageMeter.record(
+            providerID: providerID,
+            operation: operation,
+            duration: Date().timeIntervalSince(started),
+            error: error
+        )
     }
 
     private static func formatRemaining(until date: Date) -> String {

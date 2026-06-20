@@ -48,6 +48,42 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(snapshot.providers[ProviderIDs.vpn]?.value?.metricValue("connected"), .bool(true))
         XCTAssertEqual(snapshot.providers[ProviderIDs.speedify]?.value?.metricValue("throughput_bps"), .throughput(bitsPerSecond: 12_000))
         XCTAssertEqual(snapshot.providers[ProviderIDs.starlink]?.value?.metricValue("pop_latency_ms"), .latency(ms: 31))
+
+        let usage = await engine.usageSnapshots()
+        XCTAssertEqual(usage[ProviderIDs.router]?.pollCount, 1)
+        XCTAssertEqual(usage[ProviderIDs.vpn]?.pollCount, 1)
+        XCTAssertEqual(usage[ProviderIDs.reachability]?.pollCount, 1)
+        XCTAssertEqual(usage[ProviderIDs.speedify]?.pollCount, 1)
+        XCTAssertEqual(usage[ProviderIDs.starlink]?.pollCount, 1)
+    }
+
+    func testCommandUsageIsRecorded() async {
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        await engine.toggleVPN()
+
+        let usage = await engine.usageSnapshots()
+        XCTAssertEqual(usage[ProviderIDs.vpn]?.commandCount, 1)
+        XCTAssertEqual(usage[ProviderIDs.vpn]?.failureCount, 0)
+        XCTAssertEqual(routerClient.vpnEnabledRequests, [false])
     }
 
     func testEcoFlowMetricExtraction() {
