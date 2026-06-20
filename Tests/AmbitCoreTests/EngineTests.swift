@@ -375,6 +375,41 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(pollCount, 1)
     }
 
+    func testRefreshUsesRegisteredVPNProviderInsteadOfLegacyVPNPoll() async {
+        let provider = StubProvider(
+            id: ProviderIDs.vpn,
+            snapshot: ProviderSnapshot.vpn(VPNStatus(protocol: .wireGuard, isConnected: true, server: "Provider VPN"))
+        )
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "Legacy Router", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: false, server: "Legacy VPN")
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Legacy")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            providers: [provider],
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.providerVPNStatus?.server, "Provider VPN")
+        XCTAssertEqual(routerClient.routerStatusCallCount, 1)
+        XCTAssertEqual(routerClient.vpnStatusCallCount, 0)
+        let pollCount = await provider.currentPollCount()
+        XCTAssertEqual(pollCount, 1)
+    }
+
     func testDispatchRoutesRegisteredProviderCommand() async throws {
         let provider = StubProvider(
             id: "demo",
