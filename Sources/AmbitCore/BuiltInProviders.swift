@@ -43,3 +43,66 @@ public struct StarlinkProvider: Provider {
         return snapshot
     }
 }
+
+public struct SpeedifyProvider: Provider {
+    public let id: ProviderID = ProviderIDs.speedify
+    public let displayName = "Speedify"
+    public let pollInterval: TimeInterval
+    public let commands = ProviderCommandCatalog.commands(for: ProviderIDs.speedify)
+
+    private let client: RouterSpeedifyClientProtocol
+
+    public init(client: RouterSpeedifyClientProtocol = RouterSpeedifyClient(), pollInterval: TimeInterval = 5) {
+        self.client = client
+        self.pollInterval = pollInterval
+    }
+
+    public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
+        guard let host = context.routerHost, !host.isEmpty else {
+            return ProviderSnapshot(health: .unknown, error: "Speedify endpoint unavailable.")
+        }
+        do {
+            return ProviderSnapshot.speedify(try await client.status(host: host))
+        } catch {
+            return ProviderSnapshot(health: .unknown, error: error.localizedDescription)
+        }
+    }
+
+    public func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
+        guard let host = context.routerHost, !host.isEmpty else {
+            throw JSONRPCClientError.commandFailed("Speedify endpoint unavailable.")
+        }
+        switch commandID {
+        case ProviderCommandIDs.speedifyToggle:
+            let status = try await client.status(host: host)
+            if status.isConnected {
+                try await client.disconnect(host: host)
+            } else {
+                try await client.connect(host: host)
+            }
+        case ProviderCommandIDs.speedifySetBondingMode:
+            let mode = try Self.requireString("mode", in: arguments)
+            try await client.setBondingMode(SpeedifyBondingMode(code: mode), host: host)
+        case ProviderCommandIDs.speedifySetNetworkPriority:
+            let priority = try Self.requireInt("priority", in: arguments)
+            let networkID = try Self.requireString("networkID", in: arguments)
+            try await client.setNetworkPriority(SpeedifyNetworkPriority(value: priority), networkID: networkID, host: host)
+        default:
+            throw JSONRPCClientError.commandFailed("Unsupported Speedify command \(commandID).")
+        }
+    }
+
+    private static func requireString(_ key: String, in arguments: CommandArguments) throws -> String {
+        guard let value = arguments.values[key]?.stringValue, !value.isEmpty else {
+            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a non-empty string.")
+        }
+        return value
+    }
+
+    private static func requireInt(_ key: String, in arguments: CommandArguments) throws -> Int {
+        guard let value = arguments.values[key]?.intValue else {
+            throw JSONRPCClientError.commandFailed("Provider command argument \(key) must be a number.")
+        }
+        return value
+    }
+}

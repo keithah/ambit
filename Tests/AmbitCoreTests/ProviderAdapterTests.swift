@@ -44,6 +44,67 @@ final class ProviderAdapterTests: XCTestCase {
         XCTAssertEqual(snapshot.error, "grpc unavailable")
         XCTAssertEqual(snapshot.detail, .starlink(StarlinkStatus(isReachable: false, state: "grpc unavailable")))
     }
+
+    func testSpeedifyProviderPollsRouterSpeedifyStatus() async {
+        let client = StubRouterSpeedifyClient(
+            status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected", server: "Seattle")
+        )
+        let provider = SpeedifyProvider(client: client)
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: "router.local", settings: AppSettings()))
+
+        XCTAssertEqual(provider.id, ProviderIDs.speedify)
+        XCTAssertEqual(provider.displayName, "Speedify")
+        XCTAssertEqual(snapshot.health, .ok)
+        XCTAssertEqual(snapshot.metricValue("connected"), .bool(true))
+        XCTAssertEqual(snapshot.detail, .speedify(SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected", server: "Seattle")))
+        XCTAssertEqual(client.statusHosts, ["router.local"])
+    }
+
+    func testSpeedifyProviderToggleCommandConnectsWhenDisconnected() async throws {
+        let client = StubRouterSpeedifyClient(
+            status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")
+        )
+        let provider = SpeedifyProvider(client: client)
+
+        try await provider.execute(
+            commandID: ProviderCommandIDs.speedifyToggle,
+            arguments: CommandArguments(),
+            context: EnvironmentContext(routerHost: "router.local", settings: AppSettings())
+        )
+
+        XCTAssertEqual(client.connectHosts, ["router.local"])
+    }
+
+    func testSpeedifyProviderSetBondingModeCommand() async throws {
+        let client = StubRouterSpeedifyClient(
+            status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")
+        )
+        let provider = SpeedifyProvider(client: client)
+
+        try await provider.execute(
+            commandID: ProviderCommandIDs.speedifySetBondingMode,
+            arguments: CommandArguments(values: ["mode": .string("STR")]),
+            context: EnvironmentContext(routerHost: "router.local", settings: AppSettings())
+        )
+
+        XCTAssertEqual(client.bondingModeRequests, [.init(mode: .streaming, host: "router.local")])
+    }
+
+    func testSpeedifyProviderSetNetworkPriorityCommand() async throws {
+        let client = StubRouterSpeedifyClient(
+            status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")
+        )
+        let provider = SpeedifyProvider(client: client)
+
+        try await provider.execute(
+            commandID: ProviderCommandIDs.speedifySetNetworkPriority,
+            arguments: CommandArguments(values: ["priority": .number(100), "networkID": .string("eth0")]),
+            context: EnvironmentContext(routerHost: "router.local", settings: AppSettings())
+        )
+
+        XCTAssertEqual(client.networkPriorityRequests, [.init(priority: .never, networkID: "eth0", host: "router.local")])
+    }
 }
 
 private extension ProviderSnapshot {
@@ -57,5 +118,46 @@ private struct StubReachabilityProbe: ReachabilityProbeProtocol {
 
     func probe() async -> ReachabilityStatus {
         status
+    }
+}
+
+private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unchecked Sendable {
+    struct BondingModeRequest: Equatable {
+        var mode: SpeedifyBondingMode
+        var host: String
+    }
+
+    struct NetworkPriorityRequest: Equatable {
+        var priority: SpeedifyNetworkPriority
+        var networkID: String
+        var host: String
+    }
+
+    var statusResult: SpeedifyStatus
+    private(set) var statusHosts: [String] = []
+    private(set) var connectHosts: [String] = []
+    private(set) var bondingModeRequests: [BondingModeRequest] = []
+    private(set) var networkPriorityRequests: [NetworkPriorityRequest] = []
+
+    init(status: SpeedifyStatus) {
+        self.statusResult = status
+    }
+
+    func status(host: String) async throws -> SpeedifyStatus {
+        statusHosts.append(host)
+        return statusResult
+    }
+
+    func connect(host: String, server: String) async throws {
+        connectHosts.append(host)
+    }
+
+    func disconnect(host: String) async throws {}
+    func setBondingMode(_ mode: SpeedifyBondingMode, host: String) async throws {
+        bondingModeRequests.append(BondingModeRequest(mode: mode, host: host))
+    }
+
+    func setNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String, host: String) async throws {
+        networkPriorityRequests.append(NetworkPriorityRequest(priority: priority, networkID: networkID, host: host))
     }
 }
