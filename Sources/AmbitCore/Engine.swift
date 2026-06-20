@@ -6,8 +6,10 @@ public typealias EcoFlowClientFactory = @Sendable (URL) -> any EcoFlowClientProt
 
 public actor Engine {
     public nonisolated let snapshots: AsyncStream<StatusSnapshot>
+    public nonisolated let engineSnapshots: AsyncStream<EngineSnapshot>
 
     private let snapshotContinuation: AsyncStream<StatusSnapshot>.Continuation
+    private let engineSnapshotContinuation: AsyncStream<EngineSnapshot>.Continuation
     private let settingsStore: SettingsStore
     private let credentialStore: CredentialStore
     private let endpointSelector: EndpointSelector
@@ -52,6 +54,9 @@ public actor Engine {
         let stream = AsyncStream<StatusSnapshot>.makeStream()
         self.snapshots = stream.stream
         self.snapshotContinuation = stream.continuation
+        let engineStream = AsyncStream<EngineSnapshot>.makeStream()
+        self.engineSnapshots = engineStream.stream
+        self.engineSnapshotContinuation = engineStream.continuation
         let loadedSettings = settings ?? ((try? settingsStore.load()) ?? AppSettings())
         self.settingsStore = settingsStore
         self.credentialStore = credentialStore
@@ -85,6 +90,7 @@ public actor Engine {
         pollTask?.cancel()
         speedifyFocusTask?.cancel()
         snapshotContinuation.finish()
+        engineSnapshotContinuation.finish()
     }
 
     public func start() {
@@ -597,6 +603,7 @@ public actor Engine {
             snapshot.providers[providerID] = state
         }
         snapshotContinuation.yield(snapshot)
+        engineSnapshotContinuation.yield(snapshot.engineSnapshot)
     }
 
     private func recordUsage(

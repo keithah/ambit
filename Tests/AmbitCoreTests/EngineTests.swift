@@ -57,6 +57,43 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(usage[ProviderIDs.starlink]?.pollCount, 1)
     }
 
+    func testRefreshPublishesNormalizedEngineSnapshotStream() async {
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: true, state: "Connected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        let streamTask = Task<EngineSnapshot?, Never> {
+            var iterator = engine.engineSnapshots.makeAsyncIterator()
+            while let snapshot = await iterator.next() {
+                if snapshot.providers[ProviderIDs.router]?.value != nil {
+                    return snapshot
+                }
+            }
+            return nil
+        }
+
+        await engine.refresh()
+
+        let snapshot = await streamTask.value
+        XCTAssertEqual(snapshot?.providers[ProviderIDs.router]?.value?.health, .ok)
+        XCTAssertEqual(snapshot?.providers[ProviderIDs.vpn]?.value?.metricValue("connected"), .bool(true))
+    }
+
     func testRefreshPollsRegisteredProviderIntoProviderSnapshotMap() async {
         let provider = StubProvider(
             id: "demo",
