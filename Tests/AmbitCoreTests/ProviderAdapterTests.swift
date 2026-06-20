@@ -105,6 +105,75 @@ final class ProviderAdapterTests: XCTestCase {
 
         XCTAssertEqual(client.networkPriorityRequests, [.init(priority: .never, networkID: "eth0", host: "router.local")])
     }
+
+    func testEcoFlowProviderPollsResolvedDaemonEndpoint() async {
+        let client = StubEcoFlowClient(status: Self.ecoFlowStatus(batteryPercent: 67, outputWatts: 22))
+        let provider = EcoFlowProvider { baseURL in
+            XCTAssertEqual(baseURL.absoluteString, "http://router.local:8787")
+            return client
+        }
+
+        let snapshot = await provider.poll(
+            context: EnvironmentContext(
+                routerHost: "router.local",
+                settings: AppSettings(ecoflowEnabled: true, ecoflowHost: "auto", ecoflowPort: 8787)
+            )
+        )
+
+        XCTAssertEqual(provider.id, ProviderIDs.ecoflow)
+        XCTAssertEqual(provider.displayName, "EcoFlow")
+        XCTAssertEqual(snapshot.health, .ok)
+        XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(67))
+        XCTAssertEqual(snapshot.metricValue("output_watts"), .level(22))
+        XCTAssertEqual(snapshot.detail, .ecoflow(EcoFlowSnapshot(status: Self.ecoFlowStatus(batteryPercent: 67, outputWatts: 22))))
+        XCTAssertEqual(client.statusCallCount, 1)
+    }
+
+    func testEcoFlowProviderReturnsUnresolvedErrorWhenAutoHostHasNoRouterHost() async {
+        let provider = EcoFlowProvider { _ in
+            XCTFail("Provider should not build a client without a resolved endpoint.")
+            return StubEcoFlowClient(status: Self.ecoFlowStatus(batteryPercent: 67, outputWatts: 22))
+        }
+
+        let snapshot = await provider.poll(
+            context: EnvironmentContext(
+                routerHost: nil,
+                settings: AppSettings(ecoflowEnabled: true, ecoflowHost: "auto", ecoflowPort: 8787)
+            )
+        )
+
+        XCTAssertEqual(snapshot.health, .unknown)
+        XCTAssertEqual(snapshot.error, "EcoFlow daemon endpoint unresolved.")
+    }
+
+    func testEcoFlowProviderSetOutputCommand() async throws {
+        let client = StubEcoFlowClient(status: Self.ecoFlowStatus(batteryPercent: 67, outputWatts: 22))
+        let provider = EcoFlowProvider { _ in client }
+
+        try await provider.execute(
+            commandID: ProviderCommandIDs.ecoFlowSetOutput,
+            arguments: CommandArguments(values: ["target": .string("ac"), "state": .string("on")]),
+            context: EnvironmentContext(
+                routerHost: "router.local",
+                settings: AppSettings(ecoflowEnabled: true, ecoflowHost: "auto", ecoflowPort: 8787)
+            )
+        )
+
+        XCTAssertEqual(client.outputRequests, [.init(target: .ac, state: .on)])
+    }
+
+    private static func ecoFlowStatus(batteryPercent: Int, outputWatts: Int) -> EcoFlowDeviceStatus {
+        EcoFlowDeviceStatus(
+            battery: EcoFlowBatteryStatus(percent: batteryPercent, state: .discharging),
+            power: EcoFlowPowerStatus(inputWatts: 0, outputWatts: outputWatts, netWatts: -outputWatts),
+            outputs: EcoFlowOutputMap(
+                ac: EcoFlowOutputStatus(state: .off, watts: 0),
+                dc: EcoFlowOutputStatus(state: .off, watts: 0),
+                usb: EcoFlowOutputStatus(state: .on, watts: outputWatts)
+            ),
+            updatedAt: "2026-06-20T07:00:00Z"
+        )
+    }
 }
 
 private extension ProviderSnapshot {
@@ -159,5 +228,51 @@ private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unc
 
     func setNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String, host: String) async throws {
         networkPriorityRequests.append(NetworkPriorityRequest(priority: priority, networkID: networkID, host: host))
+    }
+}
+
+private final class StubEcoFlowClient: EcoFlowClientProtocol, @unchecked Sendable {
+    struct OutputRequest: Equatable {
+        var target: EcoFlowOutputTarget
+        var state: EcoFlowOutputState
+    }
+
+    var statusResult: EcoFlowDeviceStatus
+    private(set) var statusCallCount = 0
+    private(set) var outputRequests: [OutputRequest] = []
+
+    init(status: EcoFlowDeviceStatus) {
+        self.statusResult = status
+    }
+
+    func device() async throws -> EcoFlowDeviceInfo {
+        throw EcoFlowClientError.invalidResponse(statusCode: 404)
+    }
+
+    func status() async throws -> EcoFlowDeviceStatus {
+        statusCallCount += 1
+        return statusResult
+    }
+
+    func stats() async throws -> EcoFlowDeviceStats {
+        throw EcoFlowClientError.invalidResponse(statusCode: 404)
+    }
+
+    func outputs() async throws -> EcoFlowOutputsSnapshot {
+        throw EcoFlowClientError.invalidResponse(statusCode: 404)
+    }
+
+    func setOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async throws -> EcoFlowControlResponse {
+        outputRequests.append(OutputRequest(target: target, state: state))
+        return EcoFlowControlResponse(
+            target: EcoFlowControlTarget(rawValue: target.rawValue) ?? .device,
+            requestedState: EcoFlowRequestedControlState(rawValue: state.rawValue) ?? .shutdown,
+            result: .applied,
+            observedState: state
+        )
+    }
+
+    func diagnostics() async throws -> EcoFlowDiagnosticsSnapshot {
+        throw EcoFlowClientError.invalidResponse(statusCode: 404)
     }
 }
