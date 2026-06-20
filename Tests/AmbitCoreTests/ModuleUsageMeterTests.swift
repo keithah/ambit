@@ -101,4 +101,52 @@ final class ModuleUsageMeterTests: XCTestCase {
             """
         )
     }
+
+    func testBuildsUsageSummariesForMenuDisplay() {
+        let snapshots = [
+            ModuleUsageSnapshot(
+                providerID: "custom.sensor",
+                pollCount: 2,
+                commandCount: 1,
+                failureCount: 1,
+                totalDuration: 0.5,
+                lastOperation: .command,
+                lastError: "timed\nout"
+            ),
+            ModuleUsageSnapshot(
+                providerID: ProviderIDs.router,
+                pollCount: 3,
+                commandCount: 0,
+                failureCount: 0,
+                totalDuration: 0.1234,
+                lastOperation: .poll
+            )
+        ]
+
+        let summaries = ModuleUsageSummary.summaries(
+            from: snapshots,
+            providerNames: ["custom.sensor": "Custom Sensor"]
+        )
+
+        XCTAssertEqual(summaries, [
+            ModuleUsageSummary(
+                providerID: ProviderIDs.router,
+                title: "Router",
+                detail: "3 polls · 0 commands · 0 failures",
+                duration: "0.123s",
+                lastActivity: "Last poll",
+                hasFailures: false,
+                lastError: nil
+            ),
+            ModuleUsageSummary(
+                providerID: "custom.sensor",
+                title: "Custom Sensor",
+                detail: "2 polls · 1 command · 1 failure",
+                duration: "0.500s",
+                lastActivity: "Last command",
+                hasFailures: true,
+                lastError: "timed out"
+            )
+        ])
+    }
 }

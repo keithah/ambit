@@ -11,6 +11,7 @@ final class StatusViewModel: ObservableObject {
     @Published var selectedEndpoint: EndpointSelection?
     @Published var commandPalette: [CommandPaletteItem] = []
     @Published var providerDisplayNames: [ProviderID: String] = [:]
+    @Published var moduleUsageSnapshots: [ModuleUsageSnapshot] = []
     @Published var commandMessage: String?
     @Published var executingCommandID: String?
 
@@ -53,6 +54,7 @@ final class StatusViewModel: ObservableObject {
                 self.snapshot = snapshot
                 self.selectedEndpoint = await self.engine.currentSelectedEndpoint()
                 self.providerDisplayNames = await self.engine.providerDisplayNames()
+                await self.refreshModuleUsage()
                 let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
                 await self.alertNotifier.deliver(events)
             }
@@ -65,6 +67,7 @@ final class StatusViewModel: ObservableObject {
         await engine.updateSettings(settings, routerPassword: routerPassword)
         await engine.refresh()
         selectedEndpoint = await engine.currentSelectedEndpoint()
+        await refreshModuleUsage()
         refreshCommandPalette()
     }
 
@@ -74,6 +77,7 @@ final class StatusViewModel: ObservableObject {
             if let error {
                 snapshot.router.errorMessage = error
             }
+            await refreshModuleUsage()
             refreshCommandPalette()
         }
     }
@@ -93,10 +97,16 @@ final class StatusViewModel: ObservableObject {
             commandMessage = "\(item.command.label) sent to \(item.providerName)."
             snapshot = await engine.currentSnapshot()
             selectedEndpoint = await engine.currentSelectedEndpoint()
+            await refreshModuleUsage()
         } catch {
             commandMessage = error.localizedDescription
+            await refreshModuleUsage()
         }
         executingCommandID = nil
+    }
+
+    func refreshModuleUsage() async {
+        moduleUsageSnapshots = Array(await engine.usageSnapshots().values)
     }
 
     func setSpeedifyFocused(_ isFocused: Bool) {

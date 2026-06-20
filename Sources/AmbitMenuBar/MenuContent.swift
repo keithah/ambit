@@ -29,6 +29,9 @@ struct MenuContent: View {
             case .measurements:
                 ActiveMeasurementsView(route: $route)
                     .environmentObject(viewModel)
+            case .usage:
+                ModuleUsageView(route: $route)
+                    .environmentObject(viewModel)
             case .provider(let providerID):
                 GenericProviderDetailView(providerID: providerID, route: $route)
                     .environmentObject(viewModel)
@@ -51,6 +54,7 @@ private enum MenuRoute: Equatable {
     case ecoflow
     case commands
     case measurements
+    case usage
     case provider(ProviderID)
 }
 
@@ -211,13 +215,18 @@ private struct OverviewMenuView: View {
                     systemImage: "cable.connector"
                 )
 
-                OverviewRow(
-                    title: "Data usage",
-                    detail: dataUsageDetail,
-                    badge: "Open",
-                    tone: .neutral,
-                    systemImage: "chart.bar"
-                )
+                Button {
+                    route = .usage
+                } label: {
+                    OverviewRow(
+                        title: "Usage",
+                        detail: dataUsageDetail,
+                        badge: usageBadge,
+                        tone: viewModel.moduleUsageSnapshots.contains { $0.failureCount > 0 } ? .warn : .neutral,
+                        systemImage: "chart.bar"
+                    )
+                }
+                .buttonStyle(.plain)
             }
 
             InternetStatusLine(status: viewModel.snapshot.providerReachabilityStatus)
@@ -378,7 +387,21 @@ private struct OverviewMenuView: View {
         if let down, let up {
             return "Speedify \(down) down · \(up) up"
         }
+        let moduleCount = viewModel.moduleUsageSnapshots.count
+        if moduleCount > 0 {
+            let failures = viewModel.moduleUsageSnapshots.reduce(0) { $0 + $1.failureCount }
+            if failures > 0 {
+                return "\(moduleCount) modules metered · \(failures) failures"
+            }
+            return "\(moduleCount) modules metered"
+        }
         return "Not reported by router yet"
+    }
+
+    private var usageBadge: String {
+        let failures = viewModel.moduleUsageSnapshots.reduce(0) { $0 + $1.failureCount }
+        if failures > 0 { return "\(failures)" }
+        return viewModel.moduleUsageSnapshots.isEmpty ? "Open" : "\(viewModel.moduleUsageSnapshots.count)"
     }
 
     private var ecoFlowDetail: String {
@@ -1058,6 +1081,111 @@ private struct ActiveMeasurementCard: View {
         default:
             return "waveform.path.ecg"
         }
+    }
+}
+
+private struct ModuleUsageView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    @Binding var route: MenuRoute
+
+    private var summaries: [ModuleUsageSummary] {
+        ModuleUsageSummary.summaries(from: viewModel.moduleUsageSnapshots, providerNames: providerNames)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HeaderView(title: "Usage", subtitle: subtitle, showsBack: true) {
+                route = .overview
+            }
+
+            if summaries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("No module usage yet")
+                        .font(.headline)
+                    Text("Usage appears after providers poll or commands run.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(summaries) { summary in
+                        ModuleUsageCard(summary: summary)
+                    }
+                }
+            }
+
+            FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
+        }
+        .padding(14)
+        .task {
+            await viewModel.refreshModuleUsage()
+        }
+    }
+
+    private var providerNames: [ProviderID: String] {
+        viewModel.commandPalette.reduce(into: viewModel.providerDisplayNames) { names, item in
+            names[item.providerID] = item.providerName
+        }
+    }
+
+    private var subtitle: String {
+        if summaries.isEmpty { return "Waiting for metered activity" }
+        let failures = viewModel.moduleUsageSnapshots.reduce(0) { $0 + $1.failureCount }
+        if failures > 0 { return "\(failures) failures across \(summaries.count) modules" }
+        return "\(summaries.count) modules metered"
+    }
+}
+
+private struct ModuleUsageCard: View {
+    let summary: ModuleUsageSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(tone.color.opacity(0.18))
+                    Image(systemName: summary.hasFailures ? "exclamationmark.triangle" : "chart.bar")
+                        .foregroundStyle(tone.color)
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary.title)
+                        .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                    Text(summary.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(summary.duration)
+                        .font(.caption.weight(.bold))
+                    Text(summary.lastActivity)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let lastError = summary.lastError, !lastError.isEmpty {
+                Text(lastError)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var tone: StatusTone {
+        summary.hasFailures ? .warn : .neutral
     }
 }
 
