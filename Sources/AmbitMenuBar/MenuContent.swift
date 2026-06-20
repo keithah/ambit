@@ -94,7 +94,7 @@ private struct OverviewMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HeaderView(title: "GL.iNet Travel", subtitle: endpointText, showsBack: false) {
+            HeaderView(title: "Ambit", subtitle: endpointText, showsBack: false) {
                 Task { await viewModel.refresh() }
             }
 
