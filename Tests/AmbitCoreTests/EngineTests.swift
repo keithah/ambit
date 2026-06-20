@@ -1105,6 +1105,35 @@ final class EngineTests: XCTestCase {
         ])
     }
 
+    func testProviderDisplayNamesIncludePassiveRegisteredProviders() async {
+        let controllable = StubProvider(
+            id: "demo",
+            displayName: "Demo Device",
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [CommandDescriptor(id: "demo.restart", label: "Restart")]
+        )
+        let passive = StubProvider(
+            id: "passive",
+            displayName: "Passive Sensor",
+            snapshot: ProviderSnapshot(health: .ok)
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            providers: [controllable, passive],
+            registerBuiltInProviders: false
+        )
+
+        let displayNames = await engine.providerDisplayNames()
+
+        XCTAssertEqual(displayNames, [
+            "demo": "Demo Device",
+            "passive": "Passive Sensor"
+        ])
+    }
+
     func testCommandPaletteItemMatchesProviderCommandAndParameters() {
         let item = CommandPaletteItem(
             providerID: ProviderIDs.iperf3,

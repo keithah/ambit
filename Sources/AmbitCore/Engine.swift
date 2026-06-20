@@ -162,6 +162,12 @@ public actor Engine {
         }
     }
 
+    public func providerDisplayNames() -> [ProviderID: String] {
+        providers.reduce(into: [:]) { names, provider in
+            names[provider.id] = provider.displayName
+        }
+    }
+
     public func refresh() async {
         markRegisteredProvidersLoading()
         publish()

@@ -10,6 +10,7 @@ final class StatusViewModel: ObservableObject {
     @Published var routerPassword: String
     @Published var selectedEndpoint: EndpointSelection?
     @Published var commandPalette: [CommandPaletteItem] = []
+    @Published var providerDisplayNames: [ProviderID: String] = [:]
     @Published var commandMessage: String?
     @Published var executingCommandID: String?
 
@@ -51,6 +52,7 @@ final class StatusViewModel: ObservableObject {
             for await snapshot in self.engine.snapshots {
                 self.snapshot = snapshot
                 self.selectedEndpoint = await self.engine.currentSelectedEndpoint()
+                self.providerDisplayNames = await self.engine.providerDisplayNames()
                 let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
                 await self.alertNotifier.deliver(events)
             }
@@ -79,6 +81,7 @@ final class StatusViewModel: ObservableObject {
     func refreshCommandPalette() {
         Task {
             commandPalette = await engine.commandPalette()
+            providerDisplayNames = await engine.providerDisplayNames()
         }
     }
 

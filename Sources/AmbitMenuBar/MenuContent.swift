@@ -323,7 +323,7 @@ private struct OverviewMenuView: View {
     }
 
     private var providerNames: [ProviderID: String] {
-        viewModel.commandPalette.reduce(into: [:]) { names, item in
+        viewModel.commandPalette.reduce(into: viewModel.providerDisplayNames) { names, item in
             names[item.providerID] = item.providerName
         }
     }
