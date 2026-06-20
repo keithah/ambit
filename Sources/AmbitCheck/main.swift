@@ -11,7 +11,13 @@ struct AmbitCheck {
         let shouldProbeStarlink = args.contains("--probe-starlink")
         let shouldPrintUsage = args.contains("--usage")
         let iperf3Host = value(after: "--run-iperf3", in: args)
-        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3"])
+        let manifestDirectory = value(after: "--validate-manifest", in: args)
+        if let manifestDirectory {
+            validateManifest(at: manifestDirectory)
+            return
+        }
+
+        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3", "--validate-manifest"])
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
 
@@ -37,7 +43,7 @@ struct AmbitCheck {
             if shouldPrintUsage {
                 await printUsage(engine: engine)
             }
-            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [--validate-manifest dir] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
             Foundation.exit(2)
         }
         guard let endpoint = URL.routerRPC(host: selectedHost) else {
@@ -132,6 +138,18 @@ struct AmbitCheck {
             positional.append(arg)
         }
         return positional
+    }
+
+    private static func validateManifest(at path: String) {
+        do {
+            let package = try ProviderManifestPackage.load(from: URL(fileURLWithPath: path, isDirectory: true))
+            print("Manifest valid: \(package.manifest.displayName) (\(package.manifest.id))")
+            print("Metrics: \(package.manifest.metrics.count)")
+            print("Commands: \(package.manifest.commands.count)")
+        } catch {
+            fputs("Manifest invalid: \(error.localizedDescription)\n", stderr)
+            Foundation.exit(1)
+        }
     }
 
     private static func runIperf3(host: String, engine: Engine) async throws {
