@@ -3,10 +3,25 @@ import Foundation
 public enum ModuleUsageReportFormatter {
     public static func format(_ snapshots: [ModuleUsageSnapshot]) -> String {
         var lines = ["Module usage:"]
-        for snapshot in snapshots.sorted(by: { $0.providerID < $1.providerID }) {
+        for snapshot in snapshots.sorted(by: isOrderedBefore) {
             lines.append("  \(snapshot.providerID): \(format(snapshot))")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private static func isOrderedBefore(_ lhs: ModuleUsageSnapshot, _ rhs: ModuleUsageSnapshot) -> Bool {
+        let lhsRank = providerOrder[lhs.providerID]
+        let rhsRank = providerOrder[rhs.providerID]
+        switch (lhsRank, rhsRank) {
+        case let (lhsRank?, rhsRank?):
+            return lhsRank < rhsRank
+        case (.some, .none):
+            return true
+        case (.none, .some):
+            return false
+        case (.none, .none):
+            return lhs.providerID < rhs.providerID
+        }
     }
 
     private static func format(_ snapshot: ModuleUsageSnapshot) -> String {
@@ -31,4 +46,15 @@ public enum ModuleUsageReportFormatter {
             .filter { !$0.isEmpty }
             .joined(separator: " ")
     }
+
+    private static let providerOrder: [ProviderID: Int] = [
+        ProviderIDs.router: 0,
+        ProviderIDs.vpn: 1,
+        ProviderIDs.reachability: 2,
+        ProviderIDs.speedify: 3,
+        ProviderIDs.starlink: 4,
+        ProviderIDs.ecoflow: 5,
+        ProviderIDs.ping: 6,
+        ProviderIDs.iperf3: 7
+    ]
 }

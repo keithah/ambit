@@ -55,6 +55,30 @@ final class ModuleUsageMeterTests: XCTestCase {
         )
     }
 
+    func testFormatsKnownProvidersBeforeActiveMeasurementsAndUnknownProviders() {
+        let snapshots = [
+            ModuleUsageSnapshot(providerID: "custom", pollCount: 1),
+            ModuleUsageSnapshot(providerID: ProviderIDs.ping, pollCount: 1),
+            ModuleUsageSnapshot(providerID: ProviderIDs.iperf3, commandCount: 1),
+            ModuleUsageSnapshot(providerID: ProviderIDs.speedify, pollCount: 1),
+            ModuleUsageSnapshot(providerID: ProviderIDs.router, pollCount: 1)
+        ]
+
+        let report = ModuleUsageReportFormatter.format(snapshots)
+
+        XCTAssertEqual(
+            report,
+            """
+            Module usage:
+              router: polls 1, commands 0, failures 0, total 0.000s
+              speedify: polls 1, commands 0, failures 0, total 0.000s
+              ping: polls 1, commands 0, failures 0, total 0.000s
+              iperf3: polls 0, commands 1, failures 0, total 0.000s
+              custom: polls 1, commands 0, failures 0, total 0.000s
+            """
+        )
+    }
+
     func testFormatsMultilineErrorsAsSingleLineEntries() {
         let snapshots = [
             ModuleUsageSnapshot(
