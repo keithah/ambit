@@ -53,6 +53,17 @@ final class ActiveMeasurementProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("upload_bps"), .throughput(bitsPerSecond: 50_000_000))
     }
 
+    func testIperf3ProviderIdleStateIsNeutralUntilRunCompletes() async {
+        let provider = Iperf3Provider(defaultHost: "iperf.example")
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertEqual(snapshot.health, .unknown)
+        XCTAssertEqual(snapshot.detail, .iperf3(Iperf3Snapshot(host: "iperf.example")))
+        XCTAssertNil(snapshot.error)
+        XCTAssertEqual(snapshot.metrics, [])
+    }
+
     func testIperf3ParserHandlesSingleDirectionSummary() {
         let output = #"{"end":{"sum":{"bits_per_second":123456}}}"#
 

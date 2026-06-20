@@ -111,7 +111,7 @@ public actor Iperf3Provider: Provider {
 
     public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
         guard let latest else {
-            return ProviderSnapshot(health: .unknown, metrics: [], detail: .iperf3(Iperf3Snapshot(host: defaultHost)), error: "No iperf3 run has completed.")
+            return ProviderSnapshot(health: .unknown, metrics: [], detail: .iperf3(Iperf3Snapshot(host: defaultHost)))
         }
         return ProviderSnapshot.iperf3(latest)
     }

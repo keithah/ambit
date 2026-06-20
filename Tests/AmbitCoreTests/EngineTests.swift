@@ -464,6 +464,7 @@ final class EngineTests: XCTestCase {
         let snapshot = await engine.currentSnapshot()
         XCTAssertEqual(snapshot.providers[ProviderIDs.ping]?.value?.metricValue("latency_ms"), .latency(ms: 10))
         XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.detail, .iperf3(Iperf3Snapshot(host: "")))
+        XCTAssertNil(snapshot.providers[ProviderIDs.iperf3]?.errorMessage)
         let commands = await engine.commands(provider: ProviderIDs.iperf3)
         XCTAssertEqual(commands.map(\.id), [ProviderCommandIDs.iperf3Run])
     }
