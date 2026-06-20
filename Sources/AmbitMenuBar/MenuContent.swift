@@ -141,6 +141,16 @@ private struct OverviewMenuView: View {
                 }
                 .buttonStyle(.plain)
 
+                ForEach(genericProviderSummaries) { summary in
+                    OverviewRow(
+                        title: summary.title,
+                        detail: summary.detail,
+                        badge: summary.badge,
+                        tone: tone(for: summary.health),
+                        systemImage: icon(for: summary)
+                    )
+                }
+
                 if shouldShowSpeedify {
                     Button {
                         route = .speedify
@@ -148,8 +158,8 @@ private struct OverviewMenuView: View {
                         OverviewRow(
                             title: "Speedify VPN",
                             detail: speedifyDetail,
-                            badge: viewModel.snapshot.providerSpeedifyStatus?.state ?? "Open",
-                            tone: viewModel.snapshot.providerSpeedifyStatus?.isConnected == true ? .good : .warn,
+                            badge: speedifyBadge,
+                            tone: speedifyTone,
                             systemImage: "lock.shield"
                         )
                     }
@@ -251,15 +261,33 @@ private struct OverviewMenuView: View {
     }
 
     private var speedifyDetail: String {
+        if let error = viewModel.snapshot.providerErrorMessage(ProviderIDs.speedify), !error.isEmpty {
+            return error
+        }
         guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return "No Speedify data yet" }
+        if !speedify.isAvailable {
+            return speedify.detail ?? "Speedify endpoint unavailable"
+        }
         let server = speedify.server ?? "No server"
         let mode = speedify.bondingMode?.label ?? "Mode unknown"
         return "\(server) · \(mode)"
     }
 
     private var shouldShowSpeedify: Bool {
+        if viewModel.snapshot.providers[ProviderIDs.speedify] != nil { return true }
         guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return false }
         return speedify.isAvailable && (speedify.isConnected || !speedify.networks.isEmpty)
+    }
+
+    private var speedifyBadge: String {
+        guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return "Unavailable" }
+        return speedify.isAvailable ? speedify.state : "Unavailable"
+    }
+
+    private var speedifyTone: StatusTone {
+        guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return .neutral }
+        if !speedify.isAvailable { return .bad }
+        return speedify.isConnected ? .good : .warn
     }
 
     private var starlinkDetail: String {
@@ -288,6 +316,16 @@ private struct OverviewMenuView: View {
 
     private var activeMeasurementSummaries: [ActiveMeasurementSummary] {
         ActiveMeasurementSummary.summaries(from: viewModel.snapshot)
+    }
+
+    private var genericProviderSummaries: [ProviderOverviewSummary] {
+        ProviderOverviewSummary.genericSummaries(from: viewModel.snapshot, providerNames: providerNames)
+    }
+
+    private var providerNames: [ProviderID: String] {
+        viewModel.commandPalette.reduce(into: [:]) { names, item in
+            names[item.providerID] = item.providerName
+        }
     }
 
     private var activeMeasurementDetail: String {
@@ -365,6 +403,29 @@ private struct OverviewMenuView: View {
         case (.none, .some(let up)): return "\(up) up"
         case (.none, .none): return nil
         }
+    }
+
+    private func tone(for health: Health) -> StatusTone {
+        switch health {
+        case .ok:
+            return .good
+        case .degraded:
+            return .warn
+        case .down:
+            return .bad
+        case .unknown:
+            return .neutral
+        }
+    }
+
+    private func icon(for summary: ProviderOverviewSummary) -> String {
+        if summary.providerID.contains("power") || summary.providerID.contains("battery") {
+            return "bolt"
+        }
+        if summary.providerID.contains("ping") || summary.providerID.contains("latency") {
+            return "timer"
+        }
+        return "sensor.tag.radiowaves.forward"
     }
 }
 
