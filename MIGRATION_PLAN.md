@@ -19,8 +19,9 @@ The staged migration below has been executed through Step 5. Current state:
 - Provider snapshots carry normalized metrics/health plus rich `ProviderDetail`.
 - `AlertEngine` evaluates rules over `EngineSnapshot`; notification delivery remains in the menubar layer.
 - `PingProvider` and `Iperf3Provider` are registered when a `ProcessRunner` is supplied; `ambit-check --run-iperf3 <host>` triggers an iperf3 measurement.
+- Provider manifest packages now have a schema, validation, an example package, a v0 HTTP GET metric runtime, and CLI validation/execution paths (`--validate-manifest`, `--run-manifest`).
 
-Remaining follow-up work is product/UI expansion, not core migration: a first-class command palette, richer generic provider views for active measurements, and future non-native provider packaging.
+Remaining follow-up work is product/UI expansion and integration hardening, not core migration: polish the built-in integrations, add richer generic provider views for active measurements and manifest providers, and expand manifest packages beyond unauthenticated HTTP GET metric polling when that becomes a priority.
 
 ---
 
@@ -203,9 +204,9 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 ## Non-goals (do NOT do these)
 
-- No JavaScript/WASM/manifest runtime. Providers stay native Swift conforming to `Provider`. (Shape the seam *as if* a manifest could implement it later — don't build that yet.)
+- No JavaScript/WASM/untrusted extension runtime. Providers stay native Swift conforming to `Provider`; the manifest runtime is intentionally limited to a declarative HTTP GET metric provider.
 - No iOS/Windows/Android client, no cloud relay, no message bus / Tailscale.
-- No store/registry/extension packaging.
+- No store/registry distribution packaging.
 - **Never edit `~/src/glinet-travel`** — it's the untouched donor/reference.
 - No UI redesign — the menubar should look and behave the same throughout.
 - No renaming of provider-specific gl.inet types (only the framework layer is renamed, in Step 0).
