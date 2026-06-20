@@ -78,19 +78,27 @@ final class StatusViewModel: ObservableObject {
     }
 
     func toggleVPN() async {
-        await engine.toggleVPN()
+        try? await engine.dispatch(provider: ProviderIDs.vpn, commandID: ProviderCommandIDs.vpnToggle)
     }
 
     func toggleSpeedify() async {
-        await engine.toggleSpeedify()
+        try? await engine.dispatch(provider: ProviderIDs.speedify, commandID: ProviderCommandIDs.speedifyToggle)
     }
 
     func setSpeedifyBondingMode(_ mode: SpeedifyBondingMode) async {
-        await engine.setSpeedifyBondingMode(mode)
+        try? await engine.dispatch(
+            provider: ProviderIDs.speedify,
+            commandID: ProviderCommandIDs.speedifySetBondingMode,
+            arguments: CommandArguments(values: ["mode": .string(mode.commandCode)])
+        )
     }
 
     func setSpeedifyNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String) async {
-        await engine.setSpeedifyNetworkPriority(priority, networkID: networkID)
+        try? await engine.dispatch(
+            provider: ProviderIDs.speedify,
+            commandID: ProviderCommandIDs.speedifySetNetworkPriority,
+            arguments: CommandArguments(values: ["priority": .number(Double(priority.rawValue)), "networkID": .string(networkID)])
+        )
     }
 
     func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
