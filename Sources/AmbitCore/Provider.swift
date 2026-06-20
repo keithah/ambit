@@ -13,6 +13,11 @@ public enum ProviderIDs {
     public static let iperf3: ProviderID = "iperf3"
 }
 
+public enum ProviderCommandIDs {
+    public static let vpnToggle = "vpn.toggle"
+    public static let speedifyToggle = "speedify.toggle"
+}
+
 public protocol Provider: Sendable {
     var id: ProviderID { get }
     var displayName: String { get }

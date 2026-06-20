@@ -217,6 +217,21 @@ public actor Engine {
         await refreshSpeedifyOnly(markLoading: true)
     }
 
+    public func dispatch(
+        provider: ProviderID,
+        commandID: String,
+        arguments: CommandArguments = CommandArguments()
+    ) async throws {
+        switch (provider, commandID) {
+        case (ProviderIDs.vpn, ProviderCommandIDs.vpnToggle):
+            await toggleVPN()
+        case (ProviderIDs.speedify, ProviderCommandIDs.speedifyToggle):
+            await toggleSpeedify()
+        default:
+            throw JSONRPCClientError.commandFailed("Unsupported provider command \(provider).\(commandID).")
+        }
+    }
+
     public func toggleVPN() async {
         let started = Date()
         guard

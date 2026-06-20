@@ -86,6 +86,75 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(routerClient.vpnEnabledRequests, [false])
     }
 
+    func testDispatchRoutesProviderCommandToExistingCommandPath() async throws {
+        let routerClient = StubRouterClient(
+            routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+            vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+        )
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected")),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in routerClient },
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        try await engine.dispatch(provider: ProviderIDs.vpn, commandID: ProviderCommandIDs.vpnToggle)
+
+        XCTAssertEqual(routerClient.vpnEnabledRequests, [false])
+    }
+
+    func testDispatchRoutesSpeedifyToggleCommand() async throws {
+        let speedifyClient = StubRouterSpeedifyClient(status: SpeedifyStatus(isInstalled: true, isAvailable: true, isConnected: false, state: "Disconnected"))
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            reachabilityProbe: StubReachabilityProbe(status: ReachabilityStatus(hasNetworkPath: true, state: .online(latency: 0.01))),
+            routerSpeedifyClient: speedifyClient,
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            routerClientFactory: { _, _, _ in StubRouterClient(
+                routerStatus: RouterStatus(reachable: true, hostname: "GL-X3000", activeWAN: .modem),
+                vpnStatus: VPNStatus(protocol: .wireGuard, isConnected: true)
+            ) },
+            starlinkStatusProvider: { _ in StarlinkStatus(isReachable: false, state: "Unavailable") }
+        )
+
+        await engine.refresh()
+        try await engine.dispatch(provider: ProviderIDs.speedify, commandID: ProviderCommandIDs.speedifyToggle)
+
+        XCTAssertEqual(speedifyClient.connectHosts, ["router.local"])
+    }
+
+
+    func testDispatchRejectsUnsupportedProviderCommand() async {
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret"
+        )
+
+        do {
+            try await engine.dispatch(provider: "unknown", commandID: "unknown.command")
+            XCTFail("Expected unsupported dispatch to throw.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Unsupported provider command unknown.unknown.command"))
+        }
+    }
+
     func testEcoFlowMetricExtraction() {
         let snapshot = EcoFlowSnapshot(
             status: EcoFlowDeviceStatus(
@@ -176,14 +245,21 @@ private final class StubRouterClient: GLiNetClientProtocol, @unchecked Sendable 
     }
 }
 
-private struct StubRouterSpeedifyClient: RouterSpeedifyClientProtocol {
+private final class StubRouterSpeedifyClient: RouterSpeedifyClientProtocol, @unchecked Sendable {
     var status: SpeedifyStatus
+    private(set) var connectHosts: [String] = []
+
+    init(status: SpeedifyStatus) {
+        self.status = status
+    }
 
     func status(host: String) async throws -> SpeedifyStatus {
         status
     }
 
-    func connect(host: String, server: String) async throws {}
+    func connect(host: String, server: String) async throws {
+        connectHosts.append(host)
+    }
     func disconnect(host: String) async throws {}
     func setBondingMode(_ mode: SpeedifyBondingMode, host: String) async throws {}
     func setNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String, host: String) async throws {}
