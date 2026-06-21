@@ -158,10 +158,29 @@ public extension ProviderManifest {
     struct Endpoint: Codable, Equatable, Sendable {
         public var method: HTTPMethod
         public var url: String
+        public var headers: [String: String]
+        public var body: String?
 
-        public init(method: HTTPMethod, url: String) {
+        public init(method: HTTPMethod, url: String, headers: [String: String] = [:], body: String? = nil) {
             self.method = method
             self.url = url
+            self.headers = headers
+            self.body = body
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.method = try container.decode(HTTPMethod.self, forKey: .method)
+            self.url = try container.decode(String.self, forKey: .url)
+            self.headers = try container.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
+            self.body = try container.decodeIfPresent(String.self, forKey: .body)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case method
+            case url
+            case headers
+            case body
         }
     }
 

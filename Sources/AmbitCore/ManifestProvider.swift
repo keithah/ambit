@@ -6,10 +6,19 @@ import FoundationNetworking
 public struct ManifestHTTPRequest: Equatable, Sendable {
     public var method: ProviderManifest.HTTPMethod
     public var url: URL
+    public var headers: [String: String]
+    public var body: Data?
 
-    public init(method: ProviderManifest.HTTPMethod, url: URL) {
+    public init(
+        method: ProviderManifest.HTTPMethod,
+        url: URL,
+        headers: [String: String] = [:],
+        body: Data? = nil
+    ) {
         self.method = method
         self.url = url
+        self.headers = headers
+        self.body = body
     }
 }
 
@@ -27,6 +36,10 @@ public struct URLSessionManifestHTTPClient: ManifestHTTPClient {
     public func send(_ request: ManifestHTTPRequest) async throws -> Data {
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method.rawValue
+        for (name, value) in request.headers {
+            urlRequest.setValue(value, forHTTPHeaderField: name)
+        }
+        urlRequest.httpBody = request.body
         let (data, response) = try await session.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw Error.nonHTTPResponse
@@ -71,15 +84,12 @@ public struct ManifestProvider: Provider {
     }
 
     public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
-        guard manifest.endpoint.method == .get else {
-            return ProviderSnapshot(health: .unknown, error: "Manifest endpoint method \(manifest.endpoint.method.rawValue) is not supported for polling.")
-        }
         guard let url = URL(string: manifest.endpoint.url) else {
             return ProviderSnapshot(health: .unknown, error: "Manifest endpoint URL is invalid.")
         }
 
         do {
-            let data = try await httpClient.send(ManifestHTTPRequest(method: manifest.endpoint.method, url: url))
+            let data = try await httpClient.send(Self.request(endpoint: manifest.endpoint, url: url))
             let value = try JSONDecoder().decode(JSONValue.self, from: data)
             return Self.snapshot(from: value, mappings: manifest.metrics)
         } catch {
@@ -97,7 +107,20 @@ public struct ManifestProvider: Provider {
         guard let url = URL(string: Self.interpolate(endpoint.url, arguments: arguments)) else {
             throw JSONRPCClientError.commandFailed("Manifest command \(commandID) endpoint URL is invalid.")
         }
-        _ = try await httpClient.send(ManifestHTTPRequest(method: endpoint.method, url: url))
+        _ = try await httpClient.send(Self.request(endpoint: endpoint, url: url, arguments: arguments))
+    }
+
+    private static func request(
+        endpoint: ProviderManifest.Endpoint,
+        url: URL,
+        arguments: CommandArguments = CommandArguments()
+    ) -> ManifestHTTPRequest {
+        ManifestHTTPRequest(
+            method: endpoint.method,
+            url: url,
+            headers: endpoint.headers,
+            body: endpoint.body.map { Data(interpolate($0, arguments: arguments).utf8) }
+        )
     }
 
     private static func snapshot(from value: JSONValue, mappings: [ProviderManifest.MetricMapping]) -> ProviderSnapshot {

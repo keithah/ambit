@@ -64,6 +64,35 @@ final class ProviderManifestTests: XCTestCase {
         }
     }
 
+    func testDecodesEndpointHeadersAndBody() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "id": "demo.post",
+          "displayName": "POST Demo",
+          "pollInterval": 30,
+          "endpoint": {
+            "method": "POST",
+            "url": "https://example.test/status",
+            "headers": {
+              "Authorization": "Bearer static-token",
+              "Content-Type": "application/json"
+            },
+            "body": "{\\"query\\":\\"status\\"}"
+          },
+          "metrics": [],
+          "commands": []
+        }
+        """
+
+        let manifest = try ProviderManifest.decode(Data(json.utf8))
+
+        XCTAssertEqual(manifest.endpoint.method, .post)
+        XCTAssertEqual(manifest.endpoint.headers["Authorization"], "Bearer static-token")
+        XCTAssertEqual(manifest.endpoint.headers["Content-Type"], "application/json")
+        XCTAssertEqual(manifest.endpoint.body, #"{"query":"status"}"#)
+    }
+
     func testManifestValidationRejectsInvalidCommandEndpointURL() throws {
         let manifest = ProviderManifest(
             schemaVersion: 1,
