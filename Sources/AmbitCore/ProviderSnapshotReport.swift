@@ -28,10 +28,21 @@ public enum ProviderSnapshotReport {
         }
 
         if !commands.isEmpty {
-            lines.append("Commands: \(commands.map(\.id).joined(separator: ", "))")
+            lines.append("Commands: \(commands.map(commandSummary).joined(separator: ", "))")
         }
 
         return lines
+    }
+
+    private static func commandSummary(_ command: CommandDescriptor) -> String {
+        var qualifiers: [String] = [command.id]
+        if !command.parameters.isEmpty {
+            qualifiers.append("\(command.parameters.count) params")
+        }
+        if command.requiresConfirmation {
+            qualifiers.append("confirmation")
+        }
+        return "\(command.label) (\(qualifiers.joined(separator: ", ")))"
     }
 }
 

@@ -33,7 +33,33 @@ final class ProviderSnapshotReportTests: XCTestCase {
             "Battery: 81",
             "Online: Yes",
             "State: connected",
-            "Commands: demo.run"
+            "Commands: Run (demo.run)"
+        ])
+    }
+
+    func testFormatsCommandParametersAndConfirmationInSnapshotReport() {
+        let lines = ProviderSnapshotReport.lines(
+            providerID: "demo.provider",
+            providerName: "Demo Provider",
+            snapshot: ProviderSnapshot(health: .ok),
+            commands: [
+                CommandDescriptor(
+                    id: "demo.setMode",
+                    label: "Set Mode",
+                    parameters: [
+                        CommandParameter(id: "mode", label: "Mode", kind: .option(["fast", "quiet"])),
+                        CommandParameter(id: "enabled", label: "Enabled", kind: .bool)
+                    ],
+                    requiresConfirmation: true
+                )
+            ]
+        )
+
+        XCTAssertEqual(lines, [
+            "Provider: Demo Provider (demo.provider)",
+            "Health: ok",
+            "Metrics: none",
+            "Commands: Set Mode (demo.setMode, 2 params, confirmation)"
         ])
     }
 
