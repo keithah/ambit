@@ -1206,6 +1206,11 @@ private struct GenericProviderDetailView: View {
         viewModel.providerDisplayNames[providerID] ?? providerID
     }
 
+    private var diagnostic: ProviderDiagnostic? {
+        guard let snapshot else { return nil }
+        return ProviderDiagnostic.make(providerID: providerID, providerName: providerName, snapshot: snapshot)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HeaderView(title: providerName, subtitle: subtitle, showsBack: true) {
@@ -1247,6 +1252,10 @@ private struct GenericProviderDetailView: View {
             }
             .padding(12)
             .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            if let diagnostic {
+                ProviderDiagnosticCard(diagnostic: diagnostic)
+            }
 
             if metrics.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1373,6 +1382,41 @@ private struct GenericProviderDetailView: View {
             return "timer"
         }
         return "sensor.tag.radiowaves.forward"
+    }
+}
+
+private struct ProviderDiagnosticCard: View {
+    let diagnostic: ProviderDiagnostic
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "stethoscope")
+                    .foregroundStyle(.orange)
+                    .frame(width: 16)
+                Text(diagnostic.title)
+                    .font(.caption.weight(.bold))
+                Spacer()
+            }
+
+            Text(diagnostic.message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "arrow.turn.down.right")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(diagnostic.nextStep)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

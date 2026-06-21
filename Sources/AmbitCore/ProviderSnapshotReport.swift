@@ -16,6 +16,11 @@ public enum ProviderSnapshotReport {
             lines.append("Error: \(ProviderDisplayText.singleLine(error))")
         }
 
+        if let diagnostic = ProviderDiagnostic.make(providerID: providerID, providerName: providerName, snapshot: snapshot) {
+            lines.append("Diagnosis: \(diagnostic.title)")
+            lines.append("Next: \(diagnostic.nextStep)")
+        }
+
         if snapshot.metrics.isEmpty {
             lines.append("Metrics: none")
         } else {

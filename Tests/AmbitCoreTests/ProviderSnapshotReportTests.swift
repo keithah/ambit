@@ -48,6 +48,8 @@ final class ProviderSnapshotReportTests: XCTestCase {
             "Provider: Demo Provider (demo.provider)",
             "Health: down",
             "Error: context deadline exceeded",
+            "Diagnosis: Demo Provider reported an error",
+            "Next: Refresh after checking the provider connection, credentials, and endpoint settings.",
             "Metrics: none"
         ])
     }
