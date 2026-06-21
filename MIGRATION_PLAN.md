@@ -19,8 +19,10 @@ The staged migration below has been executed through Step 5. Current state:
 - Provider snapshots carry normalized metrics/health plus rich `ProviderDetail`.
 - `AlertEngine` evaluates rules over `EngineSnapshot`; notification delivery remains in the menubar layer.
 - `PingProvider` and `Iperf3Provider` are registered when a `ProcessRunner` is supplied; `ambit-check --run-iperf3 <host>` triggers an iperf3 measurement.
-- Provider manifest packages now have a schema, validation, credential declarations, HTTP GET/POST endpoint requests with static headers/body, installed provider setup, example packages, a metric runtime, value transforms, layout hints, alert declarations, and CLI validation/execution paths (`--validate-manifest`, `--run-manifest`).
-- Generic provider surfaces now use a shared `ProviderDisplayModel` for health, primary messages, metric sections, commands, diagnostics, missing credential prompts, and layout hints.
+- Provider manifest packages now have a schema, validation, credential declarations, HTTP GET/POST endpoint requests with static headers/body, installed provider setup, example packages, a metric runtime, value transforms, layout hints, alert declarations, generic detail metadata, and CLI validation/execution paths (`--validate-manifest`, `--run-manifest`).
+- Provider setup summaries now expose validation and credential completeness so Settings can distinguish ready, disabled, invalid, and credential-incomplete installed providers.
+- Generic provider surfaces now use a shared `ProviderDisplayModel` for health, primary messages, metric sections, commands, diagnostics, missing credential prompts, layout hints, and compact notification state.
+- Core surface models now provide compact provider and notification state for future non-menubar surfaces instead of requiring those surfaces to read menubar view state.
 - Installed manifest providers are persisted in Core, loaded by `Engine`, and manageable from Settings.
 
 Remaining follow-up work is product/UI expansion and integration hardening, not core migration: polish the built-in integrations, deepen provider setup ergonomics, add richer non-menubar surfaces, and harden real-world manifest/integration behavior.
