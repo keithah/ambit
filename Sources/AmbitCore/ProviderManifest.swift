@@ -46,7 +46,7 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         guard pollInterval > 0 else {
             throw ValidationError.invalidPollInterval
         }
-        guard URL(string: endpoint.url) != nil else {
+        guard Self.isValidHTTPURL(endpoint.url) else {
             throw ValidationError.invalidEndpointURL(endpoint.url)
         }
         try Self.validateUnique(metrics.map(\.id), duplicate: ValidationError.duplicateMetricID)
@@ -63,7 +63,15 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
             guard !command.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ValidationError.emptyLabel(command.id)
             }
+            if let endpoint = command.endpoint, !Self.isValidHTTPURL(endpoint.url) {
+                throw ValidationError.invalidCommandEndpointURL(command.id, endpoint.url)
+            }
             try Self.validateUnique(command.parameters.map(\.id), duplicate: { ValidationError.duplicateParameterID(command.id, $0) })
+            for parameter in command.parameters {
+                guard !parameter.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw ValidationError.emptyLabel(parameter.id)
+                }
+            }
         }
     }
 
@@ -104,6 +112,15 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
                 throw duplicate(normalized)
             }
         }
+    }
+
+    private static func isValidHTTPURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              components.host?.isEmpty == false
+        else { return false }
+        return true
     }
 }
 
@@ -283,5 +300,6 @@ public extension ProviderManifest {
         case duplicateParameterID(String, String)
         case emptyLabel(String)
         case emptyMetricPath(String)
+        case invalidCommandEndpointURL(String, String)
     }
 }

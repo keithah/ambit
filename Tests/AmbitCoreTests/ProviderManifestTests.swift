@@ -64,6 +64,53 @@ final class ProviderManifestTests: XCTestCase {
         }
     }
 
+    func testManifestValidationRejectsInvalidCommandEndpointURL() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [],
+            commands: [
+                ProviderManifest.Command(
+                    id: "demo.run",
+                    label: "Run",
+                    endpoint: ProviderManifest.Endpoint(method: .post, url: "not a url")
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try manifest.validate()) { error in
+            XCTAssertEqual(error as? ProviderManifest.ValidationError, .invalidCommandEndpointURL("demo.run", "not a url"))
+        }
+    }
+
+    func testManifestValidationRejectsEmptyCommandParameterLabel() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [],
+            commands: [
+                ProviderManifest.Command(
+                    id: "demo.run",
+                    label: "Run",
+                    parameters: [
+                        ProviderManifest.CommandParameter(id: "host", label: " ", kind: .text)
+                    ],
+                    endpoint: ProviderManifest.Endpoint(method: .post, url: "https://example.test/run/{host}")
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try manifest.validate()) { error in
+            XCTAssertEqual(error as? ProviderManifest.ValidationError, .emptyLabel("host"))
+        }
+    }
+
     func testManifestCommandDescriptorProjectionMatchesProviderCommands() throws {
         let manifest = ProviderManifest(
             schemaVersion: 1,
