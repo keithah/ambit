@@ -46,6 +46,18 @@ public struct ProviderDiagnostic: Equatable, Sendable {
                 message: error,
                 nextStep: "Confirm the GL.iNet router Speedify page loads and the router endpoint is selected correctly."
             )
+        case ProviderIDs.ping:
+            return ProviderDiagnostic(
+                title: "Ping target unreachable",
+                message: error,
+                nextStep: "Check network reachability to the target host and confirm ICMP is not blocked."
+            )
+        case ProviderIDs.iperf3:
+            return ProviderDiagnostic(
+                title: "iperf3 measurement failed",
+                message: error,
+                nextStep: "Confirm iperf3 is installed and the target host is running an iperf3 server."
+            )
         case ProviderIDs.router, ProviderIDs.vpn:
             return ProviderDiagnostic(
                 title: "\(providerName) unavailable",

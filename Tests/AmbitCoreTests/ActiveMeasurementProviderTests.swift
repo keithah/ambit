@@ -44,9 +44,9 @@ final class ActiveMeasurementProviderTests: XCTestCase {
         let summaries = ActiveMeasurementSummary.summaries(from: snapshot)
 
         XCTAssertEqual(summaries.first?.diagnostic, ProviderDiagnostic(
-            title: "Ping reported an error",
+            title: "Ping target unreachable",
             message: "Process timed out.",
-            nextStep: "Refresh after checking the provider connection, credentials, and endpoint settings."
+            nextStep: "Check network reachability to the target host and confirm ICMP is not blocked."
         ))
     }
 
