@@ -38,7 +38,11 @@
             "type": "text"
           }
         }
-      ]
+      ],
+      "endpoint": {
+        "method": "POST",
+        "url": "https://example.test/ping/{host}"
+      }
     }
   ]
 }

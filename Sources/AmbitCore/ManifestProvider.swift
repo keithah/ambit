@@ -66,15 +66,7 @@ public struct ManifestProvider: Provider {
         self.id = manifest.id
         self.displayName = manifest.displayName
         self.pollInterval = manifest.pollInterval
-        self.commands = manifest.commands.compactMap { command in
-            guard command.endpoint != nil else { return nil }
-            return CommandDescriptor(
-                id: command.id,
-                label: command.label,
-                parameters: command.parameters.map(\.descriptor),
-                requiresConfirmation: command.requiresConfirmation
-            )
-        }
+        self.commands = manifest.executableCommandDescriptors
         self.httpClient = httpClient
     }
 

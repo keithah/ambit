@@ -94,6 +94,36 @@ final class ProviderManifestTests: XCTestCase {
         ])
     }
 
+    func testExecutableCommandDescriptorsOnlyIncludeCommandsWithEndpoints() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [],
+            commands: [
+                ProviderManifest.Command(id: "demo.metadata", label: "Metadata Only"),
+                ProviderManifest.Command(
+                    id: "demo.run",
+                    label: "Run",
+                    parameters: [
+                        ProviderManifest.CommandParameter(id: "host", label: "Host", kind: .text)
+                    ],
+                    endpoint: ProviderManifest.Endpoint(method: .post, url: "https://example.test/run/{host}")
+                )
+            ]
+        )
+
+        XCTAssertEqual(manifest.executableCommandDescriptors, [
+            CommandDescriptor(
+                id: "demo.run",
+                label: "Run",
+                parameters: [CommandParameter(id: "host", label: "Host", kind: .text)]
+            )
+        ])
+    }
+
     func testManifestPackageLoadsManifestJSONFromDirectory() throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("ambit-manifest-\(UUID().uuidString)", isDirectory: true)

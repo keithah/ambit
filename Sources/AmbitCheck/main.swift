@@ -150,7 +150,7 @@ struct AmbitCheck {
             let package = try ProviderManifestPackage.load(from: URL(fileURLWithPath: path, isDirectory: true))
             print("Manifest valid: \(package.manifest.displayName) (\(package.manifest.id))")
             print("Metrics: \(package.manifest.metrics.count)")
-            print("Commands: \(package.manifest.commands.count)")
+            print("Commands: \(package.manifest.commands.count) declared, \(package.manifest.executableCommandDescriptors.count) executable")
         } catch {
             fputs("Manifest invalid: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)

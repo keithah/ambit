@@ -78,6 +78,18 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         }
     }
 
+    public var executableCommandDescriptors: [CommandDescriptor] {
+        commands.compactMap { command in
+            guard command.endpoint != nil else { return nil }
+            return CommandDescriptor(
+                id: command.id,
+                label: command.label,
+                parameters: command.parameters.map(\.descriptor),
+                requiresConfirmation: command.requiresConfirmation
+            )
+        }
+    }
+
     private static func validateUnique(
         _ ids: [String],
         duplicate: (String) -> ValidationError
