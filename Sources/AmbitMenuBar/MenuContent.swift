@@ -1545,18 +1545,18 @@ private struct CommandPaletteView: View {
                 }
             }
 
-            if let message = viewModel.commandMessage {
+            if let result = viewModel.lastCommandResult {
                 HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                    Text(message)
+                    Image(systemName: result.status == .succeeded ? "checkmark.circle" : "exclamationmark.triangle")
+                        .foregroundStyle(result.status == .succeeded ? .green : .orange)
+                    Text(result.message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                     Spacer()
                 }
                 .padding(10)
-                .background(.quaternary.opacity(0.30), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background((result.status == .succeeded ? Color.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             FooterView(lastUpdated: viewModel.snapshot.lastUpdated)

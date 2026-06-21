@@ -12,7 +12,7 @@ final class StatusViewModel: ObservableObject {
     @Published var commandPalette: [CommandPaletteItem] = []
     @Published var providerDisplayNames: [ProviderID: String] = [:]
     @Published var moduleUsageSnapshots: [ModuleUsageSnapshot] = []
-    @Published var commandMessage: String?
+    @Published var lastCommandResult: CommandExecutionResult?
     @Published var executingCommandID: String?
 
     private let engine: Engine
@@ -91,15 +91,21 @@ final class StatusViewModel: ObservableObject {
 
     func executeCommand(_ item: CommandPaletteItem, arguments: CommandArguments = CommandArguments()) async {
         executingCommandID = item.id
-        commandMessage = nil
-        do {
-            try await engine.dispatch(provider: item.providerID, commandID: item.command.id, arguments: arguments)
-            commandMessage = "\(item.command.label) sent to \(item.providerName)."
+        lastCommandResult = nil
+        let result = await engine.runCommand(
+            provider: item.providerID,
+            providerName: item.providerName,
+            commandID: item.command.id,
+            commandLabel: item.command.label,
+            arguments: arguments
+        )
+        lastCommandResult = result
+        switch result.status {
+        case .succeeded:
             snapshot = await engine.currentSnapshot()
             selectedEndpoint = await engine.currentSelectedEndpoint()
             await refreshModuleUsage()
-        } catch {
-            commandMessage = error.localizedDescription
+        case .failed:
             await refreshModuleUsage()
         }
         executingCommandID = nil

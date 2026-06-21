@@ -250,6 +250,32 @@ public actor Engine {
         )
     }
 
+    public func runCommand(
+        provider providerID: ProviderID,
+        providerName: String,
+        commandID: String,
+        commandLabel: String,
+        arguments: CommandArguments = CommandArguments()
+    ) async -> CommandExecutionResult {
+        do {
+            try await dispatch(provider: providerID, commandID: commandID, arguments: arguments)
+            return .success(
+                providerID: providerID,
+                providerName: providerName,
+                commandID: commandID,
+                commandLabel: commandLabel
+            )
+        } catch {
+            return .failure(
+                providerID: providerID,
+                providerName: providerName,
+                commandID: commandID,
+                commandLabel: commandLabel,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
     private func registeredProvider(_ providerID: ProviderID, supporting commandID: String) -> (any Provider)? {
         providers.first { provider in
             provider.id == providerID && provider.commands.contains { $0.id == commandID }
