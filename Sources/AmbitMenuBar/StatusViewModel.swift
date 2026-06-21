@@ -19,6 +19,7 @@ final class StatusViewModel: ObservableObject {
     @Published var providerSetupError: String?
     @Published var providerCredentialValues: [ProviderID: [String: String]] = [:]
     @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
+    @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
     private let engine: Engine
     private let installedProviderStore: any InstalledProviderStore
@@ -100,6 +101,9 @@ final class StatusViewModel: ObservableObject {
             commandPalette = await engine.commandPalette()
             providerDisplayNames = await engine.providerDisplayNames()
             providerLayouts = await engine.providerLayouts()
+            providerAlertRuleCounts = await engine.alertRules().reduce(into: [ProviderID: Int]()) { counts, rule in
+                counts[rule.providerID, default: 0] += 1
+            }
         }
     }
 

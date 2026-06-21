@@ -1269,6 +1269,20 @@ private struct GenericProviderDetailView: View {
             .padding(12)
             .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
+            if alertRuleCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "bell.badge")
+                        .foregroundStyle(.orange)
+                        .frame(width: 16)
+                    Text(alertRuleCount == 1 ? "1 declared alert" : "\(alertRuleCount) declared alerts")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
             if model.action == .configureCredentials {
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Credentials needed", systemImage: "key")
@@ -1392,6 +1406,10 @@ private struct GenericProviderDetailView: View {
 
     private var providerCommands: [CommandPaletteItem] {
         viewModel.commandPalette.filter { $0.providerID == providerID }
+    }
+
+    private var alertRuleCount: Int {
+        viewModel.providerAlertRuleCounts[providerID] ?? 0
     }
 
     private var subtitle: String {

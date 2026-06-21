@@ -47,6 +47,14 @@ public enum AlertRule: Equatable, Sendable {
         }
     }
 
+    public var providerID: ProviderID {
+        switch self {
+        case .threshold(let rule): return rule.providerID
+        case .stateTransition(let rule): return rule.providerID
+        case .sustained(let rule): return rule.providerID
+        }
+    }
+
     func evaluate(snapshot: EngineSnapshot, state: inout AlertRuleState, now: Date) -> AlertEvent? {
         switch self {
         case .threshold(let rule):
