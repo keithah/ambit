@@ -1284,9 +1284,16 @@ private struct GenericProviderDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(metrics) { metric in
-                        GenericMetricCard(metric: metric)
+                ForEach(metricSections, id: \.title) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.title)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(section.metrics) { metric in
+                                GenericMetricCard(metric: metric)
+                            }
+                        }
                     }
                 }
             }
@@ -1356,6 +1363,10 @@ private struct GenericProviderDetailView: View {
 
     private var metrics: [Metric] {
         snapshot?.metrics ?? []
+    }
+
+    private var metricSections: [ProviderMetricSection] {
+        ProviderMetricSection.sections(from: metrics)
     }
 
     private var providerCommands: [CommandPaletteItem] {
