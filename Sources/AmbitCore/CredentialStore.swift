@@ -85,6 +85,32 @@ public struct KeychainCredentialStore: CredentialStore {
     }
 }
 
+public struct StaticCredentialStore: CredentialStore {
+    private let credentials: [CredentialKey: String]
+
+    public init(credentials: [CredentialKey: String]) {
+        self.credentials = credentials
+    }
+
+    public static func manifestCredentials(providerID: ProviderID, values: [String: String]) -> StaticCredentialStore {
+        StaticCredentialStore(
+            credentials: Dictionary(
+                uniqueKeysWithValues: values.map { key, value in
+                    (CredentialKey(providerID: providerID, id: key), value)
+                }
+            )
+        )
+    }
+
+    public func credential(_ key: CredentialKey) throws -> String? {
+        credentials[key]
+    }
+
+    public func setCredential(_ value: String?, for key: CredentialKey) throws {
+        throw KeychainError(status: errSecReadOnly)
+    }
+}
+
 public struct KeychainError: Error, LocalizedError, Sendable {
     public let status: OSStatus
 

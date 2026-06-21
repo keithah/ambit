@@ -19,9 +19,9 @@ The staged migration below has been executed through Step 5. Current state:
 - Provider snapshots carry normalized metrics/health plus rich `ProviderDetail`.
 - `AlertEngine` evaluates rules over `EngineSnapshot`; notification delivery remains in the menubar layer.
 - `PingProvider` and `Iperf3Provider` are registered when a `ProcessRunner` is supplied; `ambit-check --run-iperf3 <host>` triggers an iperf3 measurement.
-- Provider manifest packages now have a schema, validation, an example package, a v0 HTTP GET metric runtime, and CLI validation/execution paths (`--validate-manifest`, `--run-manifest`).
+- Provider manifest packages now have a schema, validation, credential declarations, HTTP GET/POST endpoint requests with static headers/body, an example package, a metric runtime, and CLI validation/execution paths (`--validate-manifest`, `--run-manifest`).
 
-Remaining follow-up work is product/UI expansion and integration hardening, not core migration: polish the built-in integrations, add richer generic provider views for active measurements and manifest providers, and expand manifest packages beyond unauthenticated HTTP GET metric polling when that becomes a priority.
+Remaining follow-up work is product/UI expansion and integration hardening, not core migration: polish the built-in integrations, add richer generic provider views for active measurements and manifest providers, improve manifest package authoring/setup, and expand the manifest runtime toward transform/layout capabilities when that becomes a priority.
 
 ---
 
@@ -204,7 +204,7 @@ Each step: Goal / Changes / Acceptance. Commit after each. Don't start a step un
 
 ## Non-goals (do NOT do these)
 
-- No JavaScript/WASM/untrusted extension runtime. Providers stay native Swift conforming to `Provider`; the manifest runtime is intentionally limited to a declarative HTTP GET metric provider.
+- No JavaScript/WASM/untrusted extension runtime. Providers stay native Swift conforming to `Provider`; the manifest runtime is intentionally limited to declarative HTTP metric providers.
 - No iOS/Windows/Android client, no cloud relay, no message bus / Tailscale.
 - No store/registry distribution packaging.
 - **Never edit `~/src/glinet-travel`** — it's the untouched donor/reference.

@@ -22,6 +22,17 @@ final class CredentialStoreTests: XCTestCase {
 
         XCTAssertEqual(try store.password(account: "root"), "updated")
     }
+
+    func testStaticCredentialStoreBuildsManifestCredentialsFromRawValues() throws {
+        let store = StaticCredentialStore.manifestCredentials(
+            providerID: "demo.secure",
+            values: ["api_token": "abc123", "api_secret": "xyz789"]
+        )
+
+        XCTAssertEqual(try store.credential(CredentialKey(providerID: "demo.secure", id: "api_token")), "abc123")
+        XCTAssertEqual(try store.credential(CredentialKey(providerID: "demo.secure", id: "api_secret")), "xyz789")
+        XCTAssertNil(try store.credential(CredentialKey(providerID: "other", id: "api_token")))
+    }
 }
 
 private final class MemoryCredentialStore: CredentialStore, @unchecked Sendable {

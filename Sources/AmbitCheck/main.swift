@@ -13,16 +13,20 @@ struct AmbitCheck {
         let iperf3Host = value(after: "--run-iperf3", in: args)
         let manifestDirectory = value(after: "--validate-manifest", in: args)
         let runManifestDirectory = value(after: "--run-manifest", in: args)
+        let manifestCredentials = keyedValues(for: "--manifest-credential", in: args)
         if let manifestDirectory {
             validateManifest(at: manifestDirectory)
             return
         }
         if let runManifestDirectory {
-            await runManifest(at: runManifestDirectory)
+            await runManifest(at: runManifestDirectory, credentials: manifestCredentials)
             return
         }
 
-        let positionalArgs = positionalArguments(from: args, valueFlags: ["--run-iperf3", "--validate-manifest", "--run-manifest"])
+        let positionalArgs = positionalArguments(
+            from: args,
+            valueFlags: ["--run-iperf3", "--validate-manifest", "--run-manifest", "--manifest-credential"]
+        )
         let username = positionalArgs.dropFirst().first ?? "root"
         let password = positionalArgs.dropFirst(2).first ?? RouterDefaults.routerPassword
 
@@ -48,7 +52,7 @@ struct AmbitCheck {
             if shouldPrintUsage {
                 await printUsage(engine: engine)
             }
-            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [--validate-manifest dir] [--run-manifest dir] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
+            fputs("Usage: ambit-check [--usage] [--probe-vpn-methods] [--probe-speedify] [--probe-starlink] [--run-iperf3 host] [--validate-manifest dir] [--run-manifest dir] [--manifest-credential id=value] [host] [username] [password]\nCould not discover GL.iNet router endpoint: \(snapshot.router.errorMessage ?? "endpoint unavailable")\n", stderr)
             Foundation.exit(2)
         }
         guard let endpoint = URL.routerRPC(host: selectedHost) else {
@@ -145,22 +149,44 @@ struct AmbitCheck {
         return positional
     }
 
+    private static func keyedValues(for flag: String, in args: [String]) -> [String: String] {
+        var values: [String: String] = [:]
+        var index = args.startIndex
+        while index < args.endIndex {
+            guard args[index] == flag else {
+                index = args.index(after: index)
+                continue
+            }
+            let valueIndex = args.index(after: index)
+            guard valueIndex < args.endIndex else { break }
+            let value = args[valueIndex]
+            if let separator = value.firstIndex(of: "="), separator > value.startIndex {
+                let key = String(value[..<separator])
+                let credentialValue = String(value[value.index(after: separator)...])
+                values[key] = credentialValue
+            }
+            index = args.index(after: valueIndex)
+        }
+        return values
+    }
+
     private static func validateManifest(at path: String) {
         do {
             let package = try ProviderManifestPackage.load(from: URL(fileURLWithPath: path, isDirectory: true))
-            print("Manifest valid: \(package.manifest.displayName) (\(package.manifest.id))")
-            print("Metrics: \(package.manifest.metrics.count)")
-            print("Commands: \(package.manifest.commands.count) declared, \(package.manifest.executableCommandDescriptors.count) executable")
+            ProviderManifestReport.lines(manifest: package.manifest).forEach { print($0) }
         } catch {
             fputs("Manifest invalid: \(error.localizedDescription)\n", stderr)
             Foundation.exit(1)
         }
     }
 
-    private static func runManifest(at path: String) async {
+    private static func runManifest(at path: String, credentials: [String: String]) async {
         do {
             let package = try ProviderManifestPackage.load(from: URL(fileURLWithPath: path, isDirectory: true))
-            let provider = ManifestProvider(manifest: package.manifest)
+            let provider = ManifestProvider(
+                manifest: package.manifest,
+                credentialStore: StaticCredentialStore.manifestCredentials(providerID: package.manifest.id, values: credentials)
+            )
             let engine = Engine(
                 settings: AppSettings(remoteHost: "", endpointMode: .forceRemote),
                 providers: [provider],
