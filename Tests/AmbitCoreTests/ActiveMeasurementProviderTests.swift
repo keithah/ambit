@@ -31,6 +31,25 @@ final class ActiveMeasurementProviderTests: XCTestCase {
         XCTAssertEqual(summaries[1].secondaryMetrics.map(\.id), ["upload_bps"])
     }
 
+    func testActiveMeasurementSummaryIncludesDiagnosticsForFailures() {
+        let snapshot = StatusSnapshot(providers: [
+            ProviderIDs.ping: SourceState(value: ProviderSnapshot(
+                health: .down,
+                metrics: [],
+                detail: .ping(PingSnapshot(host: "1.1.1.1")),
+                error: "Process timed out."
+            ))
+        ])
+
+        let summaries = ActiveMeasurementSummary.summaries(from: snapshot)
+
+        XCTAssertEqual(summaries.first?.diagnostic, ProviderDiagnostic(
+            title: "Ping reported an error",
+            message: "Process timed out.",
+            nextStep: "Refresh after checking the provider connection, credentials, and endpoint settings."
+        ))
+    }
+
     func testPingProviderParsesMacOSPingOutputIntoMetrics() async {
         let output = """
         PING 1.1.1.1 (1.1.1.1): 56 data bytes

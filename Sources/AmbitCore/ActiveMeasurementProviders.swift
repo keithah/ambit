@@ -49,6 +49,7 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
     public var primaryMetric: Metric?
     public var secondaryMetrics: [Metric]
     public var errorMessage: String?
+    public var diagnostic: ProviderDiagnostic?
 
     public var id: ProviderID { providerID }
 
@@ -59,7 +60,8 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
         health: Health,
         primaryMetric: Metric?,
         secondaryMetrics: [Metric],
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        diagnostic: ProviderDiagnostic? = nil
     ) {
         self.providerID = providerID
         self.title = title
@@ -68,6 +70,7 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
         self.primaryMetric = primaryMetric
         self.secondaryMetrics = secondaryMetrics
         self.errorMessage = errorMessage
+        self.diagnostic = diagnostic
     }
 
     public static func summaries(from snapshot: StatusSnapshot) -> [ActiveMeasurementSummary] {
@@ -86,7 +89,8 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
             health: provider.health,
             primaryMetric: provider.metric("latency_ms"),
             secondaryMetrics: ["loss_percent", "received_packets"].compactMap(provider.metric),
-            errorMessage: state.errorMessage ?? provider.error
+            errorMessage: state.errorMessage ?? provider.error,
+            diagnostic: ProviderDiagnostic.make(providerID: ProviderIDs.ping, providerName: "Ping", snapshot: provider)
         )
     }
 
@@ -99,7 +103,8 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
             health: provider.health,
             primaryMetric: provider.metric("download_bps"),
             secondaryMetrics: ["upload_bps"].compactMap(provider.metric),
-            errorMessage: state.errorMessage ?? provider.error
+            errorMessage: state.errorMessage ?? provider.error,
+            diagnostic: ProviderDiagnostic.make(providerID: ProviderIDs.iperf3, providerName: "iperf3", snapshot: provider)
         )
     }
 }

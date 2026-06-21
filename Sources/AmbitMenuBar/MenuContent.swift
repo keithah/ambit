@@ -1054,6 +1054,21 @@ private struct ActiveMeasurementCard: View {
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             }
+
+            if let diagnostic = summary.diagnostic {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(diagnostic.title, systemImage: "stethoscope")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.orange)
+                    Text(diagnostic.nextStep)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
