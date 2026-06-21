@@ -1515,9 +1515,15 @@ private struct CommandPaletteView: View {
                                 item: selectedItem,
                                 values: $parameterValues,
                                 isExecuting: selectedItem.id == viewModel.executingCommandID,
-                                canRun: canRun(selectedItem)
+                                validationMessage: validationMessage(for: selectedItem)
                             ) {
-                                await viewModel.executeCommand(selectedItem, arguments: arguments(for: selectedItem))
+                                await viewModel.executeCommand(
+                                    selectedItem,
+                                    arguments: CommandArgumentBuilder.arguments(
+                                        parameters: selectedItem.command.parameters,
+                                        rawValues: parameterValues
+                                    )
+                                )
                             }
                         }
                     }
@@ -1584,52 +1590,15 @@ private struct CommandPaletteView: View {
     private func seedParameterValues(for item: CommandPaletteItem) {
         var values = parameterValues
         for parameter in item.command.parameters where values[parameter.id] == nil {
-            values[parameter.id] = defaultValue(for: parameter)
+            values[parameter.id] = CommandArgumentBuilder.defaultValue(for: parameter)
         }
         parameterValues = values.filter { key, _ in
             item.command.parameters.contains { $0.id == key }
         }
     }
 
-    private func defaultValue(for parameter: CommandParameter) -> String {
-        switch parameter.kind {
-        case .text, .number:
-            return ""
-        case .bool:
-            return "false"
-        case .option(let options):
-            return options.first ?? ""
-        }
-    }
-
-    private func canRun(_ item: CommandPaletteItem) -> Bool {
-        item.command.parameters.allSatisfy { parameter in
-            switch parameter.kind {
-            case .bool, .option:
-                return true
-            case .text:
-                return parameterValues[parameter.id]?.isEmpty == false
-            case .number:
-                guard let value = parameterValues[parameter.id], !value.isEmpty else { return false }
-                return Double(value) != nil
-            }
-        }
-    }
-
-    private func arguments(for item: CommandPaletteItem) -> CommandArguments {
-        var values: [String: JSONValue] = [:]
-        for parameter in item.command.parameters {
-            let rawValue = parameterValues[parameter.id] ?? defaultValue(for: parameter)
-            switch parameter.kind {
-            case .text, .option:
-                values[parameter.id] = .string(rawValue)
-            case .bool:
-                values[parameter.id] = .bool(rawValue == "true")
-            case .number:
-                values[parameter.id] = .number(Double(rawValue) ?? 0)
-            }
-        }
-        return CommandArguments(values: values)
+    private func validationMessage(for item: CommandPaletteItem) -> String? {
+        CommandArgumentBuilder.validate(parameters: item.command.parameters, rawValues: parameterValues)
     }
 }
 
@@ -1686,7 +1655,7 @@ private struct CommandParameterPanel: View {
     let item: CommandPaletteItem
     @Binding var values: [String: String]
     let isExecuting: Bool
-    let canRun: Bool
+    let validationMessage: String?
     let run: () async -> Void
 
     var body: some View {
@@ -1712,6 +1681,17 @@ private struct CommandParameterPanel: View {
                 }
             }
 
+            if let validationMessage {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(.orange)
+                    Text(validationMessage)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+
             Button {
                 Task { await run() }
             } label: {
@@ -1727,7 +1707,7 @@ private struct CommandParameterPanel: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .disabled(!canRun || isExecuting)
+            .disabled(validationMessage != nil || isExecuting)
             .buttonStyle(.borderedProminent)
         }
         .padding(12)
@@ -1737,20 +1717,9 @@ private struct CommandParameterPanel: View {
 
     private func binding(for parameter: CommandParameter) -> Binding<String> {
         Binding(
-            get: { values[parameter.id] ?? defaultValue(for: parameter) },
+            get: { values[parameter.id] ?? CommandArgumentBuilder.defaultValue(for: parameter) },
             set: { values[parameter.id] = $0 }
         )
-    }
-
-    private func defaultValue(for parameter: CommandParameter) -> String {
-        switch parameter.kind {
-        case .text, .number:
-            return ""
-        case .bool:
-            return "false"
-        case .option(let options):
-            return options.first ?? ""
-        }
     }
 }
 
