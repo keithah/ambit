@@ -154,22 +154,11 @@ final class StatusViewModel: ObservableObject {
 
     func refreshInstalledProviderValidation(_ providerID: ProviderID) {
         do {
-            var records = try installedProviderStore.load()
-            guard let index = records.firstIndex(where: { $0.id == providerID }) else { return }
-            do {
-                let package = try ProviderManifestPackage.load(
-                    from: URL(fileURLWithPath: records[index].packagePath, isDirectory: true)
-                )
-                records[index].id = package.manifest.id
-                records[index].displayName = package.manifest.displayName
-                records[index].lastValidation = .valid
-                try installedProviderStore.save(records)
+            switch try installedProviderStore.refreshManifestPackageValidation(providerID: providerID) {
+            case .valid, .missing:
                 providerSetupError = nil
-            } catch {
-                let validationMessage = error.localizedDescription
-                records[index].lastValidation = .invalid(validationMessage)
-                try installedProviderStore.save(records)
-                providerSetupError = validationMessage
+            case .invalid(_, let message):
+                providerSetupError = message
             }
             reloadInstalledProviders()
         } catch {

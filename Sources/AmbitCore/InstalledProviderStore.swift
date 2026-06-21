@@ -58,6 +58,23 @@ public struct InstalledProviderRecord: Codable, Equatable, Identifiable, Sendabl
     }
 }
 
+public enum InstalledProviderStoreError: Error, Equatable, LocalizedError, Sendable {
+    case duplicateProviderID(ProviderID)
+
+    public var errorDescription: String? {
+        switch self {
+        case .duplicateProviderID(let providerID):
+            return "Another installed provider already uses id \(providerID)."
+        }
+    }
+}
+
+public enum InstalledProviderValidationRefreshResult: Equatable, Sendable {
+    case valid(InstalledProviderRecord)
+    case invalid(InstalledProviderRecord, message: String)
+    case missing
+}
+
 public protocol InstalledProviderStore: Sendable {
     func load() throws -> [InstalledProviderRecord]
     func save(_ records: [InstalledProviderRecord]) throws
@@ -91,6 +108,36 @@ public extension InstalledProviderStore {
         guard let index = records.firstIndex(where: { $0.id == providerID }) else { return }
         records[index].isEnabled = enabled
         try save(records)
+    }
+
+    @discardableResult
+    func refreshManifestPackageValidation(providerID: ProviderID) throws -> InstalledProviderValidationRefreshResult {
+        var records = try load()
+        guard let index = records.firstIndex(where: { $0.id == providerID }) else {
+            return .missing
+        }
+
+        let package: ProviderManifestPackage
+        do {
+            package = try ProviderManifestPackage.load(
+                from: URL(fileURLWithPath: records[index].packagePath, isDirectory: true)
+            )
+        } catch {
+            let validationMessage = ProviderDisplayText.singleLine(error.localizedDescription)
+            records[index].lastValidation = .invalid(validationMessage)
+            try save(records)
+            return .invalid(records[index], message: validationMessage)
+        }
+
+        if records.indices.contains(where: { $0 != index && records[$0].id == package.manifest.id }) {
+            throw InstalledProviderStoreError.duplicateProviderID(package.manifest.id)
+        }
+
+        records[index].id = package.manifest.id
+        records[index].displayName = package.manifest.displayName
+        records[index].lastValidation = .valid
+        try save(records)
+        return .valid(records[index])
     }
 }
 

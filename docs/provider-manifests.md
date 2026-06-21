@@ -39,9 +39,9 @@ Installed providers have setup state derived from manifest validation, persisted
 - `ready`: the package is valid, enabled, and has all required credentials.
 - `disabled`: the package is installed but explicitly disabled.
 - `invalid`: the package cannot be validated or loaded.
-- `waitingForCredentials`: one or more required credentials have not been configured.
+- `needsCredentials`: one or more required credentials have not been configured.
 
-Settings should keep disabled and invalid providers visible so people can inspect, re-enable, repair, or remove them. Runtime surfaces only load providers that are both enabled and ready.
+Settings should keep disabled and invalid providers visible so people can inspect, re-enable, repair, or remove them. Runtime surfaces load enabled, valid providers; providers missing required credentials report an actionable down snapshot until credentials are saved.
 
 ## Metrics And Transforms
 

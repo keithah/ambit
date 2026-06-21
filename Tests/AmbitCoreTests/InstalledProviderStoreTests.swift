@@ -58,6 +58,57 @@ final class InstalledProviderStoreTests: XCTestCase {
         XCTAssertEqual(try store.load(), [record])
     }
 
+    func testRefreshManifestPackageValidationRejectsDuplicateProviderID() throws {
+        let existingDirectory = try Self.writeManifest(id: "demo.existing", displayName: "Existing Demo")
+        let changedDirectory = try Self.writeManifest(id: "demo.existing", displayName: "Changed Demo")
+        let defaults = UserDefaults(suiteName: "InstalledProviderStoreTests.\(UUID().uuidString)")!
+        let store = UserDefaultsInstalledProviderStore(defaults: defaults)
+        let records = [
+            InstalledProviderRecord(
+                id: "demo.existing",
+                displayName: "Existing Demo",
+                packagePath: existingDirectory.path,
+                isEnabled: true,
+                lastValidation: .valid
+            ),
+            InstalledProviderRecord(
+                id: "demo.changed",
+                displayName: "Changed Demo",
+                packagePath: changedDirectory.path,
+                isEnabled: true,
+                lastValidation: .valid
+            )
+        ]
+        try store.save(records)
+
+        XCTAssertThrowsError(try store.refreshManifestPackageValidation(providerID: "demo.changed")) { error in
+            XCTAssertEqual(error as? InstalledProviderStoreError, .duplicateProviderID("demo.existing"))
+        }
+        XCTAssertEqual(try store.load(), records)
+    }
+
+    func testRefreshManifestPackageValidationPersistsInvalidValidation() throws {
+        let defaults = UserDefaults(suiteName: "InstalledProviderStoreTests.\(UUID().uuidString)")!
+        let store = UserDefaultsInstalledProviderStore(defaults: defaults)
+        let record = InstalledProviderRecord(
+            id: "demo.missing",
+            displayName: "Missing Demo",
+            packagePath: "/tmp/ambit-missing-\(UUID().uuidString)",
+            isEnabled: true,
+            lastValidation: .valid
+        )
+        try store.save([record])
+
+        let result = try store.refreshManifestPackageValidation(providerID: "demo.missing")
+
+        guard case .invalid(let updatedRecord, let message) = result else {
+            return XCTFail("Expected invalid refresh result.")
+        }
+        XCTAssertEqual(updatedRecord.id, "demo.missing")
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertEqual(try store.load(), [updatedRecord])
+    }
+
     private static func writeManifest(id: String, displayName: String) throws -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("ambit-install-provider-\(UUID().uuidString)", isDirectory: true)
