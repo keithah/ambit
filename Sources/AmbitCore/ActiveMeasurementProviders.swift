@@ -129,7 +129,14 @@ public actor PingProvider: Provider {
         do {
             let result = try await processRunner.run(executable: executable, arguments: ["-c", "3", "-W", "1000", host], timeout: 5)
             guard result.exitCode == 0 else {
-                return ProviderSnapshot(health: .down, metrics: [], detail: .ping(PingSnapshot(host: host, rawOutput: result.stderr.isEmpty ? result.stdout : result.stderr)), error: result.stderr)
+                let output = result.stdout.isEmpty ? result.stderr : result.stdout
+                let parsed = Self.parse(host: host, output: output)
+                var snapshot = ProviderSnapshot.ping(parsed)
+                if snapshot.metrics.isEmpty {
+                    snapshot.health = .down
+                }
+                snapshot.error = result.stderr.isEmpty ? "ping exited with status \(result.exitCode)." : result.stderr
+                return snapshot
             }
             let snapshot = Self.parse(host: host, output: result.stdout)
             return ProviderSnapshot.ping(snapshot)

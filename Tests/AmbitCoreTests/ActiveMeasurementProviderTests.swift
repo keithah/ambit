@@ -74,6 +74,39 @@ final class ActiveMeasurementProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("received_packets"), .level(3))
     }
 
+    func testPingProviderKeepsMetricsWhenPingReportsPacketLossWithNonZeroExit() async {
+        let output = """
+        PING 1.1.1.1 (1.1.1.1): 56 data bytes
+
+        --- 1.1.1.1 ping statistics ---
+        3 packets transmitted, 0 packets received, 100.0% packet loss
+        """
+        let provider = PingProvider(
+            host: "1.1.1.1",
+            processRunner: StubProcessRunner(results: ["-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 2, stdout: output, stderr: "")])
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertEqual(snapshot.health, .down)
+        XCTAssertEqual(snapshot.metricValue("loss_percent"), .percent(100))
+        XCTAssertEqual(snapshot.metricValue("received_packets"), .level(0))
+        XCTAssertEqual(snapshot.error, "ping exited with status 2.")
+    }
+
+    func testPingProviderUsesStderrWhenNonZeroExitHasNoParseableMetrics() async {
+        let provider = PingProvider(
+            host: "bad.host",
+            processRunner: StubProcessRunner(results: ["-c 3 -W 1000 bad.host": ProcessResult(exitCode: 68, stdout: "", stderr: "cannot resolve bad.host")])
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertEqual(snapshot.health, .down)
+        XCTAssertEqual(snapshot.metrics, [])
+        XCTAssertEqual(snapshot.error, "cannot resolve bad.host")
+    }
+
     func testIperf3ProviderRunCommandStoresLatestThroughput() async throws {
         let output = """
         {
