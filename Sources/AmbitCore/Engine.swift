@@ -16,6 +16,8 @@ public actor Engine {
     private let explicitProviders: [any Provider]
     private let registerBuiltInProviders: Bool
     private let builtInProviderFactory: BuiltInProviderFactory?
+    private let installedProviderStore: (any InstalledProviderStore)?
+    private let manifestHTTPClient: any ManifestHTTPClient
     private var providers: [any Provider]
     private let resetRouterClients: @Sendable () async -> Void
     private let usageMeter: ModuleUsageMeter
@@ -29,6 +31,8 @@ public actor Engine {
     private var pollTask: Task<Void, Never>?
     private var speedifyFocusTask: Task<Void, Never>?
     private var routerBackoffUntil: Date?
+    private var installedProviderRecords: [InstalledProviderRecord] = []
+    private var installedAlertRules: [AlertRule] = []
 
     public init(
         settingsStore: SettingsStore = UserDefaultsSettingsStore(),
@@ -41,6 +45,8 @@ public actor Engine {
         routerClientFactory: RouterClientFactory? = nil,
         providers: [any Provider] = [],
         registerBuiltInProviders: Bool = true,
+        installedProviderStore: (any InstalledProviderStore)? = nil,
+        manifestHTTPClient: any ManifestHTTPClient = URLSessionManifestHTTPClient(),
         resetRouterClients: (@Sendable () async -> Void)? = nil,
         usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
@@ -82,6 +88,8 @@ public actor Engine {
         self.resetRouterClients = actualResetRouterClients
         self.explicitProviders = providers
         self.registerBuiltInProviders = registerBuiltInProviders
+        self.installedProviderStore = installedProviderStore
+        self.manifestHTTPClient = manifestHTTPClient
         let builtInProviderFactory = registerBuiltInProviders ? BuiltInProviderFactory(
             routerClientFactory: actualRouterClientFactory,
             reachabilityProbe: reachabilityProbe,
@@ -91,14 +99,16 @@ public actor Engine {
             activeMeasurementProcessRunner: activeMeasurementProcessRunner
         ) : nil
         self.builtInProviderFactory = builtInProviderFactory
-        if registerBuiltInProviders {
-            self.providers = Self.mergedProviders(
-                builtIns: builtInProviderFactory?.providers(settings: loadedSettings) ?? [],
-                explicit: providers
-            )
-        } else {
-            self.providers = providers
-        }
+        self.providers = []
+        let installed = Self.loadInstalledManifestProviders(
+            store: installedProviderStore,
+            credentialStore: credentialStore,
+            httpClient: manifestHTTPClient
+        )
+        self.installedProviderRecords = installed.records
+        self.installedAlertRules = installed.alertRules
+        let baseProviders = (builtInProviderFactory?.providers(settings: loadedSettings) ?? []) + installed.providers
+        self.providers = Self.mergedProviders(builtIns: baseProviders, explicit: providers)
     }
 
     deinit {
@@ -166,6 +176,26 @@ public actor Engine {
         providers.reduce(into: [:]) { names, provider in
             names[provider.id] = provider.displayName
         }
+    }
+
+    public func providerLayouts() -> [ProviderID: ProviderManifest.Layout] {
+        providers.reduce(into: [:]) { layouts, provider in
+            if let layout = provider.layout {
+                layouts[provider.id] = layout
+            }
+        }
+    }
+
+    public func alertRules() -> [AlertRule] {
+        AlertRule.defaultRules + installedAlertRules
+    }
+
+    public func installedProviders() -> [InstalledProviderRecord] {
+        installedProviderRecords
+    }
+
+    public func reloadInstalledProviders() {
+        rebuildProviders()
     }
 
     public func refresh() async {
@@ -401,17 +431,55 @@ public actor Engine {
     }
 
     private func rebuildBuiltInProvidersIfNeeded() {
-        guard registerBuiltInProviders, let builtInProviderFactory else { return }
+        guard registerBuiltInProviders || installedProviderStore != nil else { return }
+        rebuildProviders()
+    }
+
+    private func rebuildProviders() {
+        let builtIns = builtInProviderFactory?.providers(settings: settings) ?? []
+        let installed = loadInstalledManifestProviders()
         providers = Self.mergedProviders(
-            builtIns: builtInProviderFactory.providers(settings: settings),
+            builtIns: builtIns + installed,
             explicit: explicitProviders
         )
         let activeProviderIDs = Set(providers.map(\.id))
-        let inactiveBuiltInIDs = BuiltInProviderFactory.providerIDs.subtracting(activeProviderIDs)
-        for providerID in inactiveBuiltInIDs {
+        let inactiveProviderIDs = Set(providerStates.keys)
+            .union(snapshot.providers.keys)
+            .subtracting(activeProviderIDs)
+        for providerID in inactiveProviderIDs {
             providerStates[providerID] = nil
             lastRegisteredProviderPolls[providerID] = nil
             snapshot.providers[providerID] = nil
+        }
+    }
+
+    private func loadInstalledManifestProviders() -> [any Provider] {
+        let result = Self.loadInstalledManifestProviders(
+            store: installedProviderStore,
+            credentialStore: credentialStore,
+            httpClient: manifestHTTPClient
+        )
+        installedProviderRecords = result.records
+        installedAlertRules = result.alertRules
+        return result.providers
+    }
+
+    private static func loadInstalledManifestProviders(
+        store installedProviderStore: (any InstalledProviderStore)?,
+        credentialStore: any CredentialStore,
+        httpClient: any ManifestHTTPClient
+    ) -> InstalledManifestProviderLoadResult {
+        guard let installedProviderStore else {
+            return InstalledManifestProviderLoadResult(records: [], providers: [])
+        }
+        do {
+            return try InstalledManifestProviderLoader(
+                store: installedProviderStore,
+                credentialStore: credentialStore,
+                httpClient: httpClient
+            ).load()
+        } catch {
+            return InstalledManifestProviderLoadResult(records: [], providers: [])
         }
     }
 

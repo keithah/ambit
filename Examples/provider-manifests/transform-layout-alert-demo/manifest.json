@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "demo.power",
+  "displayName": "Power Demo",
+  "pollInterval": 30,
+  "layout": {
+    "icon": "bolt",
+    "accent": "green",
+    "primaryMetric": "battery_percent"
+  },
+  "endpoint": {
+    "method": "GET",
+    "url": "https://example.test/power"
+  },
+  "metrics": [
+    {
+      "id": "battery_percent",
+      "label": "Battery",
+      "value": {
+        "type": "percent",
+        "path": "battery_ratio",
+        "transforms": [
+          { "type": "multiply", "value": 100 },
+          { "type": "round" }
+        ]
+      }
+    }
+  ],
+  "alerts": [
+    {
+      "id": "battery.low",
+      "metricID": "battery_percent",
+      "kind": { "type": "threshold", "comparison": "lessThan", "value": 20 },
+      "title": "Power Demo battery low",
+      "message": "Power Demo battery is below 20%.",
+      "severity": "warning"
+    }
+  ],
+  "commands": []
+}

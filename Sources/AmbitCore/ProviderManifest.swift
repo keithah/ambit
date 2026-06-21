@@ -6,8 +6,10 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
     public var displayName: String
     public var pollInterval: TimeInterval
     public var credentials: [Credential]
+    public var layout: Layout?
     public var endpoint: Endpoint
     public var metrics: [MetricMapping]
+    public var alerts: [Alert]
     public var commands: [Command]
 
     public init(
@@ -16,8 +18,10 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         displayName: String,
         pollInterval: TimeInterval,
         credentials: [Credential] = [],
+        layout: Layout? = nil,
         endpoint: Endpoint,
         metrics: [MetricMapping],
+        alerts: [Alert] = [],
         commands: [Command] = []
     ) {
         self.schemaVersion = schemaVersion
@@ -25,8 +29,10 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         self.displayName = displayName
         self.pollInterval = pollInterval
         self.credentials = credentials
+        self.layout = layout
         self.endpoint = endpoint
         self.metrics = metrics
+        self.alerts = alerts
         self.commands = commands
     }
 
@@ -37,8 +43,10 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.pollInterval = try container.decode(TimeInterval.self, forKey: .pollInterval)
         self.credentials = try container.decodeIfPresent([Credential].self, forKey: .credentials) ?? []
+        self.layout = try container.decodeIfPresent(Layout.self, forKey: .layout)
         self.endpoint = try container.decode(Endpoint.self, forKey: .endpoint)
         self.metrics = try container.decode([MetricMapping].self, forKey: .metrics)
+        self.alerts = try container.decodeIfPresent([Alert].self, forKey: .alerts) ?? []
         self.commands = try container.decodeIfPresent([Command].self, forKey: .commands) ?? []
     }
 
@@ -64,9 +72,15 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         guard Self.isValidHTTPURL(endpoint.url) else {
             throw ValidationError.invalidEndpointURL(endpoint.url)
         }
+        let metricIDs = Set(metrics.map(\.id))
+        if let primaryMetric = layout?.primaryMetric, !metricIDs.contains(primaryMetric) {
+            throw ValidationError.invalidLayoutMetricID(primaryMetric)
+        }
         try Self.validateUnique(credentials.map(\.id), duplicate: ValidationError.duplicateCredentialID)
         try Self.validateUnique(metrics.map(\.id), duplicate: ValidationError.duplicateMetricID)
+        try Self.validateUnique(alerts.map(\.id), duplicate: ValidationError.duplicateAlertID)
         try Self.validateUnique(commands.map(\.id), duplicate: ValidationError.duplicateCommandID)
+        try validateCredentialReferences()
         for credential in credentials {
             guard !credential.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ValidationError.emptyLabel(credential.id)
@@ -94,6 +108,59 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
                 }
             }
         }
+        for alert in alerts where !metricIDs.contains(alert.metricID) {
+            throw ValidationError.invalidAlertMetricID(alert.id, alert.metricID)
+        }
+    }
+
+    private func validateCredentialReferences() throws {
+        let declared = Set(credentials.map(\.id))
+        for reference in credentialReferences() where !declared.contains(reference) {
+            throw ValidationError.undeclaredCredentialReference(reference)
+        }
+    }
+
+    private func credentialReferences() -> Set<String> {
+        var references = Set<String>()
+        let templates = [endpoint.url, endpoint.body].compactMap { $0 }
+            + Array(endpoint.headers.values)
+            + commands.flatMap { command -> [String] in
+                guard let endpoint = command.endpoint else { return [] }
+                return [endpoint.url, endpoint.body].compactMap { $0 } + Array(endpoint.headers.values)
+            }
+        for template in templates {
+            references.formUnion(Self.credentialReferences(in: template))
+        }
+        return references
+    }
+
+    private static func credentialReferences(in template: String) -> [String] {
+        let prefix = "{credential."
+        var references: [String] = []
+        var searchStart = template.startIndex
+        while let prefixRange = template.range(of: prefix, range: searchStart..<template.endIndex) {
+            let idStart = prefixRange.upperBound
+            guard let end = template[idStart...].firstIndex(of: "}") else { break }
+            let id = String(template[idStart..<end])
+            if !id.isEmpty {
+                references.append(id)
+            }
+            searchStart = template.index(after: end)
+        }
+        return references
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case displayName
+        case pollInterval
+        case credentials
+        case layout
+        case endpoint
+        case metrics
+        case alerts
+        case commands
     }
 
     public var commandDescriptors: [CommandDescriptor] {
@@ -187,6 +254,18 @@ public struct ProviderManifestPackage: Equatable, Sendable {
 }
 
 public extension ProviderManifest {
+    struct Layout: Codable, Equatable, Sendable {
+        public var icon: String?
+        public var accent: String?
+        public var primaryMetric: String?
+
+        public init(icon: String? = nil, accent: String? = nil, primaryMetric: String? = nil) {
+            self.icon = icon
+            self.accent = accent
+            self.primaryMetric = primaryMetric
+        }
+    }
+
     struct Endpoint: Codable, Equatable, Sendable {
         public var method: HTTPMethod
         public var url: String
@@ -272,10 +351,87 @@ public extension ProviderManifest {
     struct ValueMapping: Codable, Equatable, Sendable {
         public var type: ValueType
         public var path: String
+        public var transforms: [Transform]
 
-        public init(type: ValueType, path: String) {
+        public init(type: ValueType, path: String, transforms: [Transform] = []) {
             self.type = type
             self.path = path
+            self.transforms = transforms
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.type = try container.decode(ValueType.self, forKey: .type)
+            self.path = try container.decode(String.self, forKey: .path)
+            self.transforms = try container.decodeIfPresent([Transform].self, forKey: .transforms) ?? []
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case path
+            case transforms
+        }
+    }
+
+    enum Transform: Codable, Equatable, Sendable {
+        case multiply(Double)
+        case divide(Double)
+        case round
+        case clamp(min: Double?, max: Double?)
+        case defaultValue(JSONValue)
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decode(String.self, forKey: .type)
+            switch type {
+            case "multiply":
+                self = .multiply(try container.decode(Double.self, forKey: .value))
+            case "divide":
+                self = .divide(try container.decode(Double.self, forKey: .value))
+            case "round":
+                self = .round
+            case "clamp":
+                self = .clamp(
+                    min: try container.decodeIfPresent(Double.self, forKey: .min),
+                    max: try container.decodeIfPresent(Double.self, forKey: .max)
+                )
+            case "defaultValue":
+                self = .defaultValue(try container.decode(JSONValue.self, forKey: .value))
+            default:
+                throw DecodingError.dataCorruptedError(
+                    forKey: .type,
+                    in: container,
+                    debugDescription: "Unsupported manifest transform \(type)."
+                )
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .multiply(let value):
+                try container.encode("multiply", forKey: .type)
+                try container.encode(value, forKey: .value)
+            case .divide(let value):
+                try container.encode("divide", forKey: .type)
+                try container.encode(value, forKey: .value)
+            case .round:
+                try container.encode("round", forKey: .type)
+            case .clamp(let min, let max):
+                try container.encode("clamp", forKey: .type)
+                try container.encodeIfPresent(min, forKey: .min)
+                try container.encodeIfPresent(max, forKey: .max)
+            case .defaultValue(let value):
+                try container.encode("defaultValue", forKey: .type)
+                try container.encode(value, forKey: .value)
+            }
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case type
+            case value
+            case min
+            case max
         }
     }
 
@@ -307,6 +463,88 @@ public extension ProviderManifest {
             self.parameters = parameters
             self.requiresConfirmation = requiresConfirmation
             self.endpoint = endpoint
+        }
+    }
+
+    struct Alert: Codable, Equatable, Sendable {
+        public var id: String
+        public var metricID: String
+        public var kind: Kind
+        public var title: String
+        public var message: String
+        public var severity: AlertSeverity
+
+        public init(
+            id: String,
+            metricID: String,
+            kind: Kind,
+            title: String,
+            message: String,
+            severity: AlertSeverity = .warning
+        ) {
+            self.id = id
+            self.metricID = metricID
+            self.kind = kind
+            self.title = title
+            self.message = message
+            self.severity = severity
+        }
+
+        public enum Kind: Codable, Equatable, Sendable {
+            case threshold(comparison: AlertComparison, value: Double)
+            case stateTransition(value: MetricValue)
+            case sustained(comparison: AlertComparison, value: Double, duration: TimeInterval)
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                let type = try container.decode(String.self, forKey: .type)
+                switch type {
+                case "threshold":
+                    self = .threshold(
+                        comparison: try container.decode(AlertComparison.self, forKey: .comparison),
+                        value: try container.decode(Double.self, forKey: .value)
+                    )
+                case "stateTransition":
+                    self = .stateTransition(value: try container.decode(JSONValue.self, forKey: .value).metricValue)
+                case "sustained":
+                    self = .sustained(
+                        comparison: try container.decode(AlertComparison.self, forKey: .comparison),
+                        value: try container.decode(Double.self, forKey: .value),
+                        duration: try container.decode(TimeInterval.self, forKey: .duration)
+                    )
+                default:
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .type,
+                        in: container,
+                        debugDescription: "Unsupported manifest alert kind \(type)."
+                    )
+                }
+            }
+
+            public func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                switch self {
+                case .threshold(let comparison, let value):
+                    try container.encode("threshold", forKey: .type)
+                    try container.encode(comparison, forKey: .comparison)
+                    try container.encode(value, forKey: .value)
+                case .stateTransition(let value):
+                    try container.encode("stateTransition", forKey: .type)
+                    try container.encode(value.jsonValue, forKey: .value)
+                case .sustained(let comparison, let value, let duration):
+                    try container.encode("sustained", forKey: .type)
+                    try container.encode(comparison, forKey: .comparison)
+                    try container.encode(value, forKey: .value)
+                    try container.encode(duration, forKey: .duration)
+                }
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case type
+                case comparison
+                case value
+                case duration
+            }
         }
     }
 
@@ -391,10 +629,14 @@ public extension ProviderManifest {
         case invalidEndpointURL(String)
         case duplicateCredentialID(String)
         case duplicateMetricID(String)
+        case duplicateAlertID(String)
         case duplicateCommandID(String)
         case duplicateParameterID(String, String)
         case emptyLabel(String)
         case emptyMetricPath(String)
+        case invalidLayoutMetricID(String)
+        case invalidAlertMetricID(String, String)
+        case undeclaredCredentialReference(String)
         case invalidCommandEndpointURL(String, String)
 
         public var errorDescription: String? {
@@ -413,6 +655,8 @@ public extension ProviderManifest {
                 return "Manifest declares duplicate credential id \(id)."
             case .duplicateMetricID(let id):
                 return "Manifest declares duplicate metric id \(id)."
+            case .duplicateAlertID(let id):
+                return "Manifest declares duplicate alert id \(id)."
             case .duplicateCommandID(let id):
                 return "Manifest declares duplicate command id \(id)."
             case .duplicateParameterID(let commandID, let parameterID):
@@ -421,9 +665,49 @@ public extension ProviderManifest {
                 return "Manifest item \(id) label is empty."
             case .emptyMetricPath(let id):
                 return "Metric \(id) value path is empty."
+            case .invalidLayoutMetricID(let id):
+                return "Manifest layout references unknown metric id \(id)."
+            case .invalidAlertMetricID(let alertID, let metricID):
+                return "Manifest alert \(alertID) references unknown metric id \(metricID)."
+            case .undeclaredCredentialReference(let id):
+                return "Manifest references undeclared credential id \(id)."
             case .invalidCommandEndpointURL(let commandID, let url):
                 return "Command \(commandID) endpoint URL is invalid: \(url)"
             }
+        }
+    }
+}
+
+private extension JSONValue {
+    var metricValue: MetricValue {
+        switch self {
+        case .bool(let value):
+            return .bool(value)
+        case .number(let value):
+            return .level(value)
+        case .string(let value):
+            return .text(value)
+        case .null:
+            return .text("")
+        case .array, .object:
+            return .text("")
+        }
+    }
+}
+
+private extension MetricValue {
+    var jsonValue: JSONValue {
+        switch self {
+        case .throughput(let bitsPerSecond):
+            return .number(Double(bitsPerSecond))
+        case .latency(let ms):
+            return .number(ms)
+        case .percent(let value), .level(let value):
+            return .number(value)
+        case .bool(let value):
+            return .bool(value)
+        case .text(let value):
+            return .string(value)
         }
     }
 }

@@ -77,12 +77,14 @@ public protocol Provider: Sendable {
     var id: ProviderID { get }
     var displayName: String { get }
     var pollInterval: TimeInterval { get }
+    var layout: ProviderManifest.Layout? { get }
     var commands: [CommandDescriptor] { get }
     func poll(context: EnvironmentContext) async -> ProviderSnapshot
     func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws
 }
 
 public extension Provider {
+    var layout: ProviderManifest.Layout? { nil }
     var commands: [CommandDescriptor] { [] }
 
     func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {

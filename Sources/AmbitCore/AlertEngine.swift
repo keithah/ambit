@@ -28,7 +28,7 @@ public struct AlertEvent: Equatable, Identifiable, Sendable {
     }
 }
 
-public enum AlertSeverity: String, Equatable, Sendable {
+public enum AlertSeverity: String, Codable, Equatable, Sendable {
     case info
     case warning
     case critical
@@ -192,7 +192,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
     }
 }
 
-public enum AlertComparison: Equatable, Sendable {
+public enum AlertComparison: String, Codable, Equatable, Sendable {
     case greaterThan
     case greaterThanOrEqual
     case lessThan

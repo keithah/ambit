@@ -176,6 +176,69 @@ final class ProviderManifestTests: XCTestCase {
         )
     }
 
+    func testDecodesManifestLayoutHints() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "id": "demo.layout",
+          "displayName": "Layout Demo",
+          "pollInterval": 30,
+          "layout": {
+            "icon": "bolt",
+            "accent": "green",
+            "primaryMetric": "battery_percent"
+          },
+          "endpoint": { "method": "GET", "url": "https://example.test/status" },
+          "metrics": [
+            { "id": "battery_percent", "label": "Battery", "value": { "type": "percent", "path": "battery" } }
+          ],
+          "commands": []
+        }
+        """
+
+        let manifest = try ProviderManifest.decode(Data(json.utf8))
+
+        XCTAssertEqual(manifest.layout, ProviderManifest.Layout(icon: "bolt", accent: "green", primaryMetric: "battery_percent"))
+    }
+
+    func testManifestValidationRejectsUnknownLayoutPrimaryMetric() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            layout: ProviderManifest.Layout(primaryMetric: "missing"),
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: [
+                ProviderManifest.MetricMapping(id: "battery", label: "Battery", value: .init(type: .percent, path: "battery"))
+            ]
+        )
+
+        XCTAssertThrowsError(try manifest.validate()) { error in
+            XCTAssertEqual(error as? ProviderManifest.ValidationError, .invalidLayoutMetricID("missing"))
+        }
+    }
+
+    func testManifestValidationRejectsUndeclaredCredentialPlaceholders() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            endpoint: ProviderManifest.Endpoint(
+                method: .post,
+                url: "https://example.test/status",
+                headers: ["Authorization": "Bearer {credential.api_token}"],
+                body: #"{"token":"{credential.api_token}"}"#
+            ),
+            metrics: []
+        )
+
+        XCTAssertThrowsError(try manifest.validate()) { error in
+            XCTAssertEqual(error as? ProviderManifest.ValidationError, .undeclaredCredentialReference("api_token"))
+        }
+    }
+
     func testManifestPackageLoadErrorsHaveActionableDescriptions() {
         XCTAssertEqual(
             ProviderManifestPackage.LoadError.missingManifest("/tmp/demo/manifest.json").localizedDescription,

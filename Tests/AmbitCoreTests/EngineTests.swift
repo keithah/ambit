@@ -1134,6 +1134,87 @@ final class EngineTests: XCTestCase {
         ])
     }
 
+    func testRefreshLoadsInstalledManifestProviders() async throws {
+        let directory = try Self.writeManifest(id: "demo.installed", displayName: "Installed Demo")
+        let installedStore = InMemoryInstalledProviderStore(records: [
+            InstalledProviderRecord(id: "demo.installed", displayName: "Installed Demo", packagePath: directory.path, isEnabled: true)
+        ])
+        let httpClient = StubManifestHTTPClient(responses: [.success(#"{ "ok": true }"#)])
+        let settings = AppSettings(localHost: "router.local", endpointMode: .forceLocal)
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: settings),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            settings: settings,
+            routerPassword: "secret",
+            registerBuiltInProviders: false,
+            installedProviderStore: installedStore,
+            manifestHTTPClient: httpClient
+        )
+
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        let displayNames = await engine.providerDisplayNames()
+        XCTAssertEqual(snapshot.providers["demo.installed"]?.value?.metricValue("ok"), .bool(true))
+        XCTAssertEqual(displayNames["demo.installed"], "Installed Demo")
+    }
+
+    func testDisabledInstalledProviderIsRemovedFromRuntimeSnapshot() async throws {
+        let directory = try Self.writeManifest(id: "demo.installed", displayName: "Installed Demo")
+        let installedStore = InMemoryInstalledProviderStore(records: [
+            InstalledProviderRecord(id: "demo.installed", displayName: "Installed Demo", packagePath: directory.path, isEnabled: true)
+        ])
+        let httpClient = StubManifestHTTPClient(responses: [.success(#"{ "ok": true }"#)])
+        let settings = AppSettings(localHost: "router.local", endpointMode: .forceLocal)
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: settings),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            endpointSelector: EndpointSelector(
+                prober: StubEndpointProber(results: ["router.local": .success(afterNanoseconds: 0)]),
+                addressDiscovery: StubRouterAddressDiscovery(defaultGateway: nil)
+            ),
+            settings: settings,
+            routerPassword: "secret",
+            registerBuiltInProviders: false,
+            installedProviderStore: installedStore,
+            manifestHTTPClient: httpClient
+        )
+        await engine.refresh()
+
+        try installedStore.setEnabled(false, providerID: "demo.installed")
+        await engine.reloadInstalledProviders()
+        await engine.refresh()
+
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertNil(snapshot.providers["demo.installed"])
+    }
+
+    func testInstalledProviderLayoutsAreExposedForSurfaces() async throws {
+        let directory = try Self.writeManifest(
+            id: "demo.layout",
+            displayName: "Layout Demo",
+            extraJSON: #""layout": { "icon": "bolt", "accent": "green", "primaryMetric": "ok" },"#
+        )
+        let installedStore = InMemoryInstalledProviderStore(records: [
+            InstalledProviderRecord(id: "demo.layout", displayName: "Layout Demo", packagePath: directory.path, isEnabled: true)
+        ])
+        let engine = Engine(
+            settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
+            credentialStore: InMemoryCredentialStore(password: "secret"),
+            settings: AppSettings(localHost: "router.local"),
+            routerPassword: "secret",
+            registerBuiltInProviders: false,
+            installedProviderStore: installedStore
+        )
+
+        let layouts = await engine.providerLayouts()
+        XCTAssertEqual(layouts["demo.layout"], ProviderManifest.Layout(icon: "bolt", accent: "green", primaryMetric: "ok"))
+    }
+
     func testCommandPaletteItemMatchesProviderCommandAndParameters() {
         let item = CommandPaletteItem(
             providerID: ProviderIDs.iperf3,
@@ -1215,6 +1296,28 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(provider.metricValue("output_watts"), .level(42))
         XCTAssertEqual(provider.metricValue("ac_output"), .bool(true))
     }
+
+    private static func writeManifest(id: String, displayName: String, extraJSON: String = "") throws -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ambit-engine-provider-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let json = """
+        {
+          "schemaVersion": 1,
+          "id": "\(id)",
+          "displayName": "\(displayName)",
+          "pollInterval": 1,
+          "endpoint": { "method": "GET", "url": "https://example.test/status" },
+          \(extraJSON)
+          "metrics": [
+            { "id": "ok", "label": "OK", "value": { "type": "bool", "path": "ok" } }
+          ],
+          "commands": []
+        }
+        """
+        try Data(json.utf8).write(to: directory.appendingPathComponent("manifest.json"))
+        return directory
+    }
 }
 
 private extension ProviderSnapshot {
@@ -1287,6 +1390,41 @@ private final class InMemoryCredentialStore: CredentialStore, @unchecked Sendabl
 
     func setCredential(_ value: String?, for key: CredentialKey) throws {
         credentials[key] = value
+    }
+}
+
+private final class InMemoryInstalledProviderStore: InstalledProviderStore, @unchecked Sendable {
+    var records: [InstalledProviderRecord]
+
+    init(records: [InstalledProviderRecord]) {
+        self.records = records
+    }
+
+    func load() throws -> [InstalledProviderRecord] {
+        records
+    }
+
+    func save(_ records: [InstalledProviderRecord]) throws {
+        self.records = records
+    }
+}
+
+private final class StubManifestHTTPClient: ManifestHTTPClient, @unchecked Sendable {
+    enum Response {
+        case success(String)
+    }
+
+    var responses: [Response]
+
+    init(responses: [Response]) {
+        self.responses = responses
+    }
+
+    func send(_ request: ManifestHTTPRequest) async throws -> Data {
+        switch responses.removeFirst() {
+        case .success(let json):
+            return Data(json.utf8)
+        }
     }
 }
 

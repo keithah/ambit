@@ -718,6 +718,10 @@ private struct EcoFlowDetailView: View {
                     EcoFlowControlResultView(response: lastControlResponse)
                 }
 
+                if let commandResult = viewModel.lastCommandResult, commandResult.providerID == ProviderIDs.ecoflow {
+                    CommandResultBanner(result: commandResult)
+                }
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Device")
                         .font(.caption.weight(.bold))
@@ -1209,26 +1213,23 @@ private struct GenericProviderDetailView: View {
     let providerID: ProviderID
     @Binding var route: MenuRoute
 
-    private var state: SourceState<ProviderSnapshot>? {
-        viewModel.snapshot.providers[providerID]
-    }
-
-    private var snapshot: ProviderSnapshot? {
-        state?.value
-    }
-
     private var providerName: String {
         viewModel.providerDisplayNames[providerID] ?? providerID
     }
 
-    private var diagnostic: ProviderDiagnostic? {
-        guard let snapshot else { return nil }
-        return ProviderDiagnostic.make(providerID: providerID, providerName: providerName, snapshot: snapshot)
+    private var model: ProviderDisplayModel {
+        ProviderDisplayModel.make(
+            providerID: providerID,
+            providerName: providerName,
+            state: viewModel.snapshot.providers[providerID],
+            commands: providerCommands.map(\.command),
+            layout: viewModel.providerLayouts[providerID]
+        )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HeaderView(title: providerName, subtitle: subtitle, showsBack: true) {
+            HeaderView(title: model.title, subtitle: subtitle, showsBack: true) {
                 route = .overview
             }
 
@@ -1244,7 +1245,7 @@ private struct GenericProviderDetailView: View {
                     .frame(width: 38, height: 38)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(DisplayFormatters.health(snapshot?.health ?? .unknown))
+                        Text(DisplayFormatters.health(model.health))
                             .font(.headline.weight(.bold))
                         Text(providerID)
                             .font(.caption)
@@ -1252,27 +1253,47 @@ private struct GenericProviderDetailView: View {
                             .lineLimit(1)
                     }
                     Spacer()
-                    if state?.isLoading == true {
+                    if model.isLoading {
                         ProgressView()
                             .controlSize(.small)
                     }
                 }
 
-                if let error = state?.errorMessage ?? snapshot?.error, !error.isEmpty {
-                    Text(ProviderDisplayText.singleLine(error))
+                if !model.primaryMessage.isEmpty {
+                    Text(model.primaryMessage)
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(model.action == .configureCredentials ? .orange : .secondary)
                         .lineLimit(3)
                 }
             }
             .padding(12)
             .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            if let diagnostic {
+            if model.action == .configureCredentials {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Credentials needed", systemImage: "key")
+                        .font(.caption.weight(.bold))
+                    Text("Open Settings to add the required manifest provider credentials.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    } label: {
+                        Text("Open Settings")
+                            .font(.caption.weight(.bold))
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            if let diagnostic = model.diagnostic {
                 ProviderDiagnosticCard(diagnostic: diagnostic)
             }
 
-            if metrics.isEmpty {
+            if model.metrics.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No metrics reported")
                         .font(.headline)
@@ -1284,7 +1305,7 @@ private struct GenericProviderDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
-                ForEach(metricSections, id: \.title) { section in
+                ForEach(model.metricSections, id: \.title) { section in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(section.title)
                             .font(.caption.weight(.bold))
@@ -1298,14 +1319,14 @@ private struct GenericProviderDetailView: View {
                 }
             }
 
-            if !providerCommands.isEmpty {
+            if !model.commands.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Label("Commands", systemImage: "command")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("\(providerCommands.count)")
+                        Text("\(model.commands.count)")
                             .font(.caption2.weight(.bold))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -1313,18 +1334,18 @@ private struct GenericProviderDetailView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    ForEach(providerCommands.prefix(3)) { item in
+                    ForEach(model.commands.prefix(3)) { command in
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill")
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 14)
-                            Text(item.command.label)
+                            Text(command.label)
                                 .font(.caption.weight(.bold))
                                 .lineLimit(1)
                             Spacer()
-                            if !item.command.parameters.isEmpty {
-                                Text("\(item.command.parameters.count) params")
+                            if !command.detail.isEmpty {
+                                Text(command.detail)
                                     .font(.caption2.weight(.bold))
                                     .foregroundStyle(.secondary)
                             }
@@ -1362,11 +1383,11 @@ private struct GenericProviderDetailView: View {
     }
 
     private var metrics: [Metric] {
-        snapshot?.metrics ?? []
+        model.metrics
     }
 
     private var metricSections: [ProviderMetricSection] {
-        ProviderMetricSection.sections(from: metrics)
+        model.metricSections
     }
 
     private var providerCommands: [CommandPaletteItem] {
@@ -1374,21 +1395,21 @@ private struct GenericProviderDetailView: View {
     }
 
     private var subtitle: String {
-        if let snapshot {
-            let commandCount = providerCommands.count
+        if viewModel.snapshot.providers[providerID]?.value != nil {
+            let commandCount = model.commands.count
             if commandCount > 0 {
-                return "\(DisplayFormatters.health(snapshot.health)) · \(metrics.count) metrics · \(commandCount) commands"
+                return "\(DisplayFormatters.health(model.health)) · \(model.metrics.count) metrics · \(commandCount) commands"
             }
-            return "\(DisplayFormatters.health(snapshot.health)) · \(metrics.count) metrics"
+            return "\(DisplayFormatters.health(model.health)) · \(model.metrics.count) metrics"
         }
-        if let error = state?.errorMessage, !error.isEmpty {
-            return ProviderDisplayText.singleLine(error)
+        if model.health == .down {
+            return model.primaryMessage
         }
         return "Waiting for provider snapshot"
     }
 
     private var tone: StatusTone {
-        switch snapshot?.health ?? .unknown {
+        switch model.health {
         case .ok:
             return .good
         case .degraded:
@@ -1403,6 +1424,9 @@ private struct GenericProviderDetailView: View {
     private var icon: String {
         if providerID.contains("power") || providerID.contains("battery") {
             return "bolt"
+        }
+        if let icon = model.icon {
+            return icon
         }
         if providerID.contains("ping") || providerID.contains("latency") {
             return "timer"
@@ -1557,17 +1581,7 @@ private struct CommandPaletteView: View {
             }
 
             if let result = viewModel.lastCommandResult {
-                HStack(spacing: 8) {
-                    Image(systemName: result.status == .succeeded ? "checkmark.circle" : "exclamationmark.triangle")
-                        .foregroundStyle(result.status == .succeeded ? .green : .orange)
-                    Text(result.message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    Spacer()
-                }
-                .padding(10)
-                .background((result.status == .succeeded ? Color.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                CommandResultBanner(result: result)
             }
 
             FooterView(lastUpdated: viewModel.snapshot.lastUpdated)
@@ -1625,6 +1639,24 @@ private struct CommandPaletteView: View {
 
     private func validationMessage(for item: CommandPaletteItem) -> String? {
         CommandArgumentBuilder.validate(parameters: item.command.parameters, rawValues: parameterValues)
+    }
+}
+
+private struct CommandResultBanner: View {
+    let result: CommandExecutionResult
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: result.status == .succeeded ? "checkmark.circle" : "exclamationmark.triangle")
+                .foregroundStyle(result.status == .succeeded ? .green : .orange)
+            Text(result.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(10)
+        .background((result.status == .succeeded ? Color.green : Color.orange).opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -2384,6 +2416,10 @@ private struct SpeedifyControlsView: View {
                 SpeedifyInterfaceRow(network: network) { priority in
                     Task { await viewModel.setSpeedifyNetworkPriority(priority, networkID: network.id) }
                 }
+            }
+
+            if let commandResult = viewModel.lastCommandResult, commandResult.providerID == ProviderIDs.speedify {
+                CommandResultBanner(result: commandResult)
             }
         }
         .padding(14)

@@ -14,15 +14,22 @@ final class StatusViewModel: ObservableObject {
     @Published var moduleUsageSnapshots: [ModuleUsageSnapshot] = []
     @Published var lastCommandResult: CommandExecutionResult?
     @Published var executingCommandID: String?
+    @Published var installedProviders: [InstalledProviderRecord] = []
+    @Published var providerSetupError: String?
+    @Published var providerCredentialValues: [ProviderID: [String: String]] = [:]
+    @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
 
     private let engine: Engine
-    private let alertEngine = AlertEngine()
+    private let installedProviderStore: any InstalledProviderStore
+    private let credentialStore: any CredentialStore
+    private var alertEngine = AlertEngine()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
 
     init(
         settingsStore: SettingsStore = UserDefaultsSettingsStore(),
         credentialStore: CredentialStore = KeychainCredentialStore(),
+        installedProviderStore: any InstalledProviderStore = UserDefaultsInstalledProviderStore(),
         endpointSelector: EndpointSelector = EndpointSelector(),
         reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe()
     ) {
@@ -31,6 +38,8 @@ final class StatusViewModel: ObservableObject {
         self.settings = settings
         self.routerPassword = routerPassword
         self.alertNotifier = AlertNotifier()
+        self.installedProviderStore = installedProviderStore
+        self.credentialStore = credentialStore
         self.engine = Engine(
             settingsStore: settingsStore,
             credentialStore: credentialStore,
@@ -38,6 +47,7 @@ final class StatusViewModel: ObservableObject {
             reachabilityProbe: reachabilityProbe,
             settings: settings,
             routerPassword: routerPassword,
+            installedProviderStore: installedProviderStore,
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
     }
@@ -60,6 +70,8 @@ final class StatusViewModel: ObservableObject {
             }
         }
         Task { await engine.start() }
+        Task { await refreshAlertRules() }
+        refreshInstalledProviders()
         refreshCommandPalette()
     }
 
@@ -86,17 +98,124 @@ final class StatusViewModel: ObservableObject {
         Task {
             commandPalette = await engine.commandPalette()
             providerDisplayNames = await engine.providerDisplayNames()
+            providerLayouts = await engine.providerLayouts()
         }
     }
 
+    func refreshInstalledProviders() {
+        installedProviders = (try? installedProviderStore.load()) ?? []
+        loadProviderCredentialValues()
+    }
+
+    func credentialRequirements(for provider: InstalledProviderRecord) -> [ProviderManifest.Credential] {
+        (try? ProviderManifestPackage.load(from: URL(fileURLWithPath: provider.packagePath, isDirectory: true)).manifest.credentials) ?? []
+    }
+
+    func credentialBinding(providerID: ProviderID, credentialID: String) -> Binding<String> {
+        Binding(
+            get: { self.providerCredentialValues[providerID]?[credentialID] ?? "" },
+            set: { self.providerCredentialValues[providerID, default: [:]][credentialID] = $0 }
+        )
+    }
+
+    func saveInstalledProviderCredentials(_ provider: InstalledProviderRecord) {
+        do {
+            for credential in credentialRequirements(for: provider) {
+                let value = providerCredentialValues[provider.id]?[credential.id]
+                try credentialStore.setCredential(
+                    value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : value,
+                    for: CredentialKey(providerID: provider.id, id: credential.id)
+                )
+            }
+            providerSetupError = nil
+            reloadInstalledProviders()
+        } catch {
+            providerSetupError = error.localizedDescription
+        }
+    }
+
+    func installManifestProvider(from directory: URL) {
+        do {
+            _ = try installedProviderStore.installManifestPackage(at: directory)
+            providerSetupError = nil
+            reloadInstalledProviders()
+        } catch {
+            providerSetupError = error.localizedDescription
+        }
+    }
+
+    func setInstalledProvider(_ providerID: ProviderID, enabled: Bool) {
+        do {
+            try installedProviderStore.setEnabled(enabled, providerID: providerID)
+            providerSetupError = nil
+            reloadInstalledProviders()
+        } catch {
+            providerSetupError = error.localizedDescription
+        }
+    }
+
+    func removeInstalledProvider(_ providerID: ProviderID) {
+        do {
+            try installedProviderStore.remove(providerID: providerID)
+            providerSetupError = nil
+            reloadInstalledProviders()
+        } catch {
+            providerSetupError = error.localizedDescription
+        }
+    }
+
+    private func reloadInstalledProviders() {
+        refreshInstalledProviders()
+        Task {
+            await engine.reloadInstalledProviders()
+            await refreshAlertRules()
+            await refresh()
+            refreshCommandPalette()
+        }
+    }
+
+    private func refreshAlertRules() async {
+        alertEngine = AlertEngine(rules: await engine.alertRules())
+    }
+
+    private func loadProviderCredentialValues() {
+        var values = providerCredentialValues
+        for provider in installedProviders {
+            for credential in credentialRequirements(for: provider) {
+                values[provider.id, default: [:]][credential.id] = (try? credentialStore.credential(
+                    CredentialKey(providerID: provider.id, id: credential.id)
+                )) ?? values[provider.id]?[credential.id] ?? ""
+            }
+        }
+        providerCredentialValues = values
+    }
+
     func executeCommand(_ item: CommandPaletteItem, arguments: CommandArguments = CommandArguments()) async {
-        executingCommandID = item.id
-        lastCommandResult = nil
-        let result = await engine.runCommand(
-            provider: item.providerID,
+        _ = await runProviderCommand(
+            providerID: item.providerID,
             providerName: item.providerName,
             commandID: item.command.id,
             commandLabel: item.command.label,
+            arguments: arguments
+        )
+    }
+
+    @discardableResult
+    private func runProviderCommand(
+        providerID: ProviderID,
+        providerName: String,
+        commandID: String,
+        commandLabel: String,
+        arguments: CommandArguments = CommandArguments()
+    ) async -> CommandExecutionResult {
+        let itemID = "\(providerID).\(commandID)"
+        executingCommandID = itemID
+        lastCommandResult = nil
+        let result = await engine.runCommand(
+            provider: providerID,
+            providerName: providerName,
+            commandID: commandID,
+            commandLabel: commandLabel,
             arguments: arguments
         )
         lastCommandResult = result
@@ -108,7 +227,9 @@ final class StatusViewModel: ObservableObject {
         case .failed:
             await refreshModuleUsage()
         }
+        refreshCommandPalette()
         executingCommandID = nil
+        return result
     }
 
     func refreshModuleUsage() async {
@@ -124,31 +245,69 @@ final class StatusViewModel: ObservableObject {
     }
 
     func toggleVPN() async {
-        try? await engine.dispatch(provider: ProviderIDs.vpn, commandID: ProviderCommandIDs.vpnToggle)
+        await runProviderCommand(
+            providerID: ProviderIDs.vpn,
+            providerName: providerDisplayNames[ProviderIDs.vpn] ?? "VPN",
+            commandID: ProviderCommandIDs.vpnToggle,
+            commandLabel: "Toggle VPN"
+        )
     }
 
     func toggleSpeedify() async {
-        try? await engine.dispatch(provider: ProviderIDs.speedify, commandID: ProviderCommandIDs.speedifyToggle)
+        await runProviderCommand(
+            providerID: ProviderIDs.speedify,
+            providerName: providerDisplayNames[ProviderIDs.speedify] ?? "Speedify",
+            commandID: ProviderCommandIDs.speedifyToggle,
+            commandLabel: "Toggle Speedify"
+        )
     }
 
     func setSpeedifyBondingMode(_ mode: SpeedifyBondingMode) async {
-        try? await engine.dispatch(
-            provider: ProviderIDs.speedify,
+        await runProviderCommand(
+            providerID: ProviderIDs.speedify,
+            providerName: providerDisplayNames[ProviderIDs.speedify] ?? "Speedify",
             commandID: ProviderCommandIDs.speedifySetBondingMode,
+            commandLabel: "Set Bonding Mode",
             arguments: CommandArguments(values: ["mode": .string(mode.commandCode)])
         )
     }
 
     func setSpeedifyNetworkPriority(_ priority: SpeedifyNetworkPriority, networkID: String) async {
-        try? await engine.dispatch(
-            provider: ProviderIDs.speedify,
+        await runProviderCommand(
+            providerID: ProviderIDs.speedify,
+            providerName: providerDisplayNames[ProviderIDs.speedify] ?? "Speedify",
             commandID: ProviderCommandIDs.speedifySetNetworkPriority,
+            commandLabel: "Set Network Priority",
             arguments: CommandArguments(values: ["priority": .number(Double(priority.rawValue)), "networkID": .string(networkID)])
         )
     }
 
     func setEcoFlowOutput(_ target: EcoFlowOutputTarget, state: EcoFlowOutputState) async -> EcoFlowControlResponse? {
-        await engine.setEcoFlowOutput(target, state: state)
+        executingCommandID = "\(ProviderIDs.ecoflow).\(ProviderCommandIDs.ecoFlowSetOutput)"
+        lastCommandResult = nil
+        let response = await engine.setEcoFlowOutput(target, state: state)
+        if response == nil {
+            lastCommandResult = .failure(
+                providerID: ProviderIDs.ecoflow,
+                providerName: providerDisplayNames[ProviderIDs.ecoflow] ?? "EcoFlow",
+                commandID: ProviderCommandIDs.ecoFlowSetOutput,
+                commandLabel: "Set Output",
+                errorMessage: "EcoFlow output command did not return a control response."
+            )
+        } else {
+            lastCommandResult = .success(
+                providerID: ProviderIDs.ecoflow,
+                providerName: providerDisplayNames[ProviderIDs.ecoflow] ?? "EcoFlow",
+                commandID: ProviderCommandIDs.ecoFlowSetOutput,
+                commandLabel: "Set Output"
+            )
+        }
+        snapshot = await engine.currentSnapshot()
+        selectedEndpoint = await engine.currentSelectedEndpoint()
+        await refreshModuleUsage()
+        refreshCommandPalette()
+        executingCommandID = nil
+        return response
     }
 }
 

@@ -69,6 +69,7 @@ public struct ManifestProvider: Provider {
     public let id: ProviderID
     public let displayName: String
     public let pollInterval: TimeInterval
+    public let layout: ProviderManifest.Layout?
     public let commands: [CommandDescriptor]
 
     private let manifest: ProviderManifest
@@ -84,6 +85,7 @@ public struct ManifestProvider: Provider {
         self.id = manifest.id
         self.displayName = manifest.displayName
         self.pollInterval = manifest.pollInterval
+        self.layout = manifest.layout
         self.commands = manifest.executableCommandDescriptors
         self.httpClient = httpClient
         self.credentialStore = credentialStore
@@ -152,8 +154,11 @@ public struct ManifestProvider: Provider {
         var failedIDs: [String] = []
 
         for mapping in mappings {
-            guard let source = value.value(at: mapping.value.path),
-                  let metricValue = source.metricValue(type: mapping.value.type) else {
+            let source = value.value(at: mapping.value.path) ?? .null
+            let transformed = mapping.value.transforms.reduce(source) { current, transform in
+                transform.apply(to: current)
+            }
+            guard let metricValue = transformed.metricValue(type: mapping.value.type) else {
                 failedIDs.append(mapping.id)
                 continue
             }
@@ -193,6 +198,34 @@ public struct ManifestProvider: Provider {
                 return result.replacingOccurrences(of: placeholder, with: "")
             }
             return result.replacingOccurrences(of: placeholder, with: value)
+        }
+    }
+}
+
+private extension ProviderManifest.Transform {
+    func apply(to value: JSONValue) -> JSONValue {
+        switch self {
+        case .multiply(let factor):
+            guard let number = value.numberValue else { return value }
+            return .number(number * factor)
+        case .divide(let divisor):
+            guard let number = value.numberValue, divisor != 0 else { return value }
+            return .number(number / divisor)
+        case .round:
+            guard let number = value.numberValue else { return value }
+            return .number(number.rounded())
+        case .clamp(let min, let max):
+            guard let number = value.numberValue else { return value }
+            var clamped = number
+            if let min {
+                clamped = Swift.max(clamped, min)
+            }
+            if let max {
+                clamped = Swift.min(clamped, max)
+            }
+            return .number(clamped)
+        case .defaultValue(let defaultValue):
+            return value == .null ? defaultValue : value
         }
     }
 }

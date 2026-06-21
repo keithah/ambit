@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "demo.secure-post",
+  "displayName": "Secure POST Demo",
+  "pollInterval": 30,
+  "credentials": [
+    {
+      "id": "api_token",
+      "label": "API Token",
+      "kind": "bearerToken",
+      "required": true
+    }
+  ],
+  "endpoint": {
+    "method": "POST",
+    "url": "https://example.test/status",
+    "headers": {
+      "Authorization": "Bearer {credential.api_token}",
+      "Content-Type": "application/json"
+    },
+    "body": "{\"query\":\"status\"}"
+  },
+  "metrics": [
+    {
+      "id": "ok",
+      "label": "OK",
+      "value": { "type": "bool", "path": "ok" }
+    }
+  ],
+  "commands": []
+}
