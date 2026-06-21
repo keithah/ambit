@@ -8,7 +8,7 @@ let package = Package(
     ],
     products: [
         .library(name: "AmbitCore", targets: ["AmbitCore"]),
-        .executable(name: "AmbitMenuBar", targets: ["AmbitMenuBar"]),
+        .executable(name: "Ambit", targets: ["AmbitMenuBar"]),
         .executable(name: "ambit-check", targets: ["AmbitCheck"])
     ],
     targets: [

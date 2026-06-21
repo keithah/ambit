@@ -11,7 +11,7 @@ This is a **refactor in place** (within this repo), not a rewrite. The app must 
 
 The staged migration below has been executed through Step 5. Current state:
 
-- Framework/package names are Ambit (`AmbitCore`, `AmbitMenuBar`, `ambit-check`).
+- Framework/package names are Ambit (`AmbitCore`, `Ambit`, `ambit-check`).
 - `StatusViewModel` is a thin UI adapter over `AmbitCore.Engine`.
 - `Engine` is provider-registry backed: refresh and command dispatch run through `Provider` instances, not legacy per-service branches.
 - Built-in provider composition lives in `BuiltInProviderFactory`, outside the engine actor.

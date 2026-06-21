@@ -4,7 +4,7 @@ import AmbitCore
 import SwiftUI
 
 @main
-struct AmbitMenuBarApp: App {
+struct AmbitApp: App {
     @StateObject private var appModel = MenuBarAppModel()
 
     var body: some Scene {
