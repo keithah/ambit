@@ -15,6 +15,7 @@ final class StatusViewModel: ObservableObject {
     @Published var lastCommandResult: CommandExecutionResult?
     @Published var executingCommandID: String?
     @Published var installedProviders: [InstalledProviderRecord] = []
+    @Published var providerSetupSummaries: [ProviderSetupSummary] = []
     @Published var providerSetupError: String?
     @Published var providerCredentialValues: [ProviderID: [String: String]] = [:]
     @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
@@ -104,6 +105,9 @@ final class StatusViewModel: ObservableObject {
 
     func refreshInstalledProviders() {
         installedProviders = (try? installedProviderStore.load()) ?? []
+        providerSetupSummaries = installedProviders.map {
+            ProviderSetupSummary.make(record: $0, credentialStore: credentialStore)
+        }
         loadProviderCredentialValues()
     }
 
@@ -137,6 +141,24 @@ final class StatusViewModel: ObservableObject {
     func installManifestProvider(from directory: URL) {
         do {
             _ = try installedProviderStore.installManifestPackage(at: directory)
+            providerSetupError = nil
+            reloadInstalledProviders()
+        } catch {
+            providerSetupError = error.localizedDescription
+        }
+    }
+
+    func refreshInstalledProviderValidation(_ providerID: ProviderID) {
+        do {
+            var records = try installedProviderStore.load()
+            guard let index = records.firstIndex(where: { $0.id == providerID }) else { return }
+            let package = try ProviderManifestPackage.load(
+                from: URL(fileURLWithPath: records[index].packagePath, isDirectory: true)
+            )
+            records[index].id = package.manifest.id
+            records[index].displayName = package.manifest.displayName
+            records[index].lastValidation = .valid
+            try installedProviderStore.save(records)
             providerSetupError = nil
             reloadInstalledProviders()
         } catch {

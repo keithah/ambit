@@ -41,66 +41,75 @@ struct SettingsView: View {
             }
 
             Section("Providers") {
-                if viewModel.installedProviders.isEmpty {
+                if viewModel.providerSetupSummaries.isEmpty {
                     Text("No manifest providers installed")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.installedProviders) { provider in
+                    ForEach(viewModel.providerSetupSummaries) { summary in
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(provider.displayName)
+                                    Text(summary.displayName)
                                         .font(.headline)
-                                    Text(provider.id)
+                                    Text(summary.id)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Toggle("Enabled", isOn: Binding(
-                                    get: { provider.isEnabled },
-                                    set: { viewModel.setInstalledProvider(provider.id, enabled: $0) }
+                                    get: { summary.isEnabled },
+                                    set: { viewModel.setInstalledProvider(summary.id, enabled: $0) }
                                 ))
                                 .labelsHidden()
                             }
 
-                            Text(provider.packagePath)
+                            Text(summary.statusText)
+                                .font(.caption)
+                                .foregroundStyle(statusColor(for: summary.status))
+
+                            Text(summary.packagePath)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
 
-                            switch provider.lastValidation {
-                            case .valid:
-                                Label("Manifest valid", systemImage: "checkmark.circle")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                            case .invalid(let message):
-                                Label(ProviderDisplayText.singleLine(message), systemImage: "exclamationmark.triangle")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                            }
-
-                            let credentials = viewModel.credentialRequirements(for: provider)
-                            if !credentials.isEmpty {
+                            if !summary.credentials.isEmpty {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("Credentials")
                                         .font(.caption.weight(.bold))
                                         .foregroundStyle(.secondary)
-                                    ForEach(credentials, id: \.id) { credential in
-                                        SecureField(
-                                            credential.label,
-                                            text: viewModel.credentialBinding(providerID: provider.id, credentialID: credential.id)
-                                        )
-                                        .textFieldStyle(.roundedBorder)
+                                    ForEach(summary.credentials) { credential in
+                                        HStack(spacing: 8) {
+                                            Image(systemName: credential.isConfigured ? "checkmark.circle.fill" : "exclamationmark.circle")
+                                                .foregroundStyle(credential.isConfigured ? .green : .orange)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(credential.label)
+                                                    .font(.caption)
+                                                Text(credential.isRequired ? "Required" : "Optional")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            SecureField(
+                                                credential.label,
+                                                text: viewModel.credentialBinding(providerID: summary.id, credentialID: credential.id)
+                                            )
+                                            .textFieldStyle(.roundedBorder)
+                                        }
                                     }
                                     Button("Save Credentials") {
-                                        viewModel.saveInstalledProviderCredentials(provider)
+                                        if let provider = viewModel.installedProviders.first(where: { $0.id == summary.id }) {
+                                            viewModel.saveInstalledProviderCredentials(provider)
+                                        }
                                     }
                                 }
                                 .padding(.top, 4)
                             }
 
+                            Button("Refresh Validation") {
+                                viewModel.refreshInstalledProviderValidation(summary.id)
+                            }
+
                             Button("Remove") {
-                                viewModel.removeInstalledProvider(provider.id)
+                                viewModel.removeInstalledProvider(summary.id)
                             }
                         }
                         .padding(.vertical, 6)
@@ -139,6 +148,17 @@ struct SettingsView: View {
         }
         .onAppear {
             viewModel.refreshInstalledProviders()
+        }
+    }
+
+    private func statusColor(for status: ProviderSetupStatus) -> Color {
+        switch status {
+        case .ready:
+            return .green
+        case .needsCredentials, .invalid:
+            return .orange
+        case .disabled:
+            return .secondary
         }
     }
 }
