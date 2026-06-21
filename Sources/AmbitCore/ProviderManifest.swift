@@ -142,8 +142,15 @@ public struct ProviderManifestPackage: Equatable, Sendable {
         return ProviderManifestPackage(directory: directory, manifest: try ProviderManifest.decode(data))
     }
 
-    public enum LoadError: Error, Equatable, Sendable {
+    public enum LoadError: Error, Equatable, LocalizedError, Sendable {
         case missingManifest(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .missingManifest(let path):
+                return "Manifest file is missing at \(path)."
+            }
+        }
     }
 }
 
@@ -289,7 +296,7 @@ public extension ProviderManifest {
         }
     }
 
-    enum ValidationError: Error, Equatable, Sendable {
+    enum ValidationError: Error, Equatable, LocalizedError, Sendable {
         case unsupportedSchemaVersion(Int)
         case emptyID(String)
         case emptyDisplayName
@@ -301,5 +308,32 @@ public extension ProviderManifest {
         case emptyLabel(String)
         case emptyMetricPath(String)
         case invalidCommandEndpointURL(String, String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .unsupportedSchemaVersion(let version):
+                return "Unsupported manifest schema version \(version)."
+            case .emptyID(let owner):
+                return "Manifest \(owner) id is empty."
+            case .emptyDisplayName:
+                return "Manifest display name is empty."
+            case .invalidPollInterval:
+                return "Manifest poll interval must be greater than zero."
+            case .invalidEndpointURL(let url):
+                return "Manifest endpoint URL is invalid: \(url)"
+            case .duplicateMetricID(let id):
+                return "Manifest declares duplicate metric id \(id)."
+            case .duplicateCommandID(let id):
+                return "Manifest declares duplicate command id \(id)."
+            case .duplicateParameterID(let commandID, let parameterID):
+                return "Command \(commandID) declares duplicate parameter id \(parameterID)."
+            case .emptyLabel(let id):
+                return "Manifest item \(id) label is empty."
+            case .emptyMetricPath(let id):
+                return "Metric \(id) value path is empty."
+            case .invalidCommandEndpointURL(let commandID, let url):
+                return "Command \(commandID) endpoint URL is invalid: \(url)"
+            }
+        }
     }
 }

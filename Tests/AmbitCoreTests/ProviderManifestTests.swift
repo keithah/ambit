@@ -111,6 +111,24 @@ final class ProviderManifestTests: XCTestCase {
         }
     }
 
+    func testManifestValidationErrorsHaveActionableDescriptions() {
+        XCTAssertEqual(
+            ProviderManifest.ValidationError.invalidCommandEndpointURL("demo.run", "not a url").localizedDescription,
+            "Command demo.run endpoint URL is invalid: not a url"
+        )
+        XCTAssertEqual(
+            ProviderManifest.ValidationError.duplicateParameterID("demo.run", "host").localizedDescription,
+            "Command demo.run declares duplicate parameter id host."
+        )
+    }
+
+    func testManifestPackageLoadErrorsHaveActionableDescriptions() {
+        XCTAssertEqual(
+            ProviderManifestPackage.LoadError.missingManifest("/tmp/demo/manifest.json").localizedDescription,
+            "Manifest file is missing at /tmp/demo/manifest.json."
+        )
+    }
+
     func testManifestCommandDescriptorProjectionMatchesProviderCommands() throws {
         let manifest = ProviderManifest(
             schemaVersion: 1,
