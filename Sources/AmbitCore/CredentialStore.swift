@@ -1,9 +1,39 @@
 import Foundation
 import Security
 
+public struct CredentialKey: Codable, Equatable, Hashable, Sendable {
+    public var providerID: ProviderID
+    public var id: String
+    public var account: String?
+
+    public init(providerID: ProviderID, id: String, account: String? = nil) {
+        self.providerID = providerID
+        self.id = id
+        self.account = account
+    }
+
+    public static func routerPassword(account: String) -> CredentialKey {
+        CredentialKey(providerID: ProviderIDs.router, id: "password", account: account)
+    }
+
+    var storageAccount: String {
+        [providerID, id, account].compactMap { $0 }.joined(separator: ":")
+    }
+}
+
 public protocol CredentialStore: Sendable {
-    func password(account: String) throws -> String?
-    func setPassword(_ password: String?, account: String) throws
+    func credential(_ key: CredentialKey) throws -> String?
+    func setCredential(_ value: String?, for key: CredentialKey) throws
+}
+
+public extension CredentialStore {
+    func password(account: String) throws -> String? {
+        try credential(.routerPassword(account: account))
+    }
+
+    func setPassword(_ password: String?, account: String) throws {
+        try setCredential(password, for: .routerPassword(account: account))
+    }
 }
 
 public struct KeychainCredentialStore: CredentialStore {
@@ -14,7 +44,15 @@ public struct KeychainCredentialStore: CredentialStore {
     }
 
     public func password(account: String) throws -> String? {
-        var query = baseQuery(account: account)
+        try credential(.routerPassword(account: account))
+    }
+
+    public func setPassword(_ password: String?, account: String) throws {
+        try setCredential(password, for: .routerPassword(account: account))
+    }
+
+    public func credential(_ key: CredentialKey) throws -> String? {
+        var query = baseQuery(account: key.storageAccount)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -26,12 +64,12 @@ public struct KeychainCredentialStore: CredentialStore {
         return String(data: data, encoding: .utf8)
     }
 
-    public func setPassword(_ password: String?, account: String) throws {
-        let query = baseQuery(account: account)
+    public func setCredential(_ value: String?, for key: CredentialKey) throws {
+        let query = baseQuery(account: key.storageAccount)
         SecItemDelete(query as CFDictionary)
-        guard let password else { return }
+        guard let value else { return }
         var item = query
-        item[kSecValueData as String] = Data(password.utf8)
+        item[kSecValueData as String] = Data(value.utf8)
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError(status: status)

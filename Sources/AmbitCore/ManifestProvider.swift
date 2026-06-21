@@ -73,23 +73,35 @@ public struct ManifestProvider: Provider {
 
     private let manifest: ProviderManifest
     private let httpClient: ManifestHTTPClient
+    private let credentialStore: (any CredentialStore)?
 
-    public init(manifest: ProviderManifest, httpClient: ManifestHTTPClient = URLSessionManifestHTTPClient()) {
+    public init(
+        manifest: ProviderManifest,
+        httpClient: ManifestHTTPClient = URLSessionManifestHTTPClient(),
+        credentialStore: (any CredentialStore)? = nil
+    ) {
         self.manifest = manifest
         self.id = manifest.id
         self.displayName = manifest.displayName
         self.pollInterval = manifest.pollInterval
         self.commands = manifest.executableCommandDescriptors
         self.httpClient = httpClient
+        self.credentialStore = credentialStore
     }
 
     public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
-        guard let url = URL(string: manifest.endpoint.url) else {
+        let urlString: String
+        do {
+            urlString = try Self.interpolate(manifest.endpoint.url, arguments: CommandArguments(), manifest: manifest, credentialStore: credentialStore)
+        } catch {
+            return ProviderSnapshot(health: .down, error: error.localizedDescription)
+        }
+        guard let url = URL(string: urlString) else {
             return ProviderSnapshot(health: .unknown, error: "Manifest endpoint URL is invalid.")
         }
 
         do {
-            let data = try await httpClient.send(Self.request(endpoint: manifest.endpoint, url: url))
+            let data = try await httpClient.send(Self.request(endpoint: manifest.endpoint, url: url, manifest: manifest, credentialStore: credentialStore))
             let value = try JSONDecoder().decode(JSONValue.self, from: data)
             return Self.snapshot(from: value, mappings: manifest.metrics)
         } catch {
@@ -104,22 +116,34 @@ public struct ManifestProvider: Provider {
         guard let endpoint = command.endpoint else {
             throw JSONRPCClientError.commandFailed("Manifest command \(commandID) does not declare an executable endpoint.")
         }
-        guard let url = URL(string: Self.interpolate(endpoint.url, arguments: arguments)) else {
+        let urlString = try Self.interpolate(endpoint.url, arguments: arguments, manifest: manifest, credentialStore: credentialStore)
+        guard let url = URL(string: urlString) else {
             throw JSONRPCClientError.commandFailed("Manifest command \(commandID) endpoint URL is invalid.")
         }
-        _ = try await httpClient.send(Self.request(endpoint: endpoint, url: url, arguments: arguments))
+        _ = try await httpClient.send(Self.request(endpoint: endpoint, url: url, arguments: arguments, manifest: manifest, credentialStore: credentialStore))
     }
 
     private static func request(
         endpoint: ProviderManifest.Endpoint,
         url: URL,
-        arguments: CommandArguments = CommandArguments()
-    ) -> ManifestHTTPRequest {
-        ManifestHTTPRequest(
+        arguments: CommandArguments = CommandArguments(),
+        manifest: ProviderManifest,
+        credentialStore: (any CredentialStore)?
+    ) throws -> ManifestHTTPRequest {
+        let headers = try endpoint.headers.reduce(into: [String: String]()) { result, header in
+            result[header.key] = try interpolate(header.value, arguments: arguments, manifest: manifest, credentialStore: credentialStore)
+        }
+        let body: Data?
+        if let template = endpoint.body {
+            body = try Data(interpolate(template, arguments: arguments, manifest: manifest, credentialStore: credentialStore).utf8)
+        } else {
+            body = nil
+        }
+        return ManifestHTTPRequest(
             method: endpoint.method,
             url: url,
-            headers: endpoint.headers,
-            body: endpoint.body.map { Data(interpolate($0, arguments: arguments).utf8) }
+            headers: headers,
+            body: body
         )
     }
 
@@ -146,12 +170,40 @@ public struct ManifestProvider: Provider {
         )
     }
 
-    private static func interpolate(_ template: String, arguments: CommandArguments) -> String {
-        arguments.values.reduce(template) { result, argument in
+    private static func interpolate(
+        _ template: String,
+        arguments: CommandArguments,
+        manifest: ProviderManifest,
+        credentialStore: (any CredentialStore)?
+    ) throws -> String {
+        let argumentInterpolated = arguments.values.reduce(template) { result, argument in
             result.replacingOccurrences(
                 of: "{\(argument.key)}",
                 with: argument.value.urlComponentValue
             )
+        }
+        return try manifest.credentials.reduce(argumentInterpolated) { result, credential in
+            let placeholder = "{credential.\(credential.id)}"
+            guard result.contains(placeholder) else { return result }
+            let value = try credentialStore?.credential(CredentialKey(providerID: manifest.id, id: credential.id))
+            guard let value, !value.isEmpty else {
+                if credential.required {
+                    throw ManifestProviderError.missingCredential(credential.id)
+                }
+                return result.replacingOccurrences(of: placeholder, with: "")
+            }
+            return result.replacingOccurrences(of: placeholder, with: value)
+        }
+    }
+}
+
+private enum ManifestProviderError: Error, LocalizedError {
+    case missingCredential(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingCredential(let id):
+            return "Manifest credential \(id) is not configured."
         }
     }
 }

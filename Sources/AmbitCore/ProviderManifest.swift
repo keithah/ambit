@@ -5,6 +5,7 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
     public var id: ProviderID
     public var displayName: String
     public var pollInterval: TimeInterval
+    public var credentials: [Credential]
     public var endpoint: Endpoint
     public var metrics: [MetricMapping]
     public var commands: [Command]
@@ -14,6 +15,7 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         id: ProviderID,
         displayName: String,
         pollInterval: TimeInterval,
+        credentials: [Credential] = [],
         endpoint: Endpoint,
         metrics: [MetricMapping],
         commands: [Command] = []
@@ -22,9 +24,22 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         self.id = id
         self.displayName = displayName
         self.pollInterval = pollInterval
+        self.credentials = credentials
         self.endpoint = endpoint
         self.metrics = metrics
         self.commands = commands
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        self.id = try container.decode(ProviderID.self, forKey: .id)
+        self.displayName = try container.decode(String.self, forKey: .displayName)
+        self.pollInterval = try container.decode(TimeInterval.self, forKey: .pollInterval)
+        self.credentials = try container.decodeIfPresent([Credential].self, forKey: .credentials) ?? []
+        self.endpoint = try container.decode(Endpoint.self, forKey: .endpoint)
+        self.metrics = try container.decode([MetricMapping].self, forKey: .metrics)
+        self.commands = try container.decodeIfPresent([Command].self, forKey: .commands) ?? []
     }
 
     public static func decode(_ data: Data, decoder: JSONDecoder = JSONDecoder()) throws -> ProviderManifest {
@@ -49,8 +64,14 @@ public struct ProviderManifest: Codable, Equatable, Sendable {
         guard Self.isValidHTTPURL(endpoint.url) else {
             throw ValidationError.invalidEndpointURL(endpoint.url)
         }
+        try Self.validateUnique(credentials.map(\.id), duplicate: ValidationError.duplicateCredentialID)
         try Self.validateUnique(metrics.map(\.id), duplicate: ValidationError.duplicateMetricID)
         try Self.validateUnique(commands.map(\.id), duplicate: ValidationError.duplicateCommandID)
+        for credential in credentials {
+            guard !credential.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw ValidationError.emptyLabel(credential.id)
+            }
+        }
         for metric in metrics {
             guard !metric.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ValidationError.emptyLabel(metric.id)
@@ -152,6 +173,17 @@ public struct ProviderManifestPackage: Equatable, Sendable {
             }
         }
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case id
+        case displayName
+        case pollInterval
+        case credentials
+        case endpoint
+        case metrics
+        case commands
+    }
 }
 
 public extension ProviderManifest {
@@ -187,6 +219,42 @@ public extension ProviderManifest {
     enum HTTPMethod: String, Codable, Equatable, Sendable {
         case get = "GET"
         case post = "POST"
+    }
+
+    struct Credential: Codable, Equatable, Sendable {
+        public var id: String
+        public var label: String
+        public var kind: Kind
+        public var required: Bool
+
+        public init(id: String, label: String, kind: Kind, required: Bool = true) {
+            self.id = id
+            self.label = label
+            self.kind = kind
+            self.required = required
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try container.decode(String.self, forKey: .id)
+            self.label = try container.decode(String.self, forKey: .label)
+            self.kind = try container.decode(Kind.self, forKey: .kind)
+            self.required = try container.decodeIfPresent(Bool.self, forKey: .required) ?? true
+        }
+
+        public enum Kind: String, Codable, Equatable, Sendable {
+            case password
+            case apiKey
+            case bearerToken
+            case header
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case label
+            case kind
+            case required
+        }
     }
 
     struct MetricMapping: Codable, Equatable, Sendable {
@@ -321,6 +389,7 @@ public extension ProviderManifest {
         case emptyDisplayName
         case invalidPollInterval
         case invalidEndpointURL(String)
+        case duplicateCredentialID(String)
         case duplicateMetricID(String)
         case duplicateCommandID(String)
         case duplicateParameterID(String, String)
@@ -340,6 +409,8 @@ public extension ProviderManifest {
                 return "Manifest poll interval must be greater than zero."
             case .invalidEndpointURL(let url):
                 return "Manifest endpoint URL is invalid: \(url)"
+            case .duplicateCredentialID(let id):
+                return "Manifest declares duplicate credential id \(id)."
             case .duplicateMetricID(let id):
                 return "Manifest declares duplicate metric id \(id)."
             case .duplicateCommandID(let id):

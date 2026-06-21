@@ -64,6 +64,25 @@ final class ProviderManifestTests: XCTestCase {
         }
     }
 
+    func testManifestValidationRejectsDuplicateCredentialIDs() throws {
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo",
+            displayName: "Demo",
+            pollInterval: 10,
+            credentials: [
+                ProviderManifest.Credential(id: "api_token", label: "API Token", kind: .bearerToken),
+                ProviderManifest.Credential(id: "api_token", label: "API Token 2", kind: .bearerToken)
+            ],
+            endpoint: ProviderManifest.Endpoint(method: .get, url: "https://example.test/status"),
+            metrics: []
+        )
+
+        XCTAssertThrowsError(try manifest.validate()) { error in
+            XCTAssertEqual(error as? ProviderManifest.ValidationError, .duplicateCredentialID("api_token"))
+        }
+    }
+
     func testDecodesEndpointHeadersAndBody() throws {
         let json = """
         {
@@ -71,6 +90,9 @@ final class ProviderManifestTests: XCTestCase {
           "id": "demo.post",
           "displayName": "POST Demo",
           "pollInterval": 30,
+          "credentials": [
+            { "id": "api_token", "label": "API Token", "kind": "bearerToken", "required": true }
+          ],
           "endpoint": {
             "method": "POST",
             "url": "https://example.test/status",
@@ -88,6 +110,9 @@ final class ProviderManifestTests: XCTestCase {
         let manifest = try ProviderManifest.decode(Data(json.utf8))
 
         XCTAssertEqual(manifest.endpoint.method, .post)
+        XCTAssertEqual(manifest.credentials, [
+            ProviderManifest.Credential(id: "api_token", label: "API Token", kind: .bearerToken, required: true)
+        ])
         XCTAssertEqual(manifest.endpoint.headers["Authorization"], "Bearer static-token")
         XCTAssertEqual(manifest.endpoint.headers["Content-Type"], "application/json")
         XCTAssertEqual(manifest.endpoint.body, #"{"query":"status"}"#)

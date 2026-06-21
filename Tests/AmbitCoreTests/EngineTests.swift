@@ -1275,18 +1275,18 @@ private struct InMemorySettingsStore: SettingsStore {
 }
 
 private final class InMemoryCredentialStore: CredentialStore, @unchecked Sendable {
-    var password: String?
+    var credentials: [CredentialKey: String]
 
     init(password: String?) {
-        self.password = password
+        self.credentials = [.routerPassword(account: "root"): password].compactMapValues { $0 }
     }
 
-    func password(account: String) throws -> String? {
-        password
+    func credential(_ key: CredentialKey) throws -> String? {
+        credentials[key]
     }
 
-    func setPassword(_ password: String?, account: String) throws {
-        self.password = password
+    func setCredential(_ value: String?, for key: CredentialKey) throws {
+        credentials[key] = value
     }
 }
 

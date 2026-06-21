@@ -77,6 +77,71 @@ final class ManifestProviderTests: XCTestCase {
         ])
     }
 
+    func testPollInterpolatesManifestCredentialsIntoRequest() async throws {
+        let client = StubManifestHTTPClient(responses: [
+            .success(#"{ "ok": true }"#)
+        ])
+        let credentialStore = StubCredentialStore()
+        try credentialStore.setCredential("abc123", for: CredentialKey(providerID: "demo.secure", id: "api_token"))
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo.secure",
+            displayName: "Secure Demo",
+            pollInterval: 12,
+            credentials: [
+                ProviderManifest.Credential(id: "api_token", label: "API Token", kind: .bearerToken)
+            ],
+            endpoint: ProviderManifest.Endpoint(
+                method: .post,
+                url: "https://example.test/status",
+                headers: ["Authorization": "Bearer {credential.api_token}"],
+                body: #"{"token":"{credential.api_token}"}"#
+            ),
+            metrics: [
+                ProviderManifest.MetricMapping(id: "ok", label: "OK", value: .init(type: .bool, path: "ok"))
+            ]
+        )
+        let provider = ManifestProvider(manifest: manifest, httpClient: client, credentialStore: credentialStore)
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertEqual(client.requests, [
+            ManifestHTTPRequest(
+                method: .post,
+                url: URL(string: "https://example.test/status")!,
+                headers: ["Authorization": "Bearer abc123"],
+                body: Data(#"{"token":"abc123"}"#.utf8)
+            )
+        ])
+        XCTAssertEqual(snapshot.health, .ok)
+    }
+
+    func testPollReportsMissingManifestCredential() async {
+        let client = StubManifestHTTPClient(responses: [])
+        let manifest = ProviderManifest(
+            schemaVersion: 1,
+            id: "demo.secure",
+            displayName: "Secure Demo",
+            pollInterval: 12,
+            credentials: [
+                ProviderManifest.Credential(id: "api_token", label: "API Token", kind: .bearerToken)
+            ],
+            endpoint: ProviderManifest.Endpoint(
+                method: .get,
+                url: "https://example.test/status",
+                headers: ["Authorization": "Bearer {credential.api_token}"]
+            ),
+            metrics: []
+        )
+        let provider = ManifestProvider(manifest: manifest, httpClient: client, credentialStore: StubCredentialStore())
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertEqual(client.requests, [])
+        XCTAssertEqual(snapshot.health, .down)
+        XCTAssertEqual(snapshot.error, "Manifest credential api_token is not configured.")
+    }
+
     func testPollDegradesWhenMetricPathCannotBeMapped() async {
         let client = StubManifestHTTPClient(responses: [
             .success(#"{ "latency": {} }"#)
@@ -273,5 +338,17 @@ private final class StubManifestHTTPClient: ManifestHTTPClient, @unchecked Senda
         case .failure(let error):
             throw error
         }
+    }
+}
+
+private final class StubCredentialStore: CredentialStore, @unchecked Sendable {
+    private var credentials: [CredentialKey: String] = [:]
+
+    func credential(_ key: CredentialKey) throws -> String? {
+        credentials[key]
+    }
+
+    func setCredential(_ value: String?, for key: CredentialKey) throws {
+        credentials[key] = value
     }
 }
