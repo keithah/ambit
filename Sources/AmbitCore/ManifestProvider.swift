@@ -162,7 +162,14 @@ public struct ManifestProvider: Provider {
                 failedIDs.append(mapping.id)
                 continue
             }
-            metrics.append(Metric(id: mapping.id, label: mapping.label, value: metricValue))
+            metrics.append(Metric(
+                id: mapping.id,
+                label: mapping.label,
+                value: metricValue,
+                deviceClass: mapping.deviceClass,
+                category: mapping.category,
+                capability: mapping.capability
+            ))
         }
 
         if failedIDs.isEmpty {

@@ -169,10 +169,27 @@ public struct Metric: Equatable, Identifiable, Sendable {
     public var label: String
     public var value: MetricValue
 
-    public init(id: String, label: String, value: MetricValue) {
+    /// Optional authoring classification (entity-model.md §6). All default nil so existing
+    /// metrics are unchanged; the entity projection and metric grouping read these instead
+    /// of inferring from `value` or matching on `id`.
+    public var deviceClass: DeviceClass?
+    public var category: EntityCategory?
+    public var capability: ProviderCapability?
+
+    public init(
+        id: String,
+        label: String,
+        value: MetricValue,
+        deviceClass: DeviceClass? = nil,
+        category: EntityCategory? = nil,
+        capability: ProviderCapability? = nil
+    ) {
         self.id = id
         self.label = label
         self.value = value
+        self.deviceClass = deviceClass
+        self.category = category
+        self.capability = capability
     }
 }
 

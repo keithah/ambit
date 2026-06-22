@@ -341,10 +341,26 @@ public extension ProviderManifest {
         public var label: String
         public var value: ValueMapping
 
-        public init(id: String, label: String, value: ValueMapping) {
+        /// Optional authoring classification (entity-model.md §6). Absent in existing
+        /// manifests (decodes to nil); flows through to the produced `Metric`.
+        public var deviceClass: DeviceClass?
+        public var category: EntityCategory?
+        public var capability: ProviderCapability?
+
+        public init(
+            id: String,
+            label: String,
+            value: ValueMapping,
+            deviceClass: DeviceClass? = nil,
+            category: EntityCategory? = nil,
+            capability: ProviderCapability? = nil
+        ) {
             self.id = id
             self.label = label
             self.value = value
+            self.deviceClass = deviceClass
+            self.category = category
+            self.capability = capability
         }
     }
 
