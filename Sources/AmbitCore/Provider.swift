@@ -88,6 +88,11 @@ public protocol Provider: Sendable {
     var integrationInstanceID: IntegrationInstanceID { get }
     var instanceID: ProviderInstanceID { get }
 
+    /// STATIC entity descriptors for this instance (entity-model.md §5). Declared as a
+    /// requirement (not just an extension) so author overrides dispatch through the witness
+    /// table when held as `any Provider`. Default derives from commands + health.
+    func entityDescriptors() -> [EntityDescriptor]
+
     func poll(context: EnvironmentContext) async -> ProviderSnapshot
     func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws
 }
