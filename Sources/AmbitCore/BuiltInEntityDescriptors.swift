@@ -206,6 +206,16 @@ public extension EcoFlowProvider {
                 kind: .sensor, deviceClass: .power, category: .diagnostic, access: .read,
                 unit: "W", stateClass: .measurement, metricID: "input_watts"
             ),
+            EntityDescriptor(
+                id: instance.entity("output_watts"), instanceID: instance, name: "Output",
+                kind: .sensor, deviceClass: .power, category: .diagnostic, access: .read,
+                unit: "W", stateClass: .measurement, metricID: "output_watts"
+            ),
+            EntityDescriptor(
+                id: instance.entity("time_remaining"), instanceID: instance, name: "Time Remaining",
+                kind: .sensor, deviceClass: .duration, category: .primary, access: .read,
+                unit: "min", stateClass: .measurement, metricID: "time_remaining"
+            ),
             outputToggle(instance: instance, key: "ac_output", name: "AC Output", target: "ac"),
             outputToggle(instance: instance, key: "dc_output", name: "DC Output", target: "dc"),
             outputToggle(instance: instance, key: "usb_output", name: "USB Output", target: "usb")

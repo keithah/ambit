@@ -94,6 +94,11 @@ final class BuiltInEntityDescriptorTests: XCTestCase {
                     usb: EcoFlowOutputStatus(state: .off, watts: 0)
                 ),
                 updatedAt: "2026-06-22T00:00:00Z"
+            ),
+            stats: EcoFlowDeviceStats(
+                batteryPercent: 82, inputWatts: 5, outputWatts: 12, netWatts: 7,
+                estimatedMinutesRemaining: 240, estimatedMinutesToFull: nil,
+                isEstimateDerived: false, updatedAt: "2026-06-22T00:00:00Z"
             )
         ))
 

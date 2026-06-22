@@ -293,10 +293,13 @@ public extension ProviderSnapshot {
         }
         metrics.append(Metric(id: "battery_state", label: "Battery State", value: .text(snapshot.status.battery.state.rawValue)))
         if let input = snapshot.status.power.inputWatts {
-            metrics.append(Metric(id: "input_watts", label: "Input", value: .level(Double(input))))
+            metrics.append(Metric(id: "input_watts", label: "Input", value: .level(Double(input)), deviceClass: .power))
         }
         if let output = snapshot.status.power.outputWatts {
-            metrics.append(Metric(id: "output_watts", label: "Output", value: .level(Double(output))))
+            metrics.append(Metric(id: "output_watts", label: "Output", value: .level(Double(output)), deviceClass: .power))
+        }
+        if let minutesRemaining = snapshot.stats?.estimatedMinutesRemaining {
+            metrics.append(Metric(id: "time_remaining", label: "Time Remaining", value: .level(Double(minutesRemaining)), deviceClass: .duration))
         }
         metrics.append(Metric(id: "ac_output", label: "AC Output", value: .bool(snapshot.status.outputs.ac.state == .on)))
         metrics.append(Metric(id: "dc_output", label: "DC Output", value: .bool(snapshot.status.outputs.dc.state == .on)))
