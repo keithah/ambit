@@ -87,7 +87,14 @@ public struct GLiNetRouterProvider: Provider {
                 clientFactory: clientFactory,
                 passwordProvider: passwordProvider
             )
-            return ProviderSnapshot.router(try await client.routerStatus())
+            var status = try await client.routerStatus()
+            // hostname/model are not in `system get_status`; fold in `system board`
+            // (best-effort — a board failure must not fail the router poll).
+            if let board = try? await client.boardInfo() {
+                status.hostname = status.hostname ?? board.hostname
+                status.model = status.model ?? board.model
+            }
+            return ProviderSnapshot.router(status)
         } catch {
             return ProviderSnapshot(
                 health: .unknown,

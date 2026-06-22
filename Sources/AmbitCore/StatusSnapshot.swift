@@ -180,6 +180,15 @@ public extension ProviderSnapshot {
         if let publicIP = status.publicIP {
             metrics.append(Metric(id: "public_ip", label: "Public IP", value: .text(publicIP)))
         }
+        if let clientCount = status.clientCount {
+            metrics.append(Metric(id: "clients", label: "Clients", value: .level(Double(clientCount)), deviceClass: .count))
+        }
+        if let hostname = status.hostname {
+            metrics.append(Metric(id: "hostname", label: "Hostname", value: .text(hostname), category: .diagnostic))
+        }
+        if let model = status.model {
+            metrics.append(Metric(id: "device_model", label: "Model", value: .text(model), category: .diagnostic))
+        }
         return ProviderSnapshot(health: status.reachable ? .ok : .down, metrics: metrics, detail: .router(status))
     }
 

@@ -33,6 +33,19 @@ public extension GLiNetRouterProvider {
                 kind: .text, category: .diagnostic, capability: "wan", access: .read,
                 metricID: "public_ip"
             ),
+            EntityDescriptor(
+                id: instance.entity("clients"), instanceID: instance, name: "Clients",
+                kind: .sensor, deviceClass: .count, category: .primary, capability: "clients",
+                access: .read, metricID: "clients"
+            ),
+            EntityDescriptor(
+                id: instance.entity("hostname"), instanceID: instance, name: "Hostname",
+                kind: .text, category: .diagnostic, access: .read, metricID: "hostname"
+            ),
+            EntityDescriptor(
+                id: instance.entity("device_model"), instanceID: instance, name: "Model",
+                kind: .text, category: .diagnostic, access: .read, metricID: "device_model"
+            ),
             // Config (shared gl.inet credentials/target) — entity-model.md §13.
             EntityDescriptor(
                 id: instance.entity("host"), instanceID: instance, name: "Host",

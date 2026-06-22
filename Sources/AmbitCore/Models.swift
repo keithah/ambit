@@ -32,18 +32,22 @@ public struct RouterStatus: Equatable, Sendable {
     public var reachable: Bool
     public var hostname: String?
     public var firmwareVersion: String?
+    public var model: String?
     public var activeWAN: WANInterface?
     public var publicIP: String?
     public var lanIP: String?
+    public var clientCount: Int?
     public var raw: JSONObject
 
-    public init(reachable: Bool = false, hostname: String? = nil, firmwareVersion: String? = nil, activeWAN: WANInterface? = nil, publicIP: String? = nil, lanIP: String? = nil, raw: JSONObject = [:]) {
+    public init(reachable: Bool = false, hostname: String? = nil, firmwareVersion: String? = nil, model: String? = nil, activeWAN: WANInterface? = nil, publicIP: String? = nil, lanIP: String? = nil, clientCount: Int? = nil, raw: JSONObject = [:]) {
         self.reachable = reachable
         self.hostname = hostname
         self.firmwareVersion = firmwareVersion
+        self.model = model
         self.activeWAN = activeWAN
         self.publicIP = publicIP
         self.lanIP = lanIP
+        self.clientCount = clientCount
         self.raw = raw
     }
 
@@ -51,6 +55,7 @@ public struct RouterStatus: Equatable, Sendable {
         self.reachable = true
         self.hostname = payload.firstString(keys: ["hostname", "model", "name"])
         self.firmwareVersion = payload.firstString(keys: ["firmware_version", "firmware", "version"])
+        self.model = nil
         self.publicIP = payload.firstString(keys: ["ip", "public_ip", "wan_ip", "ipv4"])
         if let wan = payload.firstString(keys: ["wan", "wan_type", "active_wan", "interface", "ifname"]) {
             self.activeWAN = WANInterface(rawValue: wan)
@@ -58,7 +63,28 @@ public struct RouterStatus: Equatable, Sendable {
             self.activeWAN = payload.activeNetworkInterface()
         }
         self.lanIP = payload.firstString(keys: ["lan_ip"])
+        self.clientCount = RouterStatus.parseClientCount(from: payload)
         self.raw = payload
+    }
+
+    // gl.inet `system get_status` returns `client: [{cable_total, wireless_total}]`.
+    private static func parseClientCount(from payload: JSONObject) -> Int? {
+        guard let entry = payload["client"]?.arrayValue?.first?.objectValue else { return nil }
+        let cable = entry["cable_total"]?.intValue
+        let wireless = entry["wireless_total"]?.intValue
+        guard cable != nil || wireless != nil else { return nil }
+        return (cable ?? 0) + (wireless ?? 0)
+    }
+}
+
+/// Board identity from gl.inet `system board` (ubus): hostname + friendly model.
+public struct RouterBoardInfo: Equatable, Sendable {
+    public var hostname: String?
+    public var model: String?
+
+    public init(hostname: String? = nil, model: String? = nil) {
+        self.hostname = hostname
+        self.model = model
     }
 }
 

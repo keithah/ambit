@@ -29,12 +29,18 @@ public protocol GLiNetClientProtocol: Sendable {
     func routerStatus() async throws -> RouterStatus
     func vpnStatus() async throws -> VPNStatus
     func setVPNEnabled(_ enabled: Bool, protocol vpnProtocol: VPNProtocol) async throws
+    /// Board identity (gl.inet `system board`). Optional capability — the default returns
+    /// nothing so existing conformers (and tests) are unaffected; only the live client
+    /// performs the ubus call.
+    func boardInfo() async throws -> RouterBoardInfo
 }
 
 public extension GLiNetClientProtocol {
     func call(service: String, method: String) async throws -> JSONObject {
         try await call(service: service, method: method, args: [:])
     }
+
+    func boardInfo() async throws -> RouterBoardInfo { RouterBoardInfo() }
 }
 
 public actor GLiNetClient: GLiNetClientProtocol {
@@ -69,6 +75,32 @@ public actor GLiNetClient: GLiNetClientProtocol {
     public func routerStatus() async throws -> RouterStatus {
         let status = try await call(service: "system", method: "get_status")
         return RouterStatus(payload: status)
+    }
+
+    public func boardInfo() async throws -> RouterBoardInfo {
+        let value = try await callValue(service: "system", method: "board", args: [:])
+        // ubus returns [code, payload]; tolerate a bare payload object too.
+        let board = value.arrayValue?.dropFirst().first?.objectValue ?? value.objectValue ?? [:]
+        return RouterBoardInfo(
+            hostname: board["hostname"]?.stringValue,
+            model: board["model"]?.stringValue
+        )
+    }
+
+    private func callValue(service: String, method: String, args: JSONObject) async throws -> JSONValue {
+        do {
+            return try await authenticatedCallValue(service: service, method: method, args: args)
+        } catch JSONRPCClientError.rpc(let error) where isAuthError(error) {
+            sid = nil
+            return try await authenticatedCallValue(service: service, method: method, args: args)
+        }
+    }
+
+    private func authenticatedCallValue(service: String, method: String, args: JSONObject) async throws -> JSONValue {
+        let activeSID = try await sessionID()
+        let request = JSONRPCRequest.call(id: allocateID(), sid: activeSID, service: service, method: method, args: args)
+        let data = try await transport.send(request, to: endpoint)
+        return try JSONDecoder().decode(JSONRPCResponse<JSONValue>.self, from: data).value()
     }
 
     public func vpnStatus() async throws -> VPNStatus {
