@@ -184,6 +184,15 @@ public extension StarlinkProvider {
                 id: instance.entity("outage_count"), instanceID: instance, name: "Outages",
                 kind: .sensor, deviceClass: .count, category: .diagnostic, access: .read,
                 stateClass: .totalIncreasing, metricID: "outage_count"
+            ),
+            EntityDescriptor(
+                id: instance.entity("drop_percent"), instanceID: instance, name: "Drop Rate",
+                kind: .sensor, deviceClass: .percent, category: .diagnostic, access: .read,
+                unit: "%", stateClass: .measurement, metricID: "drop_percent"
+            ),
+            EntityDescriptor(
+                id: instance.entity("state"), instanceID: instance, name: "State",
+                kind: .text, category: .diagnostic, access: .read, metricID: "state"
             )
         ]
     }
