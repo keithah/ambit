@@ -1,5 +1,14 @@
 # Ambit — Migration Plan (seeded from glinet-travel)
 
+> **Ambit design docs — read together:**
+> - **`MIGRATION_PLAN.md`** (this doc) — the staged build path: how the refactor proceeds, current status, per-phase non-goals.
+> - **`integration-model.md`** — the installable unit: Integration → install → providers ("install gl.inet" ⇒ router + vpn).
+> - **`provider-capability-model.md`** — *grouping & membership*: profiles + capabilities decide which providers a surface contains.
+> - **`entity-model.md`** — the Provider→Entity abstraction (descriptors + per-snapshot state) integrations are authored against.
+> - **`engine-topology.md`** — multi-engine & multi-instance: stable identity, ownership/lease, failover, check dedup.
+>
+> **This doc owns: the staged build path and current migration status.** The capability, entity, and topology models are *design intent*; where they conflict with the code already in this repo, the code is ground truth — reconcile, don't blindly apply.
+
 **Audience:** a coding agent (Codex) executing this without prior conversation context.
 **Goal:** evolve this codebase — a verbatim seed copy of `glinet-travel` — into **Ambit**, an extensible, provider-based ambient device-monitoring/control engine. This repo is the reference implementation of the larger Ambit platform.
 
