@@ -37,16 +37,31 @@ public struct ProviderMetricSection: Equatable, Sendable {
             }
         }
 
+        // Grouping reads the metric's declared classification (entity-model.md §6); the
+        // old metric.id.contains("battery"/"power") substring heuristic is gone. When a
+        // metric carries no deviceClass, fall back to its value shape.
         static func category(for metric: Metric) -> Category {
-            switch metric.value {
-            case .latency, .throughput:
+            if let deviceClass = metric.deviceClass {
+                switch deviceClass {
+                case .throughput, .latency, .connectivity:
+                    return .network
+                case .battery, .power:
+                    return .power
+                case .percent, .count, .duration:
+                    return inferred(from: metric.value)
+                }
+            }
+            return inferred(from: metric.value)
+        }
+
+        private static func inferred(from value: MetricValue) -> Category {
+            switch value {
+            case .latency, .throughput, .percent:
                 return .network
-            case .percent:
-                return metric.id.localizedCaseInsensitiveContains("battery") || metric.id.localizedCaseInsensitiveContains("power") ? .power : .network
             case .bool, .text:
                 return .state
             case .level:
-                return metric.id.localizedCaseInsensitiveContains("battery") || metric.id.localizedCaseInsensitiveContains("power") ? .power : .other
+                return .other
             }
         }
     }

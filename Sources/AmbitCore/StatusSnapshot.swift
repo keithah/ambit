@@ -280,7 +280,7 @@ public extension ProviderSnapshot {
     static func ecoFlow(_ snapshot: EcoFlowSnapshot) -> ProviderSnapshot {
         var metrics: [Metric] = []
         if let percent = snapshot.status.battery.percent {
-            metrics.append(Metric(id: "battery_percent", label: "Battery", value: .level(Double(percent))))
+            metrics.append(Metric(id: "battery_percent", label: "Battery", value: .level(Double(percent)), deviceClass: .battery))
         }
         metrics.append(Metric(id: "battery_state", label: "Battery State", value: .text(snapshot.status.battery.state.rawValue)))
         if let input = snapshot.status.power.inputWatts {
