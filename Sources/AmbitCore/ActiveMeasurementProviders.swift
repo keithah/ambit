@@ -75,8 +75,8 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
 
     public static func summaries(from snapshot: StatusSnapshot) -> [ActiveMeasurementSummary] {
         [
-            pingSummary(from: snapshot.providers[ProviderIDs.ping]),
-            iperf3Summary(from: snapshot.providers[ProviderIDs.iperf3])
+            pingSummary(from: snapshot.providers[ProviderInstanceIDs.ping]),
+            iperf3Summary(from: snapshot.providers[ProviderInstanceIDs.iperf3])
         ].compactMap { $0 }
     }
 
@@ -112,6 +112,10 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
 public actor PingProvider: Provider {
     public let id: ProviderID = ProviderIDs.ping
     public let displayName = "Ping"
+    public let typeID: ProviderTypeID = ProviderIDs.ping
+    public let integrationID = IntegrationIDs.ping
+    public let integrationInstanceID = IntegrationInstanceIDs.ping
+    public let instanceID = ProviderInstanceIDs.ping
     public let pollInterval: TimeInterval
 
     private let host: String
@@ -164,6 +168,10 @@ public actor PingProvider: Provider {
 public actor Iperf3Provider: Provider {
     public let id: ProviderID = ProviderIDs.iperf3
     public let displayName = "iperf3"
+    public let typeID: ProviderTypeID = ProviderIDs.iperf3
+    public let integrationID = IntegrationIDs.iperf3
+    public let integrationInstanceID = IntegrationInstanceIDs.iperf3
+    public let instanceID = ProviderInstanceIDs.iperf3
     public let pollInterval: TimeInterval = 3_600
     public let commands = [
         CommandDescriptor(

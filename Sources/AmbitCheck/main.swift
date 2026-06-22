@@ -194,8 +194,8 @@ struct AmbitCheck {
             )
             await engine.refresh()
             let snapshot = await engine.currentSnapshot()
-            guard let providerSnapshot = snapshot.providers[provider.id]?.value else {
-                throw JSONRPCClientError.commandFailed(snapshot.providers[provider.id]?.errorMessage ?? "Manifest provider did not publish a snapshot.")
+            guard let providerSnapshot = snapshot.providers[provider.instanceID]?.value else {
+                throw JSONRPCClientError.commandFailed(snapshot.providers[provider.instanceID]?.errorMessage ?? "Manifest provider did not publish a snapshot.")
             }
             for line in ProviderSnapshotReport.lines(
                 providerID: provider.id,

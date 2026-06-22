@@ -23,8 +23,8 @@ public actor Engine {
     private let usageMeter: ModuleUsageMeter
 
     private var snapshot = StatusSnapshot()
-    private var providerStates: [ProviderID: SourceState<ProviderSnapshot>] = [:]
-    private var lastRegisteredProviderPolls: [ProviderID: Date] = [:]
+    private var providerStates: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:]
+    private var lastRegisteredProviderPolls: [ProviderInstanceID: Date] = [:]
     private var settings: AppSettings
     private var routerPassword: String
     private var selectedEndpoint: EndpointSelection?
@@ -322,8 +322,8 @@ public actor Engine {
         do {
             try await provider.execute(commandID: commandID, arguments: arguments, context: context)
             let providerSnapshot = await provider.poll(context: context)
-            providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
-            lastRegisteredProviderPolls[provider.id] = Date()
+            providerStates[provider.instanceID] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.instanceID] = Date()
             await recordUsage(providerID: provider.id, operation: .command, started: started)
             publish()
         } catch {
@@ -374,8 +374,8 @@ public actor Engine {
         do {
             let response = try await outputProvider.setOutput(target, state: state, context: context)
             let providerSnapshot = await provider.poll(context: context)
-            providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
-            lastRegisteredProviderPolls[provider.id] = Date()
+            providerStates[provider.instanceID] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.instanceID] = Date()
             await recordUsage(providerID: provider.id, operation: .command, started: started)
             publish()
             return response
@@ -388,8 +388,8 @@ public actor Engine {
     private func refreshSpeedifyOnly(markLoading: Bool) async {
         guard let provider = providers.first(where: { $0.id == ProviderIDs.speedify }) else { return }
         if markLoading {
-            let previous = providerStates[ProviderIDs.speedify]
-            providerStates[ProviderIDs.speedify] = SourceState(
+            let previous = providerStates[provider.instanceID]
+            providerStates[provider.instanceID] = SourceState(
                 value: previous?.value,
                 isLoading: true,
                 errorMessage: previous?.errorMessage
@@ -403,8 +403,8 @@ public actor Engine {
         let started = Date()
         let context = EnvironmentContext(routerHost: selectedEndpoint?.host, settings: settings, routerPassword: routerPassword)
         let providerSnapshot = await provider.poll(context: context)
-        providerStates[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
-        lastRegisteredProviderPolls[provider.id] = Date()
+        providerStates[provider.instanceID] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+        lastRegisteredProviderPolls[provider.instanceID] = Date()
         await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
         snapshot.lastUpdated = Date()
         publish()
@@ -421,8 +421,8 @@ public actor Engine {
 
     private func markRegisteredProvidersLoading() {
         for provider in providers {
-            let previous = providerStates[provider.id]
-            providerStates[provider.id] = SourceState(
+            let previous = providerStates[provider.instanceID]
+            providerStates[provider.instanceID] = SourceState(
                 value: previous?.value,
                 isLoading: true,
                 errorMessage: previous?.errorMessage
@@ -442,14 +442,14 @@ public actor Engine {
             builtIns: builtIns + installed,
             explicit: explicitProviders
         )
-        let activeProviderIDs = Set(providers.map(\.id))
-        let inactiveProviderIDs = Set(providerStates.keys)
+        let activeInstanceIDs = Set(providers.map(\.instanceID))
+        let inactiveInstanceIDs = Set(providerStates.keys)
             .union(snapshot.providers.keys)
-            .subtracting(activeProviderIDs)
-        for providerID in inactiveProviderIDs {
-            providerStates[providerID] = nil
-            lastRegisteredProviderPolls[providerID] = nil
-            snapshot.providers[providerID] = nil
+            .subtracting(activeInstanceIDs)
+        for instanceID in inactiveInstanceIDs {
+            providerStates[instanceID] = nil
+            lastRegisteredProviderPolls[instanceID] = nil
+            snapshot.providers[instanceID] = nil
         }
     }
 
@@ -483,24 +483,24 @@ public actor Engine {
         }
     }
 
-    private func pollRegisteredProviders(routerHost: String?) async -> [ProviderID: SourceState<ProviderSnapshot>] {
-        var states: [ProviderID: SourceState<ProviderSnapshot>] = [:]
+    private func pollRegisteredProviders(routerHost: String?) async -> [ProviderInstanceID: SourceState<ProviderSnapshot>] {
+        var states: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:]
         let context = EnvironmentContext(routerHost: routerHost, settings: settings, routerPassword: routerPassword)
         let now = Date()
         for provider in providers {
             if Self.usesRouterLogin(provider.id),
                let backoff = routerBackoffUntil,
                backoff > Date() {
-                states[provider.id] = SourceState(
-                    value: providerStates[provider.id]?.value,
+                states[provider.instanceID] = SourceState(
+                    value: providerStates[provider.instanceID]?.value,
                     errorMessage: Self.routerBackoffMessage(until: backoff)
                 )
                 continue
             }
-            if let lastPoll = lastRegisteredProviderPolls[provider.id],
+            if let lastPoll = lastRegisteredProviderPolls[provider.instanceID],
                now.timeIntervalSince(lastPoll) < provider.pollInterval,
-               let previous = providerStates[provider.id] {
-                states[provider.id] = SourceState(value: previous.value, errorMessage: previous.errorMessage)
+               let previous = providerStates[provider.instanceID] {
+                states[provider.instanceID] = SourceState(value: previous.value, errorMessage: previous.errorMessage)
                 continue
             }
             let started = Date()
@@ -509,8 +509,8 @@ public actor Engine {
                let wait = providerSnapshot.retryAfterSeconds {
                 routerBackoffUntil = Date().addingTimeInterval(TimeInterval(wait))
             }
-            states[provider.id] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
-            lastRegisteredProviderPolls[provider.id] = Date()
+            states[provider.instanceID] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
+            lastRegisteredProviderPolls[provider.instanceID] = Date()
             await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
         }
         return states
@@ -526,8 +526,8 @@ public actor Engine {
 
     private func publish() {
         let registeredProviderStates = providerStates
-        for (providerID, state) in registeredProviderStates {
-            snapshot.providers[providerID] = state
+        for (instanceID, state) in registeredProviderStates {
+            snapshot.providers[instanceID] = state
         }
         snapshotContinuation.yield(snapshot)
         engineSnapshotContinuation.yield(snapshot.engineSnapshot)

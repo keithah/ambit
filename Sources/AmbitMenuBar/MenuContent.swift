@@ -292,7 +292,7 @@ private struct OverviewMenuView: View {
     }
 
     private var shouldShowSpeedify: Bool {
-        if viewModel.snapshot.providers[ProviderIDs.speedify] != nil { return true }
+        if viewModel.snapshot.providers[ProviderInstanceIDs.speedify] != nil { return true }
         guard let speedify = viewModel.snapshot.providerSpeedifyStatus else { return false }
         return speedify.isAvailable && (speedify.isConnected || !speedify.networks.isEmpty)
     }
@@ -1221,7 +1221,7 @@ private struct GenericProviderDetailView: View {
         ProviderDisplayModel.make(
             providerID: providerID,
             providerName: providerName,
-            state: viewModel.snapshot.providers[providerID],
+            state: viewModel.snapshot.providers[ProviderInstanceID(rawValue: providerID)],
             commands: providerCommands.map(\.command),
             layout: viewModel.providerLayouts[providerID]
         )
@@ -1413,7 +1413,7 @@ private struct GenericProviderDetailView: View {
     }
 
     private var subtitle: String {
-        if viewModel.snapshot.providers[providerID]?.value != nil {
+        if viewModel.snapshot.providers[ProviderInstanceID(rawValue: providerID)]?.value != nil {
             let commandCount = model.commands.count
             if commandCount > 0 {
                 return "\(DisplayFormatters.health(model.health)) · \(model.metrics.count) metrics · \(commandCount) commands"

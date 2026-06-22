@@ -83,15 +83,15 @@ final class AlertEngineTests: XCTestCase {
     func testDefaultRulesIncludeRealPlatformAlerts() async {
         let engine = AlertEngine()
         var snapshot = EngineSnapshot(providers: [
-            ProviderIDs.starlink: Self.providerSnapshot(metric: Metric(id: "obstruction_percent", label: "Obstruction", value: .percent(8))),
-            ProviderIDs.vpn: Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(true))),
-            ProviderIDs.ecoflow: Self.providerSnapshot(metric: Metric(id: "battery_percent", label: "Battery", value: .level(18)))
+            ProviderInstanceIDs.starlink: Self.providerSnapshot(metric: Metric(id: "obstruction_percent", label: "Obstruction", value: .percent(8))),
+            ProviderInstanceIDs.vpn: Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(true))),
+            ProviderInstanceIDs.ecoflow: Self.providerSnapshot(metric: Metric(id: "battery_percent", label: "Battery", value: .level(18)))
         ])
 
         let first = await engine.evaluate(snapshot, now: Date(timeIntervalSince1970: 0))
         XCTAssertEqual(first.map { $0.ruleID }, ["starlink.obstruction.high"])
 
-        snapshot.providers[ProviderIDs.vpn] = Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(false)))
+        snapshot.providers[ProviderInstanceIDs.vpn] = Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(false)))
         let second = await engine.evaluate(snapshot, now: Date(timeIntervalSince1970: 30))
         XCTAssertEqual(second.map { $0.ruleID }, ["vpn.disconnected"])
 
@@ -100,7 +100,7 @@ final class AlertEngineTests: XCTestCase {
     }
 
     private func snapshot(providerID: ProviderID, metric: Metric) -> EngineSnapshot {
-        EngineSnapshot(providers: [providerID: Self.providerSnapshot(metric: metric)])
+        EngineSnapshot(providers: [ProviderInstanceIDs.resolve(providerID): Self.providerSnapshot(metric: metric)])
     }
 
     private static func providerSnapshot(metric: Metric) -> SourceState<ProviderSnapshot> {

@@ -79,6 +79,15 @@ public protocol Provider: Sendable {
     var pollInterval: TimeInterval { get }
     var layout: ProviderManifest.Layout? { get }
     var commands: [CommandDescriptor] { get }
+
+    /// Identity hierarchy (`integration-model.md`). Defaults keep every existing/manifest
+    /// provider as a single-provider integration whose instance id is its bare `id`; the
+    /// built-ins override these to express grouping (router + vpn => integration "glinet").
+    var typeID: ProviderTypeID { get }
+    var integrationID: IntegrationID { get }
+    var integrationInstanceID: IntegrationInstanceID { get }
+    var instanceID: ProviderInstanceID { get }
+
     func poll(context: EnvironmentContext) async -> ProviderSnapshot
     func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws
 }
@@ -86,6 +95,11 @@ public protocol Provider: Sendable {
 public extension Provider {
     var layout: ProviderManifest.Layout? { nil }
     var commands: [CommandDescriptor] { [] }
+
+    var typeID: ProviderTypeID { id }
+    var integrationID: IntegrationID { IntegrationID(rawValue: id) }
+    var integrationInstanceID: IntegrationInstanceID { IntegrationInstanceID(rawValue: id) }
+    var instanceID: ProviderInstanceID { ProviderInstanceID(rawValue: id) }
 
     func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
         throw JSONRPCClientError.commandFailed("Provider command \(commandID) is not supported.")
@@ -243,10 +257,10 @@ public struct CommandArguments: Equatable, Sendable {
 }
 
 public struct EngineSnapshot: Equatable, Sendable {
-    public var providers: [ProviderID: SourceState<ProviderSnapshot>]
+    public var providers: [ProviderInstanceID: SourceState<ProviderSnapshot>]
     public var lastUpdated: Date?
 
-    public init(providers: [ProviderID: SourceState<ProviderSnapshot>] = [:], lastUpdated: Date? = nil) {
+    public init(providers: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:], lastUpdated: Date? = nil) {
         self.providers = providers
         self.lastUpdated = lastUpdated
     }

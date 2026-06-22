@@ -111,8 +111,9 @@ public struct SurfaceSnapshot: Equatable, Sendable {
         providerLayouts: [ProviderID: ProviderManifest.Layout] = [:],
         activeAlertCounts: [ProviderID: Int] = [:]
     ) -> SurfaceSnapshot {
-        let providers = snapshot.providers.map { providerID, state in
-            ProviderSurfaceModel.make(
+        let providers = snapshot.providers.map { instanceID, state -> ProviderSurfaceModel in
+            let providerID = instanceID.rawValue
+            return ProviderSurfaceModel.make(
                 providerID: providerID,
                 providerName: providerNames[providerID] ?? providerID,
                 state: state,

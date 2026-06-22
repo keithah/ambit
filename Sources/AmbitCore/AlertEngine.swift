@@ -290,7 +290,7 @@ public extension AlertRule {
 
 public extension EngineSnapshot {
     func provider(_ providerID: ProviderID) -> ProviderSnapshot? {
-        providers[providerID]?.value
+        providers[ProviderInstanceIDs.resolve(providerID)]?.value
     }
 
     func metric(providerID: ProviderID, metricID: String) -> Metric? {

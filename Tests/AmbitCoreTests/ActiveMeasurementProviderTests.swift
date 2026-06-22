@@ -5,14 +5,14 @@ import XCTest
 final class ActiveMeasurementProviderTests: XCTestCase {
     func testActiveMeasurementSummariesExposePingAndIperfMetrics() {
         let snapshot = StatusSnapshot(providers: [
-            ProviderIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(
+            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(
                 host: "1.1.1.1",
                 transmitted: 3,
                 received: 3,
                 lossPercent: 0,
                 averageLatencyMs: 12.4
             ))),
-            ProviderIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(Iperf3Snapshot(
+            ProviderInstanceIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(Iperf3Snapshot(
                 host: "iperf.example",
                 downloadBps: 11_000_000,
                 uploadBps: 8_000_000
@@ -33,7 +33,7 @@ final class ActiveMeasurementProviderTests: XCTestCase {
 
     func testActiveMeasurementSummaryIncludesDiagnosticsForFailures() {
         let snapshot = StatusSnapshot(providers: [
-            ProviderIDs.ping: SourceState(value: ProviderSnapshot(
+            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot(
                 health: .down,
                 metrics: [],
                 detail: .ping(PingSnapshot(host: "1.1.1.1")),

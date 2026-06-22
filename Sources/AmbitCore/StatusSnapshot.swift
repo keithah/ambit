@@ -13,11 +13,11 @@ public struct SourceState<Value: Equatable & Sendable>: Equatable, Sendable {
 }
 
 public struct StatusSnapshot: Equatable, Sendable {
-    public var providers: [ProviderID: SourceState<ProviderSnapshot>]
+    public var providers: [ProviderInstanceID: SourceState<ProviderSnapshot>]
     public var lastUpdated: Date?
 
     public init(
-        providers: [ProviderID: SourceState<ProviderSnapshot>] = [:],
+        providers: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:],
         router: SourceState<RouterStatus> = SourceState(),
         vpn: SourceState<VPNStatus> = SourceState(),
         reachability: SourceState<ReachabilityStatus> = SourceState(),
@@ -28,17 +28,17 @@ public struct StatusSnapshot: Equatable, Sendable {
     ) {
         self.providers = providers
         self.lastUpdated = lastUpdated
-        mergeCompatibilityState(router, providerID: ProviderIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router)
-        mergeCompatibilityState(vpn, providerID: ProviderIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn)
+        mergeCompatibilityState(router, instanceID: ProviderInstanceIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router)
+        mergeCompatibilityState(vpn, instanceID: ProviderInstanceIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn)
         mergeCompatibilityState(
             reachability,
-            providerID: ProviderIDs.reachability,
+            instanceID: ProviderInstanceIDs.reachability,
             detail: ProviderDetail.reachability,
             snapshot: ProviderSnapshot.reachability
         )
-        mergeCompatibilityState(speedify, providerID: ProviderIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify)
-        mergeCompatibilityState(starlink, providerID: ProviderIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink)
-        mergeCompatibilityState(ecoflow, providerID: ProviderIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow)
+        mergeCompatibilityState(speedify, instanceID: ProviderInstanceIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify)
+        mergeCompatibilityState(starlink, instanceID: ProviderInstanceIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink)
+        mergeCompatibilityState(ecoflow, instanceID: ProviderInstanceIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow)
     }
 
     public var engineSnapshot: EngineSnapshot {
@@ -46,21 +46,21 @@ public struct StatusSnapshot: Equatable, Sendable {
     }
 
     public var router: SourceState<RouterStatus> {
-        get { providerState(ProviderIDs.router) { if case .router(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router) }
+        get { providerState(ProviderInstanceIDs.router) { if case .router(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.router, detail: ProviderDetail.router, snapshot: ProviderSnapshot.router) }
     }
 
     public var vpn: SourceState<VPNStatus> {
-        get { providerState(ProviderIDs.vpn) { if case .vpn(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn) }
+        get { providerState(ProviderInstanceIDs.vpn) { if case .vpn(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.vpn, detail: ProviderDetail.vpn, snapshot: ProviderSnapshot.vpn) }
     }
 
     public var reachability: SourceState<ReachabilityStatus> {
-        get { providerState(ProviderIDs.reachability) { if case .reachability(let value) = $0 { value } else { nil } } }
+        get { providerState(ProviderInstanceIDs.reachability) { if case .reachability(let value) = $0 { value } else { nil } } }
         set {
             setProviderState(
                 newValue,
-                providerID: ProviderIDs.reachability,
+                instanceID: ProviderInstanceIDs.reachability,
                 detail: ProviderDetail.reachability,
                 snapshot: ProviderSnapshot.reachability
             )
@@ -68,50 +68,50 @@ public struct StatusSnapshot: Equatable, Sendable {
     }
 
     public var speedify: SourceState<SpeedifyStatus> {
-        get { providerState(ProviderIDs.speedify) { if case .speedify(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify) }
+        get { providerState(ProviderInstanceIDs.speedify) { if case .speedify(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.speedify, detail: ProviderDetail.speedify, snapshot: ProviderSnapshot.speedify) }
     }
 
     public var starlink: SourceState<StarlinkStatus> {
-        get { providerState(ProviderIDs.starlink) { if case .starlink(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink) }
+        get { providerState(ProviderInstanceIDs.starlink) { if case .starlink(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.starlink, detail: ProviderDetail.starlink, snapshot: ProviderSnapshot.starlink) }
     }
 
     public var ecoflow: SourceState<EcoFlowSnapshot> {
-        get { providerState(ProviderIDs.ecoflow) { if case .ecoflow(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow) }
+        get { providerState(ProviderInstanceIDs.ecoflow) { if case .ecoflow(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.ecoflow, detail: ProviderDetail.ecoflow, snapshot: ProviderSnapshot.ecoFlow) }
     }
 
     public var ping: SourceState<PingSnapshot> {
-        get { providerState(ProviderIDs.ping) { if case .ping(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.ping, detail: ProviderDetail.ping, snapshot: ProviderSnapshot.ping) }
+        get { providerState(ProviderInstanceIDs.ping) { if case .ping(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.ping, detail: ProviderDetail.ping, snapshot: ProviderSnapshot.ping) }
     }
 
     public var iperf3: SourceState<Iperf3Snapshot> {
-        get { providerState(ProviderIDs.iperf3) { if case .iperf3(let value) = $0 { value } else { nil } } }
-        set { setProviderState(newValue, providerID: ProviderIDs.iperf3, detail: ProviderDetail.iperf3, snapshot: ProviderSnapshot.iperf3) }
+        get { providerState(ProviderInstanceIDs.iperf3) { if case .iperf3(let value) = $0 { value } else { nil } } }
+        set { setProviderState(newValue, instanceID: ProviderInstanceIDs.iperf3, detail: ProviderDetail.iperf3, snapshot: ProviderSnapshot.iperf3) }
     }
 
     private func providerState<DetailValue>(
-        _ providerID: ProviderID,
+        _ instanceID: ProviderInstanceID,
         extract: (ProviderDetail) -> DetailValue?
     ) -> SourceState<DetailValue> {
-        guard let state = providers[providerID] else { return SourceState() }
+        guard let state = providers[instanceID] else { return SourceState() }
         let detail = state.value?.detail.flatMap(extract)
         return SourceState(value: detail, isLoading: state.isLoading, errorMessage: state.errorMessage)
     }
 
     private mutating func setProviderState<DetailValue>(
         _ state: SourceState<DetailValue>,
-        providerID: ProviderID,
+        instanceID: ProviderInstanceID,
         detail: (DetailValue) -> ProviderDetail,
         snapshot: (DetailValue) -> ProviderSnapshot
     ) {
         guard !state.isEmpty else {
-            providers[providerID] = nil
+            providers[instanceID] = nil
             return
         }
-        providers[providerID] = SourceState(
+        providers[instanceID] = SourceState(
             providerValue: state.value,
             isLoading: state.isLoading,
             errorMessage: state.errorMessage,
@@ -122,12 +122,12 @@ public struct StatusSnapshot: Equatable, Sendable {
 
     private mutating func mergeCompatibilityState<DetailValue>(
         _ state: SourceState<DetailValue>,
-        providerID: ProviderID,
+        instanceID: ProviderInstanceID,
         detail: (DetailValue) -> ProviderDetail,
         snapshot: (DetailValue) -> ProviderSnapshot
     ) {
         guard !state.isEmpty else { return }
-        setProviderState(state, providerID: providerID, detail: detail, snapshot: snapshot)
+        setProviderState(state, instanceID: instanceID, detail: detail, snapshot: snapshot)
     }
 }
 
@@ -165,7 +165,7 @@ public extension StatusSnapshot {
     }
 
     func providerErrorMessage(_ providerID: ProviderID) -> String? {
-        providers[providerID]?.errorMessage
+        providers[ProviderInstanceIDs.resolve(providerID)]?.errorMessage
     }
 }
 

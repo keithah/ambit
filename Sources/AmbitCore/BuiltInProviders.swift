@@ -61,6 +61,10 @@ public struct BuiltInProviderFactory: Sendable {
 public struct GLiNetRouterProvider: Provider {
     public let id: ProviderID = ProviderIDs.router
     public let displayName = "Router"
+    public let typeID: ProviderTypeID = ProviderIDs.router
+    public let integrationID = IntegrationIDs.glinet
+    public let integrationInstanceID = IntegrationInstanceIDs.glinet
+    public let instanceID = ProviderInstanceIDs.router
     public let pollInterval: TimeInterval
 
     private let clientFactory: RouterClientFactory
@@ -97,6 +101,10 @@ public struct GLiNetRouterProvider: Provider {
 public struct GLiNetVPNProvider: Provider {
     public let id: ProviderID = ProviderIDs.vpn
     public let displayName = "VPN"
+    public let typeID: ProviderTypeID = ProviderIDs.vpn
+    public let integrationID = IntegrationIDs.glinet
+    public let integrationInstanceID = IntegrationInstanceIDs.glinet
+    public let instanceID = ProviderInstanceIDs.vpn
     public let pollInterval: TimeInterval
     public let commands = ProviderCommandCatalog.commands(for: ProviderIDs.vpn)
 
@@ -147,6 +155,10 @@ public struct GLiNetVPNProvider: Provider {
 public struct ReachabilityProvider: Provider {
     public let id: ProviderID = ProviderIDs.reachability
     public let displayName = "Internet"
+    public let typeID: ProviderTypeID = ProviderIDs.reachability
+    public let integrationID = IntegrationIDs.reachability
+    public let integrationInstanceID = IntegrationInstanceIDs.reachability
+    public let instanceID = ProviderInstanceIDs.reachability
     public let pollInterval: TimeInterval
 
     private let probe: ReachabilityProbeProtocol
@@ -164,6 +176,10 @@ public struct ReachabilityProvider: Provider {
 public struct StarlinkProvider: Provider {
     public let id: ProviderID = ProviderIDs.starlink
     public let displayName = "Starlink"
+    public let typeID: ProviderTypeID = ProviderIDs.starlink
+    public let integrationID = IntegrationIDs.starlink
+    public let integrationInstanceID = IntegrationInstanceIDs.starlink
+    public let instanceID = ProviderInstanceIDs.starlink
     public let pollInterval: TimeInterval
 
     private let statusProvider: StarlinkStatusProvider
@@ -191,6 +207,10 @@ public struct StarlinkProvider: Provider {
 public struct SpeedifyProvider: Provider {
     public let id: ProviderID = ProviderIDs.speedify
     public let displayName = "Speedify"
+    public let typeID: ProviderTypeID = ProviderIDs.speedify
+    public let integrationID = IntegrationIDs.speedify
+    public let integrationInstanceID = IntegrationInstanceIDs.speedify
+    public let instanceID = ProviderInstanceIDs.speedify
     public let pollInterval: TimeInterval
     public let commands = ProviderCommandCatalog.commands(for: ProviderIDs.speedify)
 
@@ -258,6 +278,10 @@ public protocol EcoFlowOutputControllingProvider: Provider {
 public struct EcoFlowProvider: EcoFlowOutputControllingProvider {
     public let id: ProviderID = ProviderIDs.ecoflow
     public let displayName = "EcoFlow"
+    public let typeID: ProviderTypeID = ProviderIDs.ecoflow
+    public let integrationID = IntegrationIDs.ecoflow
+    public let integrationInstanceID = IntegrationInstanceIDs.ecoflow
+    public let instanceID = ProviderInstanceIDs.ecoflow
     public let pollInterval: TimeInterval
     public let commands = ProviderCommandCatalog.commands(for: ProviderIDs.ecoflow)
 

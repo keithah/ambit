@@ -44,10 +44,10 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(snapshot.reachability.value?.state, .online(latency: 0.042))
         XCTAssertEqual(snapshot.speedify.value?.server, "Auto")
         XCTAssertEqual(snapshot.starlink.value?.state, "Online")
-        XCTAssertEqual(snapshot.providers[ProviderIDs.router]?.value?.health, .ok)
-        XCTAssertEqual(snapshot.providers[ProviderIDs.vpn]?.value?.metricValue("connected"), .bool(true))
-        XCTAssertEqual(snapshot.providers[ProviderIDs.speedify]?.value?.metricValue("throughput_bps"), .throughput(bitsPerSecond: 12_000))
-        XCTAssertEqual(snapshot.providers[ProviderIDs.starlink]?.value?.metricValue("pop_latency_ms"), .latency(ms: 31))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.router]?.value?.health, .ok)
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.vpn]?.value?.metricValue("connected"), .bool(true))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.speedify]?.value?.metricValue("throughput_bps"), .throughput(bitsPerSecond: 12_000))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.starlink]?.value?.metricValue("pop_latency_ms"), .latency(ms: 31))
 
         let usage = await engine.usageSnapshots()
         XCTAssertEqual(usage[ProviderIDs.router]?.pollCount, 1)
@@ -80,7 +80,7 @@ final class EngineTests: XCTestCase {
         let streamTask = Task<EngineSnapshot?, Never> {
             var iterator = engine.engineSnapshots.makeAsyncIterator()
             while let snapshot = await iterator.next() {
-                if snapshot.providers[ProviderIDs.router]?.value != nil {
+                if snapshot.providers[ProviderInstanceIDs.router]?.value != nil {
                     return snapshot
                 }
             }
@@ -90,8 +90,8 @@ final class EngineTests: XCTestCase {
         await engine.refresh()
 
         let snapshot = await streamTask.value
-        XCTAssertEqual(snapshot?.providers[ProviderIDs.router]?.value?.health, .ok)
-        XCTAssertEqual(snapshot?.providers[ProviderIDs.vpn]?.value?.metricValue("connected"), .bool(true))
+        XCTAssertEqual(snapshot?.providers[ProviderInstanceIDs.router]?.value?.health, .ok)
+        XCTAssertEqual(snapshot?.providers[ProviderInstanceIDs.vpn]?.value?.metricValue("connected"), .bool(true))
     }
 
     func testRefreshPollsRegisteredProviderIntoProviderSnapshotMap() async {
@@ -499,7 +499,7 @@ final class EngineTests: XCTestCase {
         await engine.refresh()
 
         var snapshot = await engine.currentSnapshot()
-        XCTAssertNil(snapshot.providers[ProviderIDs.ecoflow])
+        XCTAssertNil(snapshot.providers[ProviderInstanceIDs.ecoflow])
         XCTAssertEqual(factoryCounter.count, 0)
 
         await engine.updateSettings(AppSettings(localHost: "router.local", ecoflowEnabled: true), routerPassword: "secret")
@@ -513,7 +513,7 @@ final class EngineTests: XCTestCase {
         await engine.refresh()
 
         snapshot = await engine.currentSnapshot()
-        XCTAssertNil(snapshot.providers[ProviderIDs.ecoflow])
+        XCTAssertNil(snapshot.providers[ProviderInstanceIDs.ecoflow])
         XCTAssertEqual(factoryCounter.count, 1)
     }
 
@@ -552,9 +552,9 @@ final class EngineTests: XCTestCase {
         await engine.refresh()
 
         let snapshot = await engine.currentSnapshot()
-        XCTAssertEqual(snapshot.providers[ProviderIDs.ping]?.value?.metricValue("latency_ms"), .latency(ms: 10))
-        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.detail, .iperf3(Iperf3Snapshot(host: "")))
-        XCTAssertNil(snapshot.providers[ProviderIDs.iperf3]?.errorMessage)
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.ping]?.value?.metricValue("latency_ms"), .latency(ms: 10))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.iperf3]?.value?.detail, .iperf3(Iperf3Snapshot(host: "")))
+        XCTAssertNil(snapshot.providers[ProviderInstanceIDs.iperf3]?.errorMessage)
         let commands = await engine.commands(provider: ProviderIDs.iperf3)
         XCTAssertEqual(commands.map(\.id), [ProviderCommandIDs.iperf3Run])
     }
@@ -629,9 +629,9 @@ final class EngineTests: XCTestCase {
         )
 
         let snapshot = await engine.currentSnapshot()
-        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.metricValue("download_bps"), .throughput(bitsPerSecond: 11_000_000))
-        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.value?.metricValue("upload_bps"), .throughput(bitsPerSecond: 12_000_000))
-        XCTAssertEqual(snapshot.providers[ProviderIDs.iperf3]?.errorMessage, nil)
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.iperf3]?.value?.metricValue("download_bps"), .throughput(bitsPerSecond: 11_000_000))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.iperf3]?.value?.metricValue("upload_bps"), .throughput(bitsPerSecond: 12_000_000))
+        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.iperf3]?.errorMessage, nil)
     }
 
     func testRefreshUsesRegisteredRouterProviderInsteadOfLegacyRouterPoll() async {
@@ -1331,6 +1331,9 @@ private actor StubProvider: Provider {
     let displayName: String
     let pollInterval: TimeInterval
     let commands: [CommandDescriptor]
+    // Stand in for whatever provider id is supplied: built-in ids get their scoped
+    // instance id (so typed accessors resolve), everything else stays bare.
+    nonisolated var instanceID: ProviderInstanceID { ProviderInstanceIDs.resolve(id) }
     private let snapshot: ProviderSnapshot
     private(set) var pollCount = 0
     private var executedCommands: [(id: String, arguments: CommandArguments)] = []

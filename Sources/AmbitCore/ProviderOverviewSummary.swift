@@ -31,7 +31,8 @@ public struct ProviderOverviewSummary: Equatable, Identifiable, Sendable {
         providerNames: [ProviderID: String] = [:],
         excluding excludedProviderIDs: Set<ProviderID> = dedicatedOverviewProviderIDs
     ) -> [ProviderOverviewSummary] {
-        snapshot.providers.compactMap { providerID, state -> ProviderOverviewSummary? in
+        snapshot.providers.compactMap { instanceID, state -> ProviderOverviewSummary? in
+            let providerID = instanceID.rawValue
             guard !excludedProviderIDs.contains(providerID) else { return nil }
             guard state.value != nil || state.errorMessage != nil else { return nil }
             let providerSnapshot = state.value
@@ -51,15 +52,18 @@ public struct ProviderOverviewSummary: Equatable, Identifiable, Sendable {
         }
     }
 
+    // The dedicated built-ins are addressed by their scoped instance ids, matching the
+    // re-keyed snapshot. Generic/manifest providers (instance id == bare provider id) are
+    // never in this set, so they still surface here.
     public static let dedicatedOverviewProviderIDs: Set<ProviderID> = [
-        ProviderIDs.router,
-        ProviderIDs.vpn,
-        ProviderIDs.reachability,
-        ProviderIDs.speedify,
-        ProviderIDs.starlink,
-        ProviderIDs.ecoflow,
-        ProviderIDs.ping,
-        ProviderIDs.iperf3
+        ProviderInstanceIDs.router.rawValue,
+        ProviderInstanceIDs.vpn.rawValue,
+        ProviderInstanceIDs.reachability.rawValue,
+        ProviderInstanceIDs.speedify.rawValue,
+        ProviderInstanceIDs.starlink.rawValue,
+        ProviderInstanceIDs.ecoflow.rawValue,
+        ProviderInstanceIDs.ping.rawValue,
+        ProviderInstanceIDs.iperf3.rawValue
     ]
 
     private static func detail(metrics: [Metric], errorMessage: String?, health: Health) -> String {

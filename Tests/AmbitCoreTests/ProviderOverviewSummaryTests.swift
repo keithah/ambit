@@ -51,8 +51,8 @@ final class ProviderOverviewSummaryTests: XCTestCase {
 
     func testGenericSummariesExcludeDedicatedOverviewProviders() {
         let snapshot = StatusSnapshot(providers: [
-            ProviderIDs.starlink: SourceState(value: ProviderSnapshot(health: .down, error: "offline")),
-            ProviderIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(host: "1.1.1.1"))),
+            ProviderInstanceIDs.starlink: SourceState(value: ProviderSnapshot(health: .down, error: "offline")),
+            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(host: "1.1.1.1"))),
             "demo.provider": SourceState(value: ProviderSnapshot(health: .unknown))
         ])
 

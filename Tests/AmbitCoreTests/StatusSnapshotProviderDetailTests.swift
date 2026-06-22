@@ -21,11 +21,11 @@ final class StatusSnapshotProviderDetailTests: XCTestCase {
             )
         )
         let snapshot = StatusSnapshot(providers: [
-            ProviderIDs.speedify: SourceState(value: ProviderSnapshot.speedify(speedify)),
-            ProviderIDs.starlink: SourceState(value: ProviderSnapshot.starlink(starlink)),
-            ProviderIDs.ecoflow: SourceState(value: ProviderSnapshot.ecoFlow(ecoflow)),
-            ProviderIDs.ping: SourceState(value: ProviderSnapshot.ping(ping)),
-            ProviderIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(iperf3))
+            ProviderInstanceIDs.speedify: SourceState(value: ProviderSnapshot.speedify(speedify)),
+            ProviderInstanceIDs.starlink: SourceState(value: ProviderSnapshot.starlink(starlink)),
+            ProviderInstanceIDs.ecoflow: SourceState(value: ProviderSnapshot.ecoFlow(ecoflow)),
+            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot.ping(ping)),
+            ProviderInstanceIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(iperf3))
         ])
 
         XCTAssertEqual(snapshot.providerSpeedifyStatus?.server, "Seattle")
