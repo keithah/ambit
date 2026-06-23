@@ -3,14 +3,9 @@ import AmbitCore
 import AmbitUI
 import SwiftUI
 
-final class OverlayModel: ObservableObject {
-    @Published var showLegend = false
-}
-
 /// The floating, always-on-top compact multi-host graph.
 struct OverlayView: View {
     @EnvironmentObject private var viewModel: StatusViewModel
-    @ObservedObject var model: OverlayModel
     let openPopover: () -> Void
     let close: () -> Void
 
@@ -45,7 +40,6 @@ struct OverlayView: View {
 final class OverlayController {
     private var panel: NSPanel?
     private let viewModel: StatusViewModel
-    private let model = OverlayModel()
     private let onOpenPopover: () -> Void
 
     init(viewModel: StatusViewModel, onOpenPopover: @escaping () -> Void) {
@@ -90,7 +84,7 @@ final class OverlayController {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.minSize = NSSize(width: 180, height: 64)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let content = OverlayView(model: model, openPopover: onOpenPopover, close: { [weak self] in self?.hide() })
+        let content = OverlayView(openPopover: onOpenPopover, close: { [weak self] in self?.hide() })
             .environmentObject(viewModel)
         let hosting = NSHostingView(rootView: content)
         hosting.frame = panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 284, height: 108)
