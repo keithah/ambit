@@ -1,5 +1,4 @@
 import SwiftUI
-import AmbitCore
 
 /// Two related series (up/down throughput, user/system %). Thin specialization of the
 /// history graph that always shows a legend for the two lines.

@@ -19,12 +19,14 @@ public struct HistoryGraphCard: View {
     let lines: [GraphLine]
     let axisMax: Double
     let showLegend: Bool
+    let unit: String
 
-    public init(title: String, lines: [GraphLine], axisMax: Double? = nil, showLegend: Bool = false) {
+    public init(title: String, lines: [GraphLine], unit: String = "ms", axisMax: Double? = nil, showLegend: Bool = false) {
         self.title = title
         self.lines = lines
         self.axisMax = axisMax ?? GraphGeometry.niceMax(lines.flatMap { $0.samples.compactMap(\.value) })
         self.showLegend = showLegend
+        self.unit = unit
     }
 
     public var body: some View {
@@ -32,7 +34,7 @@ public struct HistoryGraphCard: View {
             HStack {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text("\(Int(axisMax))ms").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text("\(Int(axisMax))\(unit)").font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
             Canvas { context, size in
                 for fraction in [0.0, 0.5, 1.0] {
