@@ -76,6 +76,9 @@ public struct ThresholdAlertRule: Equatable, Sendable {
     public var title: String
     public var message: String
     public var severity: AlertSeverity
+    public var cooldown: TimeInterval
+    public var notifyOnRecovery: Bool
+    public var recoveryMessage: String?
 
     public init(
         id: String,
@@ -85,7 +88,10 @@ public struct ThresholdAlertRule: Equatable, Sendable {
         threshold: Double,
         title: String,
         message: String,
-        severity: AlertSeverity = .warning
+        severity: AlertSeverity = .warning,
+        cooldown: TimeInterval = 0,
+        notifyOnRecovery: Bool = false,
+        recoveryMessage: String? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -95,19 +101,28 @@ public struct ThresholdAlertRule: Equatable, Sendable {
         self.title = title
         self.message = message
         self.severity = severity
+        self.cooldown = cooldown
+        self.notifyOnRecovery = notifyOnRecovery
+        self.recoveryMessage = recoveryMessage
     }
 
     func evaluate(snapshot: EngineSnapshot, state: inout AlertRuleState, now: Date) -> AlertEvent? {
         guard let value = snapshot.numericMetric(providerID: providerID, metricID: metricID) else {
-            state.activeRuleIDs.remove(id)
-            return nil
+            return state.fireOnRisingEdge(ruleID: id, isActive: false, event: recoveryEvent(now), recovery: notifyOnRecovery ? recoveryEvent(now) : nil, now: now)
         }
         let isActive = comparison.matches(value, threshold: threshold)
         return state.fireOnRisingEdge(
             ruleID: id,
             isActive: isActive,
-            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now)
+            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now),
+            cooldown: cooldown,
+            recovery: notifyOnRecovery ? recoveryEvent(now) : nil,
+            now: now
         )
+    }
+
+    private func recoveryEvent(_ now: Date) -> AlertEvent {
+        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
     }
 }
 
@@ -157,6 +172,9 @@ public struct SustainedAlertRule: Equatable, Sendable {
     public var title: String
     public var message: String
     public var severity: AlertSeverity
+    public var cooldown: TimeInterval
+    public var notifyOnRecovery: Bool
+    public var recoveryMessage: String?
 
     public init(
         id: String,
@@ -167,7 +185,10 @@ public struct SustainedAlertRule: Equatable, Sendable {
         duration: TimeInterval,
         title: String,
         message: String,
-        severity: AlertSeverity = .warning
+        severity: AlertSeverity = .warning,
+        cooldown: TimeInterval = 0,
+        notifyOnRecovery: Bool = false,
+        recoveryMessage: String? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -178,6 +199,9 @@ public struct SustainedAlertRule: Equatable, Sendable {
         self.title = title
         self.message = message
         self.severity = severity
+        self.cooldown = cooldown
+        self.notifyOnRecovery = notifyOnRecovery
+        self.recoveryMessage = recoveryMessage
     }
 
     func evaluate(snapshot: EngineSnapshot, state: inout AlertRuleState, now: Date) -> AlertEvent? {
@@ -185,8 +209,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
               comparison.matches(value, threshold: threshold)
         else {
             state.sustainedStartByRuleID[id] = nil
-            state.activeRuleIDs.remove(id)
-            return nil
+            return state.fireOnRisingEdge(ruleID: id, isActive: false, event: recoveryEvent(now), recovery: notifyOnRecovery ? recoveryEvent(now) : nil, now: now)
         }
 
         let started = state.sustainedStartByRuleID[id] ?? now
@@ -195,8 +218,15 @@ public struct SustainedAlertRule: Equatable, Sendable {
         return state.fireOnRisingEdge(
             ruleID: id,
             isActive: isActive,
-            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now)
+            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now),
+            cooldown: cooldown,
+            recovery: notifyOnRecovery ? recoveryEvent(now) : nil,
+            now: now
         )
+    }
+
+    private func recoveryEvent(_ now: Date) -> AlertEvent {
+        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
     }
 }
 
@@ -241,15 +271,30 @@ struct AlertRuleState: Sendable {
     var activeRuleIDs: Set<String> = []
     var sustainedStartByRuleID: [String: Date] = [:]
     var lastMetricValues: [String: MetricValue?] = [:]
+    var lastFiredAt: [String: Date] = [:]
 
-    mutating func fireOnRisingEdge(ruleID: String, isActive: Bool, event: AlertEvent) -> AlertEvent? {
+    /// Fire on the active rising edge, honoring a cooldown (suppress repeats within `cooldown`
+    /// of the last fire); emit `recovery` on the active→inactive falling edge. With the
+    /// defaults (cooldown 0, recovery nil) this is the original rising-edge behavior.
+    mutating func fireOnRisingEdge(
+        ruleID: String,
+        isActive: Bool,
+        event: AlertEvent,
+        cooldown: TimeInterval = 0,
+        recovery: AlertEvent? = nil,
+        now: Date = Date()
+    ) -> AlertEvent? {
         if isActive {
             guard !activeRuleIDs.contains(ruleID) else { return nil }
             activeRuleIDs.insert(ruleID)
+            if let last = lastFiredAt[ruleID], now.timeIntervalSince(last) < cooldown {
+                return nil  // still firing, but within cooldown → suppress the notification
+            }
+            lastFiredAt[ruleID] = now
             return event
         }
-        activeRuleIDs.remove(ruleID)
-        return nil
+        let wasActive = activeRuleIDs.remove(ruleID) != nil
+        return wasActive ? recovery : nil
     }
 }
 
