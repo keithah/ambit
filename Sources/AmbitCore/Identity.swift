@@ -74,6 +74,7 @@ public struct ProviderCapability: StringIdentifier {
 
 /// The built-in integrations (`integration-model.md` §5).
 public enum IntegrationIDs {
+    public static let pingscope: IntegrationID = "pingscope"
     public static let glinet: IntegrationID = "glinet"
     public static let speedify: IntegrationID = "speedify"
     public static let starlink: IntegrationID = "starlink"

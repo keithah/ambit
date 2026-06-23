@@ -98,4 +98,26 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         copy.port = method.defaultPort
         return copy
     }
+
+    /// Deterministic, engine-independent integration-instance id from the target (address +
+    /// port). Two engines configured for the same host compute the same id.
+    public var integrationInstanceID: IntegrationInstanceID {
+        let suffix = port.map { ":\($0)" } ?? ""
+        return IntegrationInstanceID(rawValue: "pingscope@\(address)\(suffix)")
+    }
+
+    /// Encode to / decode from an IntegrationInstanceRecord.config (JSONObject), round-tripped
+    /// through JSONValue so the generic registry needn't know pingscope's shape.
+    public func asConfigObject() -> JSONObject {
+        guard let data = try? JSONEncoder().encode(self),
+              let value = try? JSONDecoder().decode(JSONValue.self, from: data),
+              let object = value.objectValue else { return [:] }
+        return object
+    }
+
+    public init?(configObject: JSONObject) {
+        guard let data = try? JSONEncoder().encode(JSONValue.object(configObject)),
+              let host = try? JSONDecoder().decode(PingScopeHostConfig.self, from: data) else { return nil }
+        self = host
+    }
 }
