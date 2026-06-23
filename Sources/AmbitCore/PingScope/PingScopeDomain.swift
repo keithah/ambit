@@ -119,6 +119,12 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         return copy
     }
 
+    /// Display line, e.g. "TCP 1.1.1.1:443" / "ICMP 192.168.1.1".
+    public var detailLine: String {
+        let portSuffix = port.map { ":\($0)" } ?? ""
+        return "\(method.rawValue.uppercased()) \(address)\(portSuffix)"
+    }
+
     /// Deterministic, engine-independent integration-instance id from the target (address +
     /// port). Two engines configured for the same host compute the same id.
     public var integrationInstanceID: IntegrationInstanceID {

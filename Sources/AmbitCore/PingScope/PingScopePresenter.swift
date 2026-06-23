@@ -54,9 +54,17 @@ public struct LatencyReadout: Equatable, Sendable {
 public struct MenuBarGlyph: Equatable, Sendable {
     public var latencyText: String
     public var tone: LatencyTone
-    public var itemWidth: Double = 34
-    public var fontSize: Double = 9.5
-    public var dotDiameter: Double = 8
+    public var itemWidth: Double
+    public var fontSize: Double
+    public var dotDiameter: Double
+
+    public init(latencyText: String, tone: LatencyTone, itemWidth: Double = 34, fontSize: Double = 9.5, dotDiameter: Double = 8) {
+        self.latencyText = latencyText
+        self.tone = tone
+        self.itemWidth = itemWidth
+        self.fontSize = fontSize
+        self.dotDiameter = dotDiameter
+    }
 }
 
 public enum PingScopePresenter {

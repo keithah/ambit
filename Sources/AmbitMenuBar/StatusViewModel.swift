@@ -21,6 +21,12 @@ final class StatusViewModel: ObservableObject {
     @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
     @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
+    // PingScope UI state
+    @Published var pingScopeRange: TimeRange = .fiveMinutes
+    @Published var pingScopeSelection: IntegrationInstanceID?   // nil = All Hosts
+    @Published var pingHosts: [PingHostDisplay] = []
+    @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+
     private let engine: Engine
     private let installedProviderStore: any InstalledProviderStore
     private let credentialStore: any CredentialStore
@@ -107,6 +113,7 @@ final class StatusViewModel: ObservableObject {
                 self.snapshot = snapshot
                 self.selectedEndpoint = await self.engine.currentSelectedEndpoint()
                 self.providerDisplayNames = await self.engine.providerDisplayNames()
+                await self.refreshPingScope()
                 await self.refreshModuleUsage()
                 let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
                 await self.alertNotifier.deliver(events)
@@ -298,6 +305,51 @@ final class StatusViewModel: ObservableObject {
 
     func refreshModuleUsage() async {
         moduleUsageSnapshots = Array(await engine.usageSnapshots().values)
+    }
+
+    func setPingScopeRange(_ range: TimeRange) {
+        pingScopeRange = range
+        Task { await refreshPingScope() }
+    }
+
+    func selectPingScopeHost(_ id: IntegrationInstanceID?) {
+        pingScopeSelection = id
+        Task { await refreshPingScope() }
+    }
+
+    /// Rebuild per-host displays (readout + windowed samples + stats) for the pingscope UI.
+    func refreshPingScope() async {
+        let now = Date()
+        let freshness = max(pingScopeRange.seconds, 30)
+        let records = ((try? integrationRegistry.activeInstances()) ?? [])
+            .filter { $0.integrationID == IntegrationIDs.pingscope }
+        var displays: [PingHostDisplay] = []
+        for (index, record) in records.enumerated() {
+            guard let host = PingScopeHostConfig(configObject: record.config) else { continue }
+            let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+            let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
+            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingScopeRange.seconds))
+            let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
+            let readout = PingScopePresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
+            displays.append(PingHostDisplay(
+                instanceID: record.id,
+                providerInstanceID: providerInstance,
+                latencyEntityID: latencyID,
+                name: record.displayName,
+                detail: host.detailLine,
+                samples: samples,
+                readout: readout,
+                stats: SampleStats.from(samples),
+                isPrimary: index == 0,
+                colorIndex: index
+            ))
+        }
+        pingHosts = displays
+        if let primary = displays.first(where: \.isPrimary) ?? displays.first {
+            menuGlyph = MenuBarGlyph(latencyText: primary.readout.text, tone: primary.readout.tone)
+        } else {
+            menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+        }
     }
 
     func setSpeedifyFocused(_ isFocused: Bool) {

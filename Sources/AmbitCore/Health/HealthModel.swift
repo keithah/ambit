@@ -22,6 +22,16 @@ public extension HealthStatus {
         case .down: return .down
         }
     }
+
+    /// Lift a flat `Health` (e.g. from a snapshot) back to a status for presentation.
+    init(legacy: Health) {
+        switch legacy {
+        case .unknown: self = .noData
+        case .ok: self = .healthy
+        case .degraded: self = .degraded
+        case .down: self = .down
+        }
+    }
 }
 
 public struct HealthThresholds: Equatable, Sendable, Codable {

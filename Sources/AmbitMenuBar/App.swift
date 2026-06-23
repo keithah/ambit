@@ -226,7 +226,7 @@ private struct MenuBarIconDescriptor: Equatable {
 
 @MainActor
 private final class StatusBarController: NSObject {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: 28)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 34)
     private let popover = NSPopover()
     private let viewModel: StatusViewModel
     private var cancellables: Set<AnyCancellable> = []
@@ -236,9 +236,9 @@ private final class StatusBarController: NSObject {
         super.init()
 
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 460, height: 720)
+        popover.contentSize = NSSize(width: 420, height: 640)
         popover.contentViewController = NSHostingController(
-            rootView: MenuContent()
+            rootView: PingScopePopover()
                 .environmentObject(viewModel)
         )
 
@@ -248,11 +248,11 @@ private final class StatusBarController: NSObject {
             button.imagePosition = .imageOnly
         }
 
-        updateIcon(snapshot: viewModel.snapshot)
-        viewModel.$snapshot
+        updateGlyph(viewModel.menuGlyph)
+        viewModel.$menuGlyph
             .receive(on: RunLoop.main)
-            .sink { [weak self] snapshot in
-                self?.updateIcon(snapshot: snapshot)
+            .sink { [weak self] glyph in
+                self?.updateGlyph(glyph)
             }
             .store(in: &cancellables)
     }
@@ -266,10 +266,9 @@ private final class StatusBarController: NSObject {
         }
     }
 
-    private func updateIcon(snapshot: StatusSnapshot) {
-        let descriptor = MenuBarIconDescriptor(snapshot: snapshot)
-        statusItem.button?.image = StatusIconRenderer.image(for: descriptor)
-        statusItem.button?.toolTip = descriptor.accessibilityLabel
+    private func updateGlyph(_ glyph: MenuBarGlyph) {
+        statusItem.button?.image = PingScopeGlyphRenderer.image(glyph)
+        statusItem.button?.toolTip = "PingScope · \(glyph.latencyText)"
     }
 }
 
