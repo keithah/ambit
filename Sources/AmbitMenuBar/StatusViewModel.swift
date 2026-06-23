@@ -33,6 +33,13 @@ final class StatusViewModel: ObservableObject {
     private let pingTierClassifier = NetworkTierClassifier()
     private var pingAlertMonitor = PingScopeAlertMonitor()
 
+    @Published var diagnosisSensitivity: DiagnosisSensitivity = .balanced {
+        didSet {
+            pingAlertMonitor.sensitivity = diagnosisSensitivity
+            UserDefaults.standard.set(diagnosisSensitivity.rawValue, forKey: "pingDiagnosisSensitivity")
+        }
+    }
+
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
     var showPopover: (() -> Void)?
@@ -66,6 +73,12 @@ final class StatusViewModel: ObservableObject {
         let integrationRegistry = UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
+        Self.dedupePingScopeHostsByAddress(integrationRegistry)
+        if let raw = UserDefaults.standard.string(forKey: "pingDiagnosisSensitivity"),
+           let sensitivity = DiagnosisSensitivity(rawValue: raw) {
+            diagnosisSensitivity = sensitivity
+            pingAlertMonitor.sensitivity = sensitivity
+        }
         let historyStore: any HistoryStore = (try? SQLiteHistoryStore.defaultURL()).map { SQLiteHistoryStore(url: $0) } ?? InMemoryHistoryStore()
         self.engine = Engine(
             settingsStore: settingsStore,
@@ -100,6 +113,23 @@ final class StatusViewModel: ObservableObject {
         ]
         try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.pingscope($0) })
         try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
+    }
+
+    /// Remove pingscope hosts that target an address already monitored (keeping the primary,
+    /// else the first), cleaning up duplicates left by earlier seeding changes.
+    private static func dedupePingScopeHostsByAddress(_ registry: any IntegrationRegistry) {
+        guard let all = try? registry.instances() else { return }
+        let pingscope = all.filter { $0.integrationID == IntegrationIDs.pingscope }
+        let primary = (try? registry.primaryInstanceID()) ?? nil
+        let ordered = pingscope.filter { $0.id == primary } + pingscope.filter { $0.id != primary }
+        var seen = Set<String>()
+        var removeIDs = Set<IntegrationInstanceID>()
+        for record in ordered {
+            guard let address = PingScopeHostConfig(configObject: record.config)?.address else { continue }
+            if seen.contains(address) { removeIDs.insert(record.id) } else { seen.insert(address) }
+        }
+        guard !removeIDs.isEmpty else { return }
+        try? registry.save(all.filter { !removeIDs.contains($0.id) })
     }
 
     /// Detect the default gateway and add it as a third pingscope host (ICMP — truest hop

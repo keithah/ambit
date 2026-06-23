@@ -37,10 +37,10 @@ struct PingScopeSettings: View {
             sidebar.frame(width: 184)
             Divider()
             Group {
-                if tab == .hosts {
-                    HostsPane()
-                } else {
-                    placeholder
+                switch tab {
+                case .hosts: HostsPane()
+                case .notifications: NotificationsPane()
+                default: placeholder
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -83,6 +83,47 @@ struct PingScopeSettings: View {
             Text("Coming soon.").foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct NotificationsPane: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "bell").font(.system(size: 22)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading) {
+                        Text("Notifications").font(.system(size: 20, weight: .bold))
+                        Text("How network-problem alerts are decided.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                Form {
+                    Picker("Diagnosis sensitivity", selection: Binding(
+                        get: { viewModel.diagnosisSensitivity },
+                        set: { viewModel.diagnosisSensitivity = $0 }
+                    )) {
+                        Text("Conservative").tag(DiagnosisSensitivity.conservative)
+                        Text("Balanced").tag(DiagnosisSensitivity.balanced)
+                        Text("Sensitive").tag(DiagnosisSensitivity.sensitive)
+                    }
+                    Text(description).font(.callout).foregroundStyle(.secondary)
+                }
+                .formStyle(.grouped)
+                Text("Per-host latency thresholds, cooldown, and recovery are set per host under Hosts ▸ Edit.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+    }
+
+    private var description: String {
+        switch viewModel.diagnosisSensitivity {
+        case .conservative: return "Only alert on high-confidence network failures."
+        case .balanced: return "Alert on confident failures; surface uncertain ones as a generic internet problem."
+        case .sensitive: return "Surface uncertain failures with their specific cause (local / ISP / upstream)."
+        }
     }
 }
 
