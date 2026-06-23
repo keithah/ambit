@@ -6,6 +6,20 @@ public protocol PingProbe: Sendable {
     func measure(_ host: PingScopeHostConfig) async -> ProbeResult
 }
 
+/// Stands in for a probe method that isn't available in this build (e.g. ICMP on
+/// sandboxed/App Store builds) — always reports the configured failure reason.
+public struct UnavailableProbe: PingProbe {
+    private let reason: ProbeFailureReason
+
+    public init(reason: ProbeFailureReason) {
+        self.reason = reason
+    }
+
+    public func measure(_ host: PingScopeHostConfig) async -> ProbeResult {
+        ProbeResult(timestamp: Date(), failureReason: reason, note: "Probe method unavailable in this build")
+    }
+}
+
 /// Wraps a probe and races it against the host's timeout; whichever finishes first wins and
 /// the loser is cancelled. A timeout yields a `.timeout` failure (never a late/garbage value).
 public struct TimeoutProbe: PingProbe {

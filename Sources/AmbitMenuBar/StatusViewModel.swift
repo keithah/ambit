@@ -83,12 +83,12 @@ final class StatusViewModel: ObservableObject {
         try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
     }
 
-    /// Detect the default gateway and add it as a third pingscope host (TCP:80 — routers
-    /// commonly serve a web UI there) via the registry-add + reload path. Idempotent: skips
-    /// if a host for that target already exists.
+    /// Detect the default gateway and add it as a third pingscope host (ICMP — truest hop
+    /// latency, no port guessing) via the registry-add + reload path. Idempotent: skips if a
+    /// host for that target already exists.
     private func seedGatewayHostIfNeeded() async {
         guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
-        let host = PingScopeHostConfig(displayName: "Gateway", address: gateway, method: .tcp, port: 80)
+        let host = PingScopeHostConfig(displayName: "Gateway", address: gateway, method: .icmp)
         let existing = (try? integrationRegistry.instances())?.contains { $0.id == host.integrationInstanceID } ?? false
         guard !existing else { return }
         try? integrationRegistry.upsert(.pingscope(host))

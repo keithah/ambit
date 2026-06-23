@@ -40,7 +40,7 @@ public struct PingScopeProvider: Provider {
         let scoped = ProviderInstanceID(rawValue: "\(integrationInstanceID.rawValue)/probe")
         self.instanceID = scoped
         self.id = scoped.rawValue
-        self.probe = probe ?? TimeoutProbe(wrapping: TCPProbe())
+        self.probe = probe ?? DefaultProbeFactory().makeProbe(for: host)
     }
 
     public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
@@ -111,7 +111,7 @@ public struct PingScopeIntegration: Integration {
 
     private let probeFactory: @Sendable (PingScopeHostConfig) -> any PingProbe
 
-    public init(probeFactory: @escaping @Sendable (PingScopeHostConfig) -> any PingProbe = { _ in TimeoutProbe(wrapping: TCPProbe()) }) {
+    public init(probeFactory: @escaping @Sendable (PingScopeHostConfig) -> any PingProbe = { DefaultProbeFactory().makeProbe(for: $0) }) {
         self.probeFactory = probeFactory
     }
 
