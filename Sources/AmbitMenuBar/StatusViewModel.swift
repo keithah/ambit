@@ -42,6 +42,8 @@ final class StatusViewModel: ObservableObject {
         self.alertNotifier = AlertNotifier()
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
+        let integrationRegistry = UserDefaultsIntegrationRegistry()
+        Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
         self.engine = Engine(
             settingsStore: settingsStore,
             credentialStore: credentialStore,
@@ -49,6 +51,7 @@ final class StatusViewModel: ObservableObject {
             reachabilityProbe: reachabilityProbe,
             settings: settings,
             routerPassword: routerPassword,
+            integrationRegistry: integrationRegistry,
             installedProviderStore: installedProviderStore,
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
@@ -56,6 +59,16 @@ final class StatusViewModel: ObservableObject {
 
     deinit {
         subscriptionTask?.cancel()
+    }
+
+    /// First-run seed: the built-in integrations are listed (so they remain toggleable) but
+    /// disabled at the integration-type level, leaving only pingscope active (pingscope hosts
+    /// are seeded in M1). Existing installs keep their saved state.
+    private static func seedIntegrationRegistryIfNeeded(_ registry: any IntegrationRegistry, settings: AppSettings) {
+        guard ((try? registry.instances()) ?? []).isEmpty else { return }
+        let builtIns = BuiltInIntegrationSeed.records(ecoflowEnabled: settings.ecoflowEnabled, includeActiveMeasurement: true)
+        try? registry.save(builtIns)
+        try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
     }
 
     func start() {

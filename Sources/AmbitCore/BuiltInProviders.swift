@@ -77,21 +77,10 @@ public struct BuiltInProviderFactory: Sendable {
     /// Default instance seed reproducing providers(settings:) exactly: all built-ins enabled
     /// in canonical order, EcoFlow gated by settings, ping/iperf3 only when a runner exists.
     public func defaultInstanceSeed(settings: AppSettings) -> [IntegrationInstanceRecord] {
-        func record(_ integration: IntegrationID, _ instance: IntegrationInstanceID, _ name: String, enabled: Bool = true) -> IntegrationInstanceRecord {
-            IntegrationInstanceRecord(id: instance, integrationID: integration, displayName: name, enabled: enabled, origin: .builtIn)
-        }
-        var seed: [IntegrationInstanceRecord] = [
-            record(IntegrationIDs.glinet, IntegrationInstanceIDs.glinet, "GL.iNet"),
-            record(IntegrationIDs.reachability, IntegrationInstanceIDs.reachability, "Internet"),
-            record(IntegrationIDs.speedify, IntegrationInstanceIDs.speedify, "Speedify"),
-            record(IntegrationIDs.starlink, IntegrationInstanceIDs.starlink, "Starlink"),
-            record(IntegrationIDs.ecoflow, IntegrationInstanceIDs.ecoflow, "EcoFlow", enabled: settings.ecoflowEnabled)
-        ]
-        if activeMeasurementProcessRunner != nil {
-            seed.append(record(IntegrationIDs.ping, IntegrationInstanceIDs.ping, "Ping"))
-            seed.append(record(IntegrationIDs.iperf3, IntegrationInstanceIDs.iperf3, "iperf3"))
-        }
-        return seed
+        BuiltInIntegrationSeed.records(
+            ecoflowEnabled: settings.ecoflowEnabled,
+            includeActiveMeasurement: activeMeasurementProcessRunner != nil
+        )
     }
 }
 

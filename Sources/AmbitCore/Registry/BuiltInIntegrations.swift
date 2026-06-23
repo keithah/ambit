@@ -68,3 +68,31 @@ public struct Iperf3Integration: Integration {
         [Iperf3Provider(processRunner: processRunner)]
     }
 }
+
+/// Dependency-free metadata for the built-in integration instances (canonical order), used
+/// both by the Engine's default seed and by the app to seed/list the registry without
+/// constructing clients.
+public enum BuiltInIntegrationSeed {
+    public static func records(ecoflowEnabled: Bool, includeActiveMeasurement: Bool) -> [IntegrationInstanceRecord] {
+        func record(_ integration: IntegrationID, _ instance: IntegrationInstanceID, _ name: String, enabled: Bool = true) -> IntegrationInstanceRecord {
+            IntegrationInstanceRecord(id: instance, integrationID: integration, displayName: name, enabled: enabled, origin: .builtIn)
+        }
+        var seed: [IntegrationInstanceRecord] = [
+            record(IntegrationIDs.glinet, IntegrationInstanceIDs.glinet, "GL.iNet"),
+            record(IntegrationIDs.reachability, IntegrationInstanceIDs.reachability, "Internet"),
+            record(IntegrationIDs.speedify, IntegrationInstanceIDs.speedify, "Speedify"),
+            record(IntegrationIDs.starlink, IntegrationInstanceIDs.starlink, "Starlink"),
+            record(IntegrationIDs.ecoflow, IntegrationInstanceIDs.ecoflow, "EcoFlow", enabled: ecoflowEnabled)
+        ]
+        if includeActiveMeasurement {
+            seed.append(record(IntegrationIDs.ping, IntegrationInstanceIDs.ping, "Ping"))
+            seed.append(record(IntegrationIDs.iperf3, IntegrationInstanceIDs.iperf3, "iperf3"))
+        }
+        return seed
+    }
+
+    public static let integrationIDs: Set<IntegrationID> = [
+        IntegrationIDs.glinet, IntegrationIDs.reachability, IntegrationIDs.speedify,
+        IntegrationIDs.starlink, IntegrationIDs.ecoflow, IntegrationIDs.ping, IntegrationIDs.iperf3
+    ]
+}
