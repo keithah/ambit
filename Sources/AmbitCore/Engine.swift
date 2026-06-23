@@ -193,10 +193,18 @@ public actor Engine {
             guard let self else { return }
             while !Task.isCancelled {
                 await self.refresh()
-                let interval = await max(self.settings.pollInterval, 2)
+                let interval = await self.loopInterval()
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
             }
         }
+    }
+
+    /// Loop cadence = the fastest registered provider's interval (≥1s floor), so a 2s
+    /// pingscope host is polled every 2s even when settings.pollInterval is larger. The
+    /// per-provider throttle still gates slower providers to their own intervals.
+    private func loopInterval() -> TimeInterval {
+        let fastest = providers.map(\.pollInterval).min() ?? settings.pollInterval
+        return max(1, fastest)
     }
 
     public func stop() {

@@ -102,8 +102,13 @@ final class StatusViewModel: ObservableObject {
     private func seedGatewayHostIfNeeded() async {
         guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
         let host = PingScopeHostConfig(displayName: "Gateway", address: gateway, method: .icmp)
-        let existing = (try? integrationRegistry.instances())?.contains { $0.id == host.integrationInstanceID } ?? false
-        guard !existing else { return }
+        // Dedup by target address (not exact id) so a gateway already monitored under any
+        // method/port isn't added again.
+        let alreadyMonitored = ((try? integrationRegistry.instances()) ?? [])
+            .filter { $0.integrationID == IntegrationIDs.pingscope }
+            .compactMap { PingScopeHostConfig(configObject: $0.config)?.address }
+            .contains(gateway)
+        guard !alreadyMonitored else { return }
         try? integrationRegistry.upsert(.pingscope(host))
         await engine.reloadProviders()
         await refreshAlertRules()

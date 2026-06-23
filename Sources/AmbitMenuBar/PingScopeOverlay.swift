@@ -32,7 +32,7 @@ struct OverlayView: View {
             }
         }
         .padding(8)
-        .frame(width: 284, height: model.showLegend ? 108 : 84)
+        .frame(minWidth: 180, maxWidth: .infinity, minHeight: 64, maxHeight: .infinity)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
         .contextMenu {
@@ -80,7 +80,7 @@ final class OverlayController {
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 284, height: 108),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -89,11 +89,13 @@ final class OverlayController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
+        panel.minSize = NSSize(width: 180, height: 64)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let content = OverlayView(model: model, openPopover: onOpenPopover, close: { [weak self] in self?.hide() })
             .environmentObject(viewModel)
         let hosting = NSHostingView(rootView: content)
-        hosting.frame = NSRect(x: 0, y: 0, width: 284, height: 108)
+        hosting.frame = panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 284, height: 108)
+        hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
         return panel
     }

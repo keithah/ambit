@@ -249,9 +249,9 @@ struct PingScopePopover: View {
     /// Open the Settings scene (macOS 13/14 compatible — SettingsLink is 14+).
     static func openSettings() {
         NSApp.activate(ignoringOtherApps: true)
-        if NSApp.responds(to: Selector(("showSettingsWindow:"))) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
+        // The Settings scene action lives in the responder chain, not on NSApp, so probe by
+        // sendAction's return value (responds(to:) on NSApp is always false here).
+        if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
             NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
     }
