@@ -49,6 +49,7 @@ final class StatusViewModel: ObservableObject {
         let integrationRegistry = UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
+        let historyStore: any HistoryStore = (try? SQLiteHistoryStore.defaultURL()).map { SQLiteHistoryStore(url: $0) } ?? InMemoryHistoryStore()
         self.engine = Engine(
             settingsStore: settingsStore,
             credentialStore: credentialStore,
@@ -58,6 +59,7 @@ final class StatusViewModel: ObservableObject {
             routerPassword: routerPassword,
             integrationRegistry: integrationRegistry,
             installedProviderStore: installedProviderStore,
+            history: HistoryService(store: historyStore),
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
     }

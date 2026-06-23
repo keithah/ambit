@@ -24,6 +24,8 @@ public actor Engine {
     private var providers: [any Provider]
     private let resetRouterClients: @Sendable () async -> Void
     private let usageMeter: ModuleUsageMeter
+    private let history: HistoryService
+    private var descriptorsByInstance: [ProviderInstanceID: [EntityDescriptor]] = [:]
 
     private var snapshot = StatusSnapshot()
     private var providerStates: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:]
@@ -53,6 +55,7 @@ public actor Engine {
         manifestHTTPClient: any ManifestHTTPClient = URLSessionManifestHTTPClient(),
         resetRouterClients: (@Sendable () async -> Void)? = nil,
         usageMeter: ModuleUsageMeter = ModuleUsageMeter(),
+        history: HistoryService = HistoryService(),
         starlinkStatusProvider: @escaping StarlinkStatusProvider = { path in
             await StarlinkClient(path: path).status()
         },
@@ -74,6 +77,7 @@ public actor Engine {
         self.settings = loadedSettings
         let loadedRouterPassword = routerPassword ?? ((try? credentialStore.password(account: loadedSettings.username)) ?? RouterDefaults.routerPassword)
         self.routerPassword = loadedRouterPassword
+        self.history = history
         self.usageMeter = usageMeter
         let actualRouterClientFactory: RouterClientFactory
         let actualResetRouterClients: @Sendable () async -> Void
@@ -128,6 +132,39 @@ public actor Engine {
         self.installedAlertRules = installed.alertRules
         let builtInProviders = Self.assembleBuiltInProviders(integrations: self.builtInIntegrations, registry: self.registry)
         self.providers = Self.mergedProviders(builtIns: builtInProviders + installed.providers, explicit: providers)
+        self.descriptorsByInstance = Self.descriptors(of: self.providers)
+    }
+
+    /// Static entity descriptors per provider instance, cached at assembly time and used to
+    /// feed history (stateClass-gated) without recomputing on every poll.
+    private static func descriptors(of providers: [any Provider]) -> [ProviderInstanceID: [EntityDescriptor]] {
+        Dictionary(uniqueKeysWithValues: providers.map { ($0.instanceID, $0.entityDescriptors()) })
+    }
+
+    /// Record one history sample per stateClass-bearing entity from a fresh poll — the single
+    /// automatic feed every integration gets (pingscope latency, gl.inet throughput, …).
+    private func recordHistory(instanceID: ProviderInstanceID, snapshot: ProviderSnapshot, at timestamp: Date) async {
+        guard let descriptors = descriptorsByInstance[instanceID] else { return }
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: descriptors)
+        for descriptor in descriptors where descriptor.stateClass != nil {
+            guard let state = states[descriptor.id] else { continue }
+            let value: Double? = {
+                if case .number(let n) = state.value { return n }
+                return nil
+            }()
+            await history.record(
+                Sample(timestamp: timestamp, value: value, ok: state.availability == .online, metadata: state.error),
+                for: descriptor.id
+            )
+        }
+    }
+
+    public func historySamples(_ id: EntityID, since: Date, limit: Int = 10_000) async -> [Sample] {
+        await history.samples(id, since: since, limit: limit)
+    }
+
+    public func historyStats(_ id: EntityID, since: Date) async -> SampleStats {
+        await history.stats(id, since: since)
     }
 
     /// Build the active built-in/registry-driven providers: every enabled instance whose
@@ -485,6 +522,7 @@ public actor Engine {
             builtIns: builtIns + installed,
             explicit: explicitProviders
         )
+        descriptorsByInstance = Self.descriptors(of: providers)
         let activeInstanceIDs = Set(providers.map(\.instanceID))
         let inactiveInstanceIDs = Set(providerStates.keys)
             .union(snapshot.providers.keys)
@@ -555,6 +593,7 @@ public actor Engine {
             states[provider.instanceID] = SourceState(value: providerSnapshot, errorMessage: providerSnapshot.error)
             lastRegisteredProviderPolls[provider.instanceID] = Date()
             await recordUsage(providerID: provider.id, operation: .poll, started: started, error: providerSnapshot.error)
+            await recordHistory(instanceID: provider.instanceID, snapshot: providerSnapshot, at: now)
         }
         return states
     }
