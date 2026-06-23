@@ -1,4 +1,5 @@
 import AmbitCore
+import AmbitUI
 import SwiftUI
 
 struct PingHostRow: Identifiable, Equatable {
@@ -295,7 +296,7 @@ private struct HostsPane: View {
                             .background(Color.green.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
                     }
                 }
-                Text(row.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+                StatusRowCard(title: "Target", readout: EntityReadout(text: row.detail, tone: row.enabled ? .good : .neutral))
             }
             Spacer()
             Toggle("", isOn: Binding(get: { row.enabled }, set: { viewModel.setPingHostEnabled(row.instanceID, enabled: $0) }))
