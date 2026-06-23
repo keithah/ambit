@@ -8,11 +8,13 @@ let package = Package(
     ],
     products: [
         .library(name: "AmbitCore", targets: ["AmbitCore"]),
+        .library(name: "AmbitUI", targets: ["AmbitUI"]),
         .executable(name: "Ambit", targets: ["AmbitMenuBar"]),
         .executable(name: "ambit-check", targets: ["AmbitCheck"])
     ],
     targets: [
         .target(name: "AmbitCore"),
+        .target(name: "AmbitUI", dependencies: ["AmbitCore"]),
         .executableTarget(
             name: "AmbitMenuBar",
             dependencies: ["AmbitCore"],
@@ -21,6 +23,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "AmbitCheck", dependencies: ["AmbitCore"]),
-        .testTarget(name: "AmbitCoreTests", dependencies: ["AmbitCore"])
+        .testTarget(name: "AmbitCoreTests", dependencies: ["AmbitCore"]),
+        .testTarget(name: "AmbitUITests", dependencies: ["AmbitUI", "AmbitCore"])
     ]
 )
