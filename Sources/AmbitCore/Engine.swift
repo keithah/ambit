@@ -256,7 +256,12 @@ public actor Engine {
     }
 
     public func alertRules() -> [AlertRule] {
-        AlertRule.defaultRules + installedAlertRules
+        var rules = AlertRule.defaultRules + installedAlertRules
+        let active = (try? registry.activeInstances()) ?? []
+        for record in active {
+            rules += builtInIntegrations[record.integrationID]?.alertRules(instance: record) ?? []
+        }
+        return rules
     }
 
     public func installedProviders() -> [InstalledProviderRecord] {

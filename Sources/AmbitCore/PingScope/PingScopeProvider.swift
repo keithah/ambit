@@ -119,4 +119,26 @@ public struct PingScopeIntegration: Integration {
         guard let host = PingScopeHostConfig(configObject: instance.config) else { return [] }
         return [PingScopeProvider(host: host, integrationInstanceID: instance.id, probe: probeFactory(host))]
     }
+
+    public func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] {
+        guard let host = PingScopeHostConfig(configObject: instance.config), host.policy.enabled else { return [] }
+        let providerID = "\(instance.id.rawValue)/probe"   // matches PingScopeProvider.instanceID
+        // High latency sustained for N consecutive samples (≈ N × interval).
+        return [
+            .sustained(SustainedAlertRule(
+                id: "\(instance.id.rawValue).highLatency",
+                providerID: providerID,
+                metricID: "latency_ms",
+                comparison: .greaterThanOrEqual,
+                threshold: host.policy.highLatencyMs,
+                duration: Double(host.policy.highLatencyConsecutive) * host.interval,
+                title: "\(host.displayName) latency high",
+                message: "Latency to \(host.displayName) is elevated.",
+                severity: .warning,
+                cooldown: host.policy.cooldown,
+                notifyOnRecovery: host.policy.notifyOnRecovery,
+                recoveryMessage: "Latency to \(host.displayName) recovered."
+            ))
+        ]
+    }
 }

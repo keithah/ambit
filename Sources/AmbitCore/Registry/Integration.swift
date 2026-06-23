@@ -15,8 +15,13 @@ public protocol Integration: Sendable {
     /// Build the provider instances for one enabled, configured install. Single-instance
     /// integrations ignore `instance.config`; multi-instance ones decode it.
     func makeProviders(instance: IntegrationInstanceRecord) -> [any Provider]
+
+    /// Alert rules this integration contributes for one configured instance (e.g. pingscope's
+    /// per-host high-latency rule from its AlertPolicy). Default: none.
+    func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule]
 }
 
 public extension Integration {
     var isMultiInstance: Bool { false }
+    func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] { [] }
 }

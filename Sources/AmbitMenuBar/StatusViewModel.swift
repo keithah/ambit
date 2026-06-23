@@ -95,6 +95,7 @@ final class StatusViewModel: ObservableObject {
         guard !existing else { return }
         try? integrationRegistry.upsert(.pingscope(host))
         await engine.reloadProviders()
+        await refreshAlertRules()
         await engine.refresh()
     }
 

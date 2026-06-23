@@ -53,6 +53,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
     public var interval: TimeInterval      // seconds; min 0.25
     public var timeout: TimeInterval       // seconds; min 0.25
     public var thresholds: HealthThresholds
+    public var policy: AlertPolicy
 
     public init(
         displayName: String,
@@ -61,7 +62,8 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         port: UInt16? = nil,
         interval: TimeInterval = 2,
         timeout: TimeInterval = 2,
-        thresholds: HealthThresholds = HealthThresholds()
+        thresholds: HealthThresholds = HealthThresholds(),
+        policy: AlertPolicy = .preset(.balanced)
     ) {
         self.displayName = displayName
         self.address = address
@@ -70,6 +72,24 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         self.interval = interval
         self.timeout = timeout
         self.thresholds = thresholds
+        self.policy = policy
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case displayName, address, method, port, interval, timeout, thresholds, policy
+    }
+
+    // Lenient decode: tolerate configs persisted before optional fields existed.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        address = try c.decode(String.self, forKey: .address)
+        method = try c.decodeIfPresent(ProbeMethod.self, forKey: .method) ?? .tcp
+        port = try c.decodeIfPresent(UInt16.self, forKey: .port)
+        interval = try c.decodeIfPresent(TimeInterval.self, forKey: .interval) ?? 2
+        timeout = try c.decodeIfPresent(TimeInterval.self, forKey: .timeout) ?? 2
+        thresholds = try c.decodeIfPresent(HealthThresholds.self, forKey: .thresholds) ?? HealthThresholds()
+        policy = try c.decodeIfPresent(AlertPolicy.self, forKey: .policy) ?? .preset(.balanced)
     }
 
     public enum ValidationError: String, Sendable, Equatable {
