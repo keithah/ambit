@@ -20,11 +20,11 @@ struct OverlayView: View {
         VStack(spacing: 5) {
             LatencyGraph(series: series, axisMax: axisMax)
             if model.showLegend {
-                HStack(spacing: 10) {
+                HStack(spacing: 9) {
                     ForEach(hosts) { host in
-                        HStack(spacing: 4) {
-                            Circle().fill(host.color).frame(width: 7, height: 7)
-                            Text(host.name).font(.system(size: 10))
+                        HStack(spacing: 3) {
+                            Circle().fill(host.color).frame(width: 6, height: 6)
+                            Text(host.name).font(.system(size: 8.5)).lineLimit(1).fixedSize()
                         }
                     }
                 }
@@ -78,9 +78,11 @@ final class OverlayController {
     func hide() { panel?.orderOut(nil) }
 
     private func makePanel() -> NSPanel {
+        // Titled + resizable (with the title bar hidden/transparent) so macOS shows the
+        // edge resize cursors; borderless windows don't get them.
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 284, height: 108),
-            styleMask: [.borderless, .resizable, .nonactivatingPanel],
+            styleMask: [.titled, .resizable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -89,6 +91,11 @@ final class OverlayController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.minSize = NSSize(width: 180, height: 64)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let content = OverlayView(model: model, openPopover: onOpenPopover, close: { [weak self] in self?.hide() })

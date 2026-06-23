@@ -76,6 +76,10 @@ enum PingScopeGlyphRenderer {
 struct PingScopePopover: View {
     @EnvironmentObject private var viewModel: StatusViewModel
 
+    private var gearIcon: some View {
+        Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(.secondary)
+    }
+
     private var hosts: [PingHostDisplay] { viewModel.pingHosts }
     private var isAllHosts: Bool { viewModel.pingScopeSelection == nil }
     private var focus: PingHostDisplay? {
@@ -140,10 +144,12 @@ struct PingScopePopover: View {
             .buttonStyle(.plain)
             .padding(.leading, 6)
             .help("Toggle floating overlay")
-            Button {
-                Self.openSettings()
-            } label: {
-                Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(.secondary)
+            Group {
+                if #available(macOS 14.0, *) {
+                    SettingsLink { gearIcon }
+                } else {
+                    Button { Self.openSettings() } label: { gearIcon }
+                }
             }
             .buttonStyle(.plain)
             .padding(.leading, 4)
