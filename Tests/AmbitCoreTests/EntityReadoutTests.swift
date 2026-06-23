@@ -16,12 +16,12 @@ final class EntityReadoutTests: XCTestCase {
     func testPercentProducesFraction() {
         let r = EntityReadout.make(descriptor: descriptor(.percent), state: EntityState(id: "i/p.e", value: .number(64), availability: .online))
         XCTAssertEqual(r.text, "64%")
-        XCTAssertEqual(r.fraction ?? 0, 0.64, accuracy: 0.0001)
+        XCTAssertEqual(r.fraction!, 0.64, accuracy: 0.0001)
     }
 
     func testBatteryUsesRangeWhenPresent() {
         let r = EntityReadout.make(descriptor: descriptor(.battery, range: ValueRange(min: 0, max: 100)), state: EntityState(id: "i/p.e", value: .number(20), availability: .online))
-        XCTAssertEqual(r.fraction ?? 0, 0.20, accuracy: 0.0001)
+        XCTAssertEqual(r.fraction!, 0.20, accuracy: 0.0001)
     }
 
     func testBoolBinarySensorTextAndTone() {

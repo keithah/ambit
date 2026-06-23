@@ -18,7 +18,7 @@ public struct EntityReadout: Equatable, Sendable {
     public static func make(descriptor: EntityDescriptor, state: EntityState?) -> EntityReadout {
         guard let state else { return EntityReadout(text: "—", tone: .neutral) }
 
-        let tone = toneFor(availability: state.availability, value: state.value)
+        let tone = toneFor(availability: state.availability)
         guard let value = state.value else {
             return EntityReadout(text: "—", tone: tone)
         }
@@ -35,7 +35,7 @@ public struct EntityReadout: Equatable, Sendable {
         }
     }
 
-    private static func toneFor(availability: Availability, value: EntityValue?) -> DisplayTone {
+    private static func toneFor(availability: Availability) -> DisplayTone {
         switch availability {
         case .unavailable: return .bad
         case .stale: return .warn
