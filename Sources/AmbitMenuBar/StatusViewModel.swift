@@ -1,4 +1,5 @@
 import AmbitCore
+import AmbitUI
 import Foundation
 import SwiftUI
 import UserNotifications
@@ -30,6 +31,8 @@ final class StatusViewModel: ObservableObject {
     @Published var pingHostRows: [PingHostRow] = []
     @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
     @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
+    @Published var surfaceData = SurfaceData()
+    @Published var surfacePlan = SurfacePlan()
 
     private let pingDiagnoser = NetworkPerspectiveDiagnoser()
     private let pingTierClassifier = NetworkTierClassifier()
@@ -423,6 +426,38 @@ final class StatusViewModel: ObservableObject {
         pingDiagnosis = diagnosis
         let events = pingAlertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
         await alertNotifier.deliver(events)
+
+        // Generic surface: latency entities of the shown hosts (single host when one is selected,
+        // all enabled hosts otherwise) + the diagnosis banner. The composer collapses same-class
+        // latency series into one multi-line graph; a single host stays single-series (keeps stats).
+        let shown = pingScopeSelection.map { id in activeRecords.filter { $0.id == id } } ?? activeRecords
+        let allDescriptors = await engine.entityDescriptors()
+        let allStates = await engine.entityStates()
+        var descriptors: [EntityID: EntityDescriptor] = [:]
+        var states: [EntityID: EntityState] = [:]
+        var series: [EntityID: [Sample]] = [:]
+        var latencyDescriptors: [EntityDescriptor] = []
+        for record in shown {
+            let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+            let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
+            guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
+            latency.name = record.displayName    // legend/label reads the host, not "Latency"
+            latencyDescriptors.append(latency)
+            descriptors[latencyID] = latency
+            states[latencyID] = allStates[latencyID]
+            series[latencyID] = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingScopeRange.seconds))
+        }
+
+        var planCards: [CardSpec] = []
+        if let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
+            descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
+            states[diagnosisDescriptor.id] = diagnosisState
+            planCards.append(CardSpec(id: "card.\(diagnosisDescriptor.id.rawValue)", kind: .statusBanner,
+                                      title: diagnosisDescriptor.name, entities: [diagnosisDescriptor.id], role: .banner))
+        }
+        planCards.append(contentsOf: SurfaceComposer.detailPlan(descriptors: latencyDescriptors, states: states).cards)
+        surfaceData = SurfaceData(descriptors: descriptors, states: states, series: series)
+        surfacePlan = SurfacePlan(cards: planCards)
     }
 
     // MARK: PingScope host management (Settings)
