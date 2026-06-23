@@ -133,6 +133,14 @@ struct PingScopePopover: View {
                 }
             }
             Button {
+                viewModel.toggleOverlay?()
+            } label: {
+                Image(systemName: "rectangle.on.rectangle").font(.system(size: 14)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 6)
+            .help("Toggle floating overlay")
+            Button {
                 Self.openSettings()
             } label: {
                 Image(systemName: "gearshape").font(.system(size: 15)).foregroundStyle(.secondary)

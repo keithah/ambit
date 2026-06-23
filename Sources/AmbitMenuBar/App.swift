@@ -19,11 +19,20 @@ struct AmbitApp: App {
 private final class MenuBarAppModel: ObservableObject {
     let viewModel: StatusViewModel
     private let statusBarController: StatusBarController
+    private let overlayController: OverlayController
 
     init() {
         let viewModel = StatusViewModel()
         self.viewModel = viewModel
-        self.statusBarController = StatusBarController(viewModel: viewModel)
+        let statusBarController = StatusBarController(viewModel: viewModel)
+        self.statusBarController = statusBarController
+        let overlayController = OverlayController(
+            viewModel: viewModel,
+            onOpenPopover: { [weak statusBarController] in statusBarController?.showPopover() }
+        )
+        self.overlayController = overlayController
+        viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
+        viewModel.showPopover = { [weak statusBarController] in statusBarController?.showPopover() }
         viewModel.start()
         NSApp.setActivationPolicy(.accessory)
     }
@@ -263,6 +272,12 @@ private final class StatusBarController: NSObject {
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    func showPopover() {
+        guard let button = statusItem.button, !popover.isShown else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
     }
 
     private func updateGlyph(_ glyph: MenuBarGlyph) {

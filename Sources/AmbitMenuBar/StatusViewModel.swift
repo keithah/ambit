@@ -28,6 +28,10 @@ final class StatusViewModel: ObservableObject {
     @Published var pingHostRows: [PingHostRow] = []
     @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
 
+    // Set by the app model to bridge SwiftUI actions to AppKit windows.
+    var toggleOverlay: (() -> Void)?
+    var showPopover: (() -> Void)?
+
     private let engine: Engine
     private let installedProviderStore: any InstalledProviderStore
     private let credentialStore: any CredentialStore
