@@ -53,12 +53,16 @@ public struct CardView: View {
         case .progress:
             if let id = primaryID { ProgressCard(title: data.title(id), readout: data.readout(id)) }
         case .historyGraph:
-            if let id = primaryID {
-                let descriptor = data.descriptors[id]
-                HistoryGraphCard(title: data.title(id),
-                                 lines: [GraphLine(id: data.title(id), color: DisplayTone.good.color, samples: data.samples(id))],
+            if !spec.entities.isEmpty {
+                let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
+                let lines = spec.entities.enumerated().map { index, id in
+                    GraphLine(id: data.title(id), color: Theme.lineColor(index), samples: data.samples(id))
+                }
+                HistoryGraphCard(title: spec.title ?? "",
+                                 lines: lines,
                                  deviceClass: descriptor?.deviceClass,
-                                 unit: descriptor?.unit)
+                                 unit: descriptor?.unit,
+                                 showLegend: spec.entities.count > 1)
             }
         case .dualLineGraph:
             DualLineGraphCard(title: spec.title ?? "",

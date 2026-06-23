@@ -39,7 +39,7 @@ public enum SurfaceComposer {
         for section in Section.allCases {
             guard let group = bySection[section], !group.isEmpty else { continue }
             let ordered = group.sorted(by: ordering)
-            let children = ordered.map { card(for: $0, config: config) }
+            let children = buildCards(for: ordered, config: config)
             let role: CardRole = ordered.contains(where: \.isPrimary) ? .primary : .secondary
             cards.append(CardSpec(id: "section.\(section.title)", kind: .section,
                                   title: section.title, children: children, role: role))
@@ -68,6 +68,28 @@ public enum SurfaceComposer {
         if pa != pb { return pa > pb }
         // Preserve input order when priority is equal (stable sort via false = no swap).
         return false
+    }
+
+    /// Build a section's cards, collapsing same-deviceClass/unit measurement history graphs into
+    /// one multi-line card (generic: drives the multi-host pingscope graph and P6 cores/disks).
+    private static func buildCards(for ordered: [EntityDescriptor], config: PresentationConfig) -> [CardSpec] {
+        var result: [CardSpec] = []
+        var combinedIndexByKey: [String: Int] = [:]
+        for d in ordered {
+            guard cardKind(for: d, config: config) == .historyGraph, d.stateClass == .measurement else {
+                result.append(card(for: d, config: config))
+                continue
+            }
+            let key = "\(d.deviceClass?.rawValue ?? "none")|\(d.unit ?? "")"
+            if let index = combinedIndexByKey[key] {
+                result[index].entities.append(d.id)
+                result[index].title = nil   // multi-line: the legend names the series, not a title
+            } else {
+                combinedIndexByKey[key] = result.count
+                result.append(card(for: d, config: config))
+            }
+        }
+        return result
     }
 
     private static func card(for d: EntityDescriptor, config: PresentationConfig) -> CardSpec {

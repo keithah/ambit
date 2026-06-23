@@ -34,7 +34,9 @@ public struct HistoryGraphCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(title).font(.system(size: 13, weight: .semibold))
+                if !title.isEmpty {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                }
                 Spacer()
                 Text(EntityReadout.format(axisMax, deviceClass: deviceClass, unit: unit)).font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
