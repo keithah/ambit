@@ -22,7 +22,9 @@ final class StatusViewModel: ObservableObject {
     @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
     // PingScope UI state
-    @Published var pingScopeRange: TimeRange = .fiveMinutes
+    @Published var pingScopeRange: TimeRange = .fiveMinutes {
+        didSet { UserDefaults.standard.set(pingScopeRange.rawValue, forKey: "pingScopeRange") }
+    }
     @Published var pingScopeSelection: IntegrationInstanceID?   // nil = All Hosts
     @Published var pingHosts: [PingHostDisplay] = []
     @Published var pingHostRows: [PingHostRow] = []
@@ -78,6 +80,9 @@ final class StatusViewModel: ObservableObject {
            let sensitivity = DiagnosisSensitivity(rawValue: raw) {
             diagnosisSensitivity = sensitivity
             pingAlertMonitor.sensitivity = sensitivity
+        }
+        if let raw = UserDefaults.standard.string(forKey: "pingScopeRange"), let range = TimeRange(rawValue: raw) {
+            pingScopeRange = range
         }
         let historyStore: any HistoryStore = (try? SQLiteHistoryStore.defaultURL()).map { SQLiteHistoryStore(url: $0) } ?? InMemoryHistoryStore()
         self.engine = Engine(
@@ -442,6 +447,22 @@ final class StatusViewModel: ObservableObject {
     func setPingHostEnabled(_ id: IntegrationInstanceID, enabled: Bool) {
         try? integrationRegistry.setInstanceEnabled(enabled, instanceID: id)
         reloadPingScopeProviders()
+    }
+
+    func clearHistory() {
+        Task { await engine.clearHistory(); await refreshPingScope() }
+    }
+
+    func resetPingScopeHostsToDefaults() {
+        let others = ((try? integrationRegistry.instances()) ?? []).filter { $0.integrationID != IntegrationIDs.pingscope }
+        let defaults = [
+            PingScopeHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
+            PingScopeHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
+        ].map { IntegrationInstanceRecord.pingscope($0) }
+        try? integrationRegistry.save(others + defaults)
+        try? integrationRegistry.setPrimaryInstanceID(nil)
+        reloadPingScopeProviders()
+        Task { await seedGatewayHostIfNeeded() }
     }
 
     private func reloadPingScopeProviders() {

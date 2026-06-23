@@ -167,6 +167,10 @@ public actor Engine {
         await history.stats(id, since: since)
     }
 
+    public func clearHistory() async {
+        await history.clear()
+    }
+
     /// Build the active built-in/registry-driven providers: every enabled instance whose
     /// integration type is enabled, expanded through its integration. Disabled instances
     /// produce nothing, so are never polled.

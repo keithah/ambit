@@ -40,7 +40,11 @@ struct PingScopeSettings: View {
                 switch tab {
                 case .hosts: HostsPane()
                 case .notifications: NotificationsPane()
-                default: placeholder
+                case .display: DisplayPane()
+                case .history: HistoryPane()
+                case .diagnostics: DiagnosticsPane()
+                case .advanced: AdvancedPane()
+                case .about: AboutPane()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -76,13 +80,130 @@ struct PingScopeSettings: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private var placeholder: some View {
+}
+
+@ViewBuilder
+private func paneHeader(_ title: String, _ icon: String, _ subtitle: String) -> some View {
+    HStack(spacing: 12) {
+        Image(systemName: icon).font(.system(size: 22)).foregroundStyle(.secondary)
+        VStack(alignment: .leading) {
+            Text(title).font(.system(size: 20, weight: .bold))
+            if !subtitle.isEmpty { Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary) }
+        }
+    }
+}
+
+private struct DisplayPane: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                paneHeader("Display", "display", "Default graph range and readouts.")
+                Form {
+                    Picker("Default range", selection: Binding(
+                        get: { viewModel.pingScopeRange },
+                        set: { viewModel.setPingScopeRange($0) }
+                    )) {
+                        ForEach(TimeRange.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                }
+                .formStyle(.grouped)
+                Text("The popover and overlay open at this range. Drag the overlay edges to resize it.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+    }
+}
+
+private struct HistoryPane: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                paneHeader("History", "clock.arrow.circlepath", "Latency samples retained on disk.")
+                Form {
+                    LabeledContent("Retention", value: "7 days")
+                    Button("Clear History", role: .destructive) { viewModel.clearHistory() }
+                }
+                .formStyle(.grouped)
+                Text("Samples persist in a local SQLite store and are pruned past the retention window.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+    }
+}
+
+private struct DiagnosticsPane: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                paneHeader("Diagnostics", "stethoscope", "Live network-perspective diagnosis.")
+                if let d = viewModel.pingDiagnosis {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(d.title).font(.system(size: 15, weight: .semibold))
+                        Text(d.detail).font(.callout).foregroundStyle(.secondary)
+                        Text("Confidence: \(d.confidence.rawValue)\(d.faultTier.map { " · fault: \($0.displayName)" } ?? "")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                    if !d.tierEvidence.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("By tier").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(d.tierEvidence, id: \.tier) { e in
+                                HStack {
+                                    Text(e.tier.displayName)
+                                    Spacer()
+                                    Text(e.summary).foregroundStyle(.secondary)
+                                }
+                                .font(.callout)
+                            }
+                        }
+                    }
+                } else {
+                    Text("No diagnosis yet.").foregroundStyle(.secondary)
+                }
+            }
+            .padding(20)
+        }
+    }
+}
+
+private struct AdvancedPane: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                paneHeader("Advanced", "slider.horizontal.3", "Reset and maintenance.")
+                Form {
+                    Button("Reset Hosts to Defaults", role: .destructive) { viewModel.resetPingScopeHostsToDefaults() }
+                }
+                .formStyle(.grouped)
+                Text("Replaces all hosts with Cloudflare, Google, and the detected gateway.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+    }
+}
+
+private struct AboutPane: View {
+    private var version: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+    }
+    var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: tab.icon).font(.system(size: 28)).foregroundStyle(.secondary)
-            Text(tab.rawValue).font(.title3.weight(.semibold))
-            Text("Coming soon.").foregroundStyle(.secondary)
+            Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 40)).foregroundStyle(.tint)
+            Text("PingScope").font(.system(size: 22, weight: .bold))
+            Text("Version \(version)").foregroundStyle(.secondary)
+            Text("Multi-host latency monitoring, built on Ambit.").font(.callout).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(20)
     }
 }
 

@@ -34,6 +34,13 @@ public actor HistoryService {
         lastPrune = now
     }
 
+    /// Remove all recorded samples.
+    public func clear() async {
+        await store.prune(olderThan: .distantFuture)
+    }
+
+    public var retentionInterval: TimeInterval { retention }
+
     private func pruneIfNeeded(now: Date) async {
         if let lastPrune, now.timeIntervalSince(lastPrune) < pruneInterval { return }
         await prune(now: now)
