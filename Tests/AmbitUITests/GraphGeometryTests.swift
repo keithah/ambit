@@ -27,6 +27,13 @@ final class GraphGeometryTests: XCTestCase {
         XCTAssertEqual(pts[1].y, 50, accuracy: 0.001)
     }
 
+    func testNiceMaxScalesToThroughputMagnitude() {
+        // 12 Mbps worth of bits/sec must not fall through to a latency-shaped ceiling.
+        XCTAssertEqual(GraphGeometry.niceMax([12_000_000]), 15_000_000)
+        XCTAssertEqual(GraphGeometry.niceMax([3]), 3)
+        XCTAssertEqual(GraphGeometry.niceMax([45]), 50)
+    }
+
     func testMissingValueTreatedAsZero() {
         let now = Date(timeIntervalSince1970: 0)
         let pts = GraphGeometry.points(samples: [Sample(timestamp: now, value: nil, ok: false), Sample(timestamp: now, value: 100)],

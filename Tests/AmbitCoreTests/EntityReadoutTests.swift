@@ -46,4 +46,9 @@ final class EntityReadoutTests: XCTestCase {
         XCTAssertEqual(r.text, "—")
         XCTAssertEqual(r.tone, .neutral)
     }
+
+    func testPublicFormatterIsUnitGeneric() {
+        XCTAssertEqual(EntityReadout.format(150, deviceClass: .latency, unit: "ms"), "150ms")
+        XCTAssertEqual(EntityReadout.format(15_000_000, deviceClass: .throughput, unit: "bps"), "15.0 Mbps")
+    }
 }

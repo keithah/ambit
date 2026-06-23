@@ -43,8 +43,8 @@ public struct EntityReadout: Equatable, Sendable {
         }
     }
 
-    private static func format(_ n: Double, descriptor: EntityDescriptor) -> String {
-        switch descriptor.deviceClass {
+    public static func format(_ n: Double, deviceClass: DeviceClass?, unit: String?) -> String {
+        switch deviceClass {
         case .latency: return "\(Int(n.rounded()))ms"
         case .percent, .battery: return "\(Int(n.rounded()))%"
         case .throughput: return formatThroughput(bitsPerSecond: n)
@@ -52,9 +52,13 @@ public struct EntityReadout: Equatable, Sendable {
         case .duration: return "\(Int(n.rounded()))s"
         case .power: return "\(Int(n.rounded()))W"
         case .connectivity, .none:
-            if let unit = descriptor.unit { return "\(trim(n)) \(unit)" }
+            if let unit { return "\(trim(n)) \(unit)" }
             return trim(n)
         }
+    }
+
+    private static func format(_ n: Double, descriptor: EntityDescriptor) -> String {
+        format(n, deviceClass: descriptor.deviceClass, unit: descriptor.unit)
     }
 
     private static func fraction(_ n: Double, descriptor: EntityDescriptor) -> Double? {

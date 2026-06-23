@@ -54,8 +54,11 @@ public struct CardView: View {
             if let id = primaryID { ProgressCard(title: data.title(id), readout: data.readout(id)) }
         case .historyGraph:
             if let id = primaryID {
+                let descriptor = data.descriptors[id]
                 HistoryGraphCard(title: data.title(id),
-                                 lines: [GraphLine(id: data.title(id), color: DisplayTone.good.color, samples: data.samples(id))])
+                                 lines: [GraphLine(id: data.title(id), color: DisplayTone.good.color, samples: data.samples(id))],
+                                 deviceClass: descriptor?.deviceClass,
+                                 unit: descriptor?.unit)
             }
         case .dualLineGraph:
             DualLineGraphCard(title: spec.title ?? "",
