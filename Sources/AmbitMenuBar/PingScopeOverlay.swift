@@ -1,5 +1,6 @@
 import AppKit
 import AmbitCore
+import AmbitUI
 import SwiftUI
 
 final class OverlayModel: ObservableObject {
@@ -14,32 +15,23 @@ struct OverlayView: View {
     let close: () -> Void
 
     var body: some View {
-        let hosts = viewModel.pingHosts
-        let series = hosts.map { (color: $0.color, samples: $0.samples) }
-        let axisMax = PingScopePresenter.niceMax(hosts.flatMap { $0.samples.compactMap(\.value) })
+        let flattened: [CardSpec] = viewModel.surfacePlan.cards
+            .flatMap { (card: CardSpec) -> [CardSpec] in card.kind == .section ? card.children : [card] }
+        let graphCards = flattened
+            .filter { $0.kind == .historyGraph || $0.kind == .dualLineGraph }
         VStack(spacing: 5) {
-            LatencyGraph(series: series, axisMax: axisMax)
-            if model.showLegend {
-                HStack(spacing: 9) {
-                    ForEach(hosts) { host in
-                        HStack(spacing: 3) {
-                            Circle().fill(host.color).frame(width: 6, height: 6)
-                            Text(host.name).font(.system(size: 8.5)).lineLimit(1).fixedSize()
-                        }
-                    }
-                }
-                .foregroundStyle(Color(white: 0.85))
-            }
+            SurfaceView(plan: SurfacePlan(cards: graphCards), data: viewModel.surfaceData)
         }
         .padding(8)
         .frame(minWidth: 180, maxWidth: .infinity, minHeight: 64, maxHeight: .infinity)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
         .contextMenu {
-            Button(model.showLegend ? "Hide Legend" : "Show Legend") { model.showLegend.toggle() }
             Menu("Host") {
                 Button("All Hosts") { viewModel.selectPingScopeHost(nil) }
-                ForEach(hosts) { host in Button(host.name) { viewModel.selectPingScopeHost(host.instanceID) } }
+                ForEach(viewModel.pingHosts) { host in
+                    Button(host.name) { viewModel.selectPingScopeHost(host.instanceID) }
+                }
             }
             Button("Open Popover", action: openPopover)
             Button("Settings…") { viewModel.openSettings?() }

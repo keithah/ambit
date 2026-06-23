@@ -136,29 +136,3 @@ struct PingScopePopover: View {
         }
     }
 }
-
-struct LatencyGraph: View {
-    let series: [(color: Color, samples: [Sample])]
-    let axisMax: Double
-
-    var body: some View {
-        Canvas { context, size in
-            for fraction in [0.0, 0.5, 1.0] {
-                let y = size.height * (1 - fraction)
-                var line = Path(); line.move(to: CGPoint(x: 0, y: y)); line.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(line, with: .color(.white.opacity(0.07)), lineWidth: 1)
-            }
-            guard axisMax > 0 else { return }
-            for entry in series where entry.samples.count > 1 {
-                var path = Path()
-                for (index, sample) in entry.samples.enumerated() {
-                    let x = size.width * Double(index) / Double(entry.samples.count - 1)
-                    let value = sample.value ?? 0
-                    let y = size.height * (1 - min(value / axisMax, 1))
-                    if index == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-                }
-                context.stroke(path, with: .color(entry.color), lineWidth: 1.5)
-            }
-        }
-    }
-}
