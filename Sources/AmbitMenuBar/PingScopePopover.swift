@@ -96,6 +96,7 @@ struct PingScopePopover: View {
             header
             rangePicker
             graph
+            diagnosisBanner
             stats
             recentSamples
             Spacer(minLength: 0)
@@ -147,6 +148,31 @@ struct PingScopePopover: View {
             Button { viewModel.openSettings?() } label: { gearIcon }
                 .buttonStyle(.plain)
                 .padding(.leading, 4)
+        }
+    }
+
+    @ViewBuilder private var diagnosisBanner: some View {
+        if let d = viewModel.pingDiagnosis, d.scope != .allReachable, d.scope != .noData {
+            HStack(spacing: 9) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(bannerTone(d))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(d.title).font(.system(size: 12.5, weight: .semibold))
+                    Text(d.detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                if d.confidence == .tentative {
+                    Text("tentative").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(bannerTone(d).opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+        }
+    }
+
+    private func bannerTone(_ d: NetworkPerspectiveDiagnosis) -> Color {
+        switch d.verdict {
+        case .partialDegradation, .remoteServiceDown: return Color(red: 0.90, green: 0.70, blue: 0.29)
+        default: return Color(red: 1.0, green: 0.32, blue: 0.28)
         }
     }
 

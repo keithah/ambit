@@ -27,6 +27,11 @@ final class StatusViewModel: ObservableObject {
     @Published var pingHosts: [PingHostDisplay] = []
     @Published var pingHostRows: [PingHostRow] = []
     @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+    @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
+
+    private let pingDiagnoser = NetworkPerspectiveDiagnoser()
+    private let pingTierClassifier = NetworkTierClassifier()
+    private var pingAlertMonitor = PingScopeAlertMonitor()
 
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
@@ -346,8 +351,10 @@ final class StatusViewModel: ObservableObject {
             return PingHostRow(instanceID: record.id, config: config, enabled: record.enabled, isPrimary: record.id == fallbackPrimary)
         }
 
-        // Active hosts (windowed history) for the popover.
+        // Active hosts (windowed history) for the popover, plus diagnosis/alert inputs.
         var displays: [PingHostDisplay] = []
+        var diagnosisHosts: [DiagnosisHost] = []
+        var alertHosts: [AlertHost] = []
         for (index, record) in activeRecords.enumerated() {
             guard let host = PingScopeHostConfig(configObject: record.config) else { continue }
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
@@ -367,11 +374,20 @@ final class StatusViewModel: ObservableObject {
                 isPrimary: record.id == fallbackPrimary,
                 colorIndex: index
             ))
+            diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: pingTierClassifier.tier(for: host), status: health))
+            alertHosts.append(AlertHost(id: record.id.rawValue, name: record.displayName, status: health,
+                                        notifyOnRecovery: host.policy.notifyOnRecovery, cooldown: host.policy.cooldown))
         }
         pingHosts = displays
         let primary = displays.first(where: \.isPrimary) ?? displays.first
         menuGlyph = primary.map { MenuBarGlyph(latencyText: $0.readout.text, tone: $0.readout.tone) }
             ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+
+        // Tier diagnosis + network/host alerts (integration-internal).
+        let diagnosis = pingDiagnoser.diagnose(hosts: diagnosisHosts)
+        pingDiagnosis = diagnosis
+        let events = pingAlertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
+        await alertNotifier.deliver(events)
     }
 
     // MARK: PingScope host management (Settings)
