@@ -56,6 +56,43 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.ping,
         ProviderIDs.iperf3
     ]
+
+    /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3
+    /// exist only when a process runner is available (matching providers(settings:)).
+    public func integrations() -> [any Integration] {
+        var result: [any Integration] = [
+            GLiNetIntegration(routerClientFactory: routerClientFactory),
+            ReachabilityIntegration(probe: reachabilityProbe),
+            SpeedifyIntegration(client: routerSpeedifyClient),
+            StarlinkIntegration(statusProvider: starlinkStatusProvider),
+            EcoFlowIntegration(clientFactory: ecoFlowClientFactory)
+        ]
+        if let activeMeasurementProcessRunner {
+            result.append(PingIntegration(processRunner: activeMeasurementProcessRunner))
+            result.append(Iperf3Integration(processRunner: activeMeasurementProcessRunner))
+        }
+        return result
+    }
+
+    /// Default instance seed reproducing providers(settings:) exactly: all built-ins enabled
+    /// in canonical order, EcoFlow gated by settings, ping/iperf3 only when a runner exists.
+    public func defaultInstanceSeed(settings: AppSettings) -> [IntegrationInstanceRecord] {
+        func record(_ integration: IntegrationID, _ instance: IntegrationInstanceID, _ name: String, enabled: Bool = true) -> IntegrationInstanceRecord {
+            IntegrationInstanceRecord(id: instance, integrationID: integration, displayName: name, enabled: enabled, origin: .builtIn)
+        }
+        var seed: [IntegrationInstanceRecord] = [
+            record(IntegrationIDs.glinet, IntegrationInstanceIDs.glinet, "GL.iNet"),
+            record(IntegrationIDs.reachability, IntegrationInstanceIDs.reachability, "Internet"),
+            record(IntegrationIDs.speedify, IntegrationInstanceIDs.speedify, "Speedify"),
+            record(IntegrationIDs.starlink, IntegrationInstanceIDs.starlink, "Starlink"),
+            record(IntegrationIDs.ecoflow, IntegrationInstanceIDs.ecoflow, "EcoFlow", enabled: settings.ecoflowEnabled)
+        ]
+        if activeMeasurementProcessRunner != nil {
+            seed.append(record(IntegrationIDs.ping, IntegrationInstanceIDs.ping, "Ping"))
+            seed.append(record(IntegrationIDs.iperf3, IntegrationInstanceIDs.iperf3, "iperf3"))
+        }
+        return seed
+    }
 }
 
 public struct GLiNetRouterProvider: Provider {

@@ -16,6 +16,9 @@ public actor Engine {
     private let explicitProviders: [any Provider]
     private let registerBuiltInProviders: Bool
     private let builtInProviderFactory: BuiltInProviderFactory?
+    private let builtInIntegrations: [IntegrationID: any Integration]
+    private let registry: any IntegrationRegistry
+    private let ownsRegistry: Bool
     private let installedProviderStore: (any InstalledProviderStore)?
     private let manifestHTTPClient: any ManifestHTTPClient
     private var providers: [any Provider]
@@ -45,6 +48,7 @@ public actor Engine {
         routerClientFactory: RouterClientFactory? = nil,
         providers: [any Provider] = [],
         registerBuiltInProviders: Bool = true,
+        integrationRegistry: (any IntegrationRegistry)? = nil,
         installedProviderStore: (any InstalledProviderStore)? = nil,
         manifestHTTPClient: any ManifestHTTPClient = URLSessionManifestHTTPClient(),
         resetRouterClients: (@Sendable () async -> Void)? = nil,
@@ -99,6 +103,19 @@ public actor Engine {
             activeMeasurementProcessRunner: activeMeasurementProcessRunner
         ) : nil
         self.builtInProviderFactory = builtInProviderFactory
+        let integrationList = builtInProviderFactory?.integrations() ?? []
+        self.builtInIntegrations = Dictionary(uniqueKeysWithValues: integrationList.map { ($0.id, $0) })
+        // Registry: injected (app) is authoritative; otherwise a default in-memory registry
+        // seeded to reproduce the previous built-in set exactly (keeps existing tests green).
+        if let integrationRegistry {
+            self.registry = integrationRegistry
+            self.ownsRegistry = false
+        } else {
+            let defaultRegistry = InMemoryIntegrationRegistry()
+            try? defaultRegistry.save(builtInProviderFactory?.defaultInstanceSeed(settings: loadedSettings) ?? [])
+            self.registry = defaultRegistry
+            self.ownsRegistry = true
+        }
         self.providers = []
         let installed = Self.loadInstalledManifestProviders(
             store: installedProviderStore,
@@ -107,8 +124,21 @@ public actor Engine {
         )
         self.installedProviderRecords = installed.records
         self.installedAlertRules = installed.alertRules
-        let baseProviders = (builtInProviderFactory?.providers(settings: loadedSettings) ?? []) + installed.providers
-        self.providers = Self.mergedProviders(builtIns: baseProviders, explicit: providers)
+        let builtInProviders = Self.assembleBuiltInProviders(integrations: self.builtInIntegrations, registry: self.registry)
+        self.providers = Self.mergedProviders(builtIns: builtInProviders + installed.providers, explicit: providers)
+    }
+
+    /// Build the active built-in/registry-driven providers: every enabled instance whose
+    /// integration type is enabled, expanded through its integration. Disabled instances
+    /// produce nothing, so are never polled.
+    private static func assembleBuiltInProviders(
+        integrations: [IntegrationID: any Integration],
+        registry: any IntegrationRegistry
+    ) -> [any Provider] {
+        let active = (try? registry.activeInstances()) ?? []
+        return active.flatMap { record in
+            integrations[record.integrationID]?.makeProviders(instance: record) ?? []
+        }
     }
 
     deinit {
@@ -436,7 +466,12 @@ public actor Engine {
     }
 
     private func rebuildProviders() {
-        let builtIns = builtInProviderFactory?.providers(settings: settings) ?? []
+        // For the engine-owned default registry, re-seed so settings-driven gating (EcoFlow)
+        // tracks changes. An injected registry is user-authoritative and left untouched.
+        if ownsRegistry, let defaultRegistry = registry as? InMemoryIntegrationRegistry {
+            try? defaultRegistry.save(builtInProviderFactory?.defaultInstanceSeed(settings: settings) ?? [])
+        }
+        let builtIns = Self.assembleBuiltInProviders(integrations: builtInIntegrations, registry: registry)
         let installed = loadInstalledManifestProviders()
         providers = Self.mergedProviders(
             builtIns: builtIns + installed,
