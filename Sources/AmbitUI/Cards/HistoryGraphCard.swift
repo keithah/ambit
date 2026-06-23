@@ -21,14 +21,16 @@ public struct HistoryGraphCard: View {
     let showLegend: Bool
     let deviceClass: DeviceClass?
     let unit: String?
+    let summary: [GraphSummaryItem]
 
-    public init(title: String, lines: [GraphLine], deviceClass: DeviceClass? = nil, unit: String? = nil, axisMax: Double? = nil, showLegend: Bool = false) {
+    public init(title: String, lines: [GraphLine], deviceClass: DeviceClass? = nil, unit: String? = nil, summary: [GraphSummaryItem] = [], axisMax: Double? = nil, showLegend: Bool = false) {
         self.title = title
         self.lines = lines
         self.axisMax = axisMax ?? GraphGeometry.niceMax(lines.flatMap { $0.samples.compactMap(\.value) })
         self.showLegend = showLegend
         self.deviceClass = deviceClass
         self.unit = unit
+        self.summary = summary
     }
 
     public var body: some View {
@@ -64,6 +66,16 @@ public struct HistoryGraphCard: View {
                         HStack(spacing: 5) {
                             Circle().fill(line.color).frame(width: 8, height: 8)
                             Text(line.id).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            if !summary.isEmpty {
+                HStack(spacing: 18) {
+                    ForEach(summary, id: \.label) { item in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.label).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(item.value).font(.system(size: 15, weight: .semibold, design: .monospaced))
                         }
                     }
                 }
