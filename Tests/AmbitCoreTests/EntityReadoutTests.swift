@@ -51,4 +51,22 @@ final class EntityReadoutTests: XCTestCase {
         XCTAssertEqual(EntityReadout.format(150, deviceClass: .latency, unit: "ms"), "150ms")
         XCTAssertEqual(EntityReadout.format(15_000_000, deviceClass: .throughput, unit: "bps"), "15.0 Mbps")
     }
+
+    func testSeverityOverridesAvailabilityTone() {
+        let d = descriptor(nil, kind: .text)
+        let r = EntityReadout.make(descriptor: d, state: EntityState(id: "i/p.e", value: .text("ISP path down"), availability: .online, severity: .down))
+        XCTAssertEqual(r.tone, .bad)
+        XCTAssertEqual(r.text, "ISP path down")
+    }
+
+    func testElevatedSeverityIsWarn() {
+        let d = descriptor(nil, kind: .text)
+        let r = EntityReadout.make(descriptor: d, state: EntityState(id: "i/p.e", value: .text("x"), availability: .online, severity: .degraded))
+        XCTAssertEqual(r.tone, .warn)
+    }
+
+    func testNormalSeverityFallsBackToAvailability() {
+        let r = EntityReadout.make(descriptor: descriptor(.latency), state: EntityState(id: "i/p.e", value: .number(10), availability: .online, severity: .normal))
+        XCTAssertEqual(r.tone, .good)
+    }
 }
