@@ -55,9 +55,15 @@ and come first.
 - **Diagnosis synthesizer** (new, Core, UI-free): `NetworkPerspectiveDiagnosis → (EntityDescriptor,
   EntityState)`. The descriptor is a `.text` diagnostic status entity (stable synthetic `EntityID` owned
   by the pingscope integration namespace, **no `EngineID`**); the state's value is the diagnosis detail
-  text and `severity` is mapped from the verdict (`allReachable`/`noData → normal` and the banner is
-  omitted; `partialDegradation → degraded`; the `*Down` verdicts → `down`/`alerting`). The banner title is
-  the entity name; the detail text is the value.
+  text and `severity` is mapped from the verdict. **Default verdict→severity mapping (locked for P2; this
+  only drives banner tone in P2 — it gains behavioral teeth at P4's "alerted" tier, re-examine there):**
+  - `allReachable` / `noData → normal` (banner omitted),
+  - `partialDegradation → degraded`,
+  - connectivity-loss verdicts `localNetworkDown` / `ispPathDown` / `upstreamDown → down` (no path out — catastrophic),
+  - isolated/partial failures `remoteServiceDown` / `multipleFailures → alerting` (notable, but still connected).
+
+  The "catastrophic vs notable" split is the user-visible judgment. The banner title is the entity name;
+  the detail text is the value.
 - **`SurfaceComposer`**:
   - `graphRange` gated to `.historyGraph` cards only (drop on `.gauge`/`.progress`) — **P2-2**.
   - Within a section, collapse multiple measurement entities sharing `deviceClass` (+ unit + a
@@ -74,7 +80,13 @@ and come first.
   for the unit-aware axis label (covers the carried T9 note).
 - **`HistoryGraphCard`**: axis label formatted via the Core formatter (unit-generic). Optional **summary
   readouts** (Min/Avg/Max) rendered as a compact readout row beneath the graph, supplied by the value side
-  for the single-series case; multi-line (multi-host) relies on the legend. (Decision 4.)
+  for the single-series case; multi-line (multi-host) relies on the legend. (Decision 4.) An aggregate
+  across different targets is semantically meaningless (avg of Cloudflare+gateway+Google), and per-host
+  summary rows would *be* the deferred P6 tabular binding (rows=hosts × cols=min/avg/max = a `statTable`).
+  **Execution check:** the focused / selected-host popover path must resolve to a **single-series** graph
+  so it keeps its Min/Avg/Max — that's the common, parity-critical view; only the explicit all-hosts
+  overlay falls back to legend-only. Don't let the common popover accidentally render multi-line and lose
+  its stats.
 - Summary stats computed value-side in `CardView`/`SurfaceData` from `SampleStats.from(series)` and
   formatted with the Core formatter — generic, not pingscope-specific.
 
@@ -132,6 +144,14 @@ and come first.
 After P2 the user compares pingscope-through-generic against the real pingscope side by side. Bar: **at
 least as good as the bespoke Canvas UI.** Known parity-watch item: the dropped recent-samples table. Any
 visible downgrade (the history graph especially) is fixed in the **primitive** before P6.
+
+## 4a. Flag for P4 (not a P2 change)
+
+The `Severity` scale (`normal < elevated < degraded < alerting < down`) folds `alerting` — really an
+action/tier derived from alert *config* — into an otherwise state-severity scale. Fine for P2 (it's just
+tone, and it's the enum already blessed in the parent spec — don't touch it now). But when severity meets
+the attention tiers in P4, sanity-check that "alerting-as-a-severity-level" doesn't conflate "how bad is
+the state" with "is a notification firing" — they may want to be separate axes.
 
 ## 5. Non-goals (P2)
 
