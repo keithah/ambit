@@ -31,6 +31,7 @@ final class StatusViewModel: ObservableObject {
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
     var showPopover: (() -> Void)?
+    var openSettings: (() -> Void)?
 
     private let engine: Engine
     private let installedProviderStore: any InstalledProviderStore

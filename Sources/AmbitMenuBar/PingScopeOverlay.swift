@@ -42,7 +42,7 @@ struct OverlayView: View {
                 ForEach(hosts) { host in Button(host.name) { viewModel.selectPingScopeHost(host.instanceID) } }
             }
             Button("Open Popover", action: openPopover)
-            Button("Settings…") { PingScopePopover.openSettings() }
+            Button("Settings…") { viewModel.openSettings?() }
             Divider()
             Button("Close Overlay", action: close)
         }

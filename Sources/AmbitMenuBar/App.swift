@@ -8,10 +8,39 @@ struct AmbitApp: App {
     @StateObject private var appModel = MenuBarAppModel()
 
     var body: some Scene {
-        Settings {
-            PingScopeSettings()
-                .environmentObject(appModel.viewModel)
-        }
+        // Settings are shown via a self-managed AppKit window (SettingsWindowController),
+        // not this scene — the SwiftUI Settings scene / showSettingsWindow: is unreliable in
+        // an .accessory menu-bar app. This placeholder just satisfies the Scene requirement.
+        Settings { EmptyView() }
+    }
+}
+
+@MainActor
+final class SettingsWindowController {
+    private var window: NSWindow?
+    private let viewModel: StatusViewModel
+
+    init(viewModel: StatusViewModel) { self.viewModel = viewModel }
+
+    func show() {
+        let window = window ?? makeWindow()
+        self.window = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func makeWindow() -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 740, height: 480),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "PingScope Settings"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: PingScopeSettings().environmentObject(viewModel))
+        window.center()
+        return window
     }
 }
 
@@ -20,6 +49,7 @@ private final class MenuBarAppModel: ObservableObject {
     let viewModel: StatusViewModel
     private let statusBarController: StatusBarController
     private let overlayController: OverlayController
+    private let settingsController: SettingsWindowController
 
     init() {
         let viewModel = StatusViewModel()
@@ -31,8 +61,11 @@ private final class MenuBarAppModel: ObservableObject {
             onOpenPopover: { [weak statusBarController] in statusBarController?.showPopover() }
         )
         self.overlayController = overlayController
+        let settingsController = SettingsWindowController(viewModel: viewModel)
+        self.settingsController = settingsController
         viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
         viewModel.showPopover = { [weak statusBarController] in statusBarController?.showPopover() }
+        viewModel.openSettings = { [weak settingsController] in settingsController?.show() }
         viewModel.start()
         NSApp.setActivationPolicy(.accessory)
     }

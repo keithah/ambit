@@ -144,15 +144,9 @@ struct PingScopePopover: View {
             .buttonStyle(.plain)
             .padding(.leading, 6)
             .help("Toggle floating overlay")
-            Group {
-                if #available(macOS 14.0, *) {
-                    SettingsLink { gearIcon }
-                } else {
-                    Button { Self.openSettings() } label: { gearIcon }
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 4)
+            Button { viewModel.openSettings?() } label: { gearIcon }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
         }
     }
 
@@ -251,16 +245,6 @@ struct PingScopePopover: View {
     private static let time: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "h:mm a"; return f
     }()
-
-    /// Open the Settings scene (macOS 13/14 compatible — SettingsLink is 14+).
-    static func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        // The Settings scene action lives in the responder chain, not on NSApp, so probe by
-        // sendAction's return value (responds(to:) on NSApp is always false here).
-        if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-        }
-    }
 }
 
 struct LatencyGraph: View {
