@@ -24,6 +24,13 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
     public var command: CommandRef?
     public var icon: String?
     public var metricID: String?
+    // Presentation defaults (presentation-model.md §6). Additive; all defaulted.
+    public var defaultVisibility: GlanceVisibility
+    public var displayThreshold: DisplayThreshold?
+    public var graphStyle: GraphStyle?
+    public var defaultGraphRange: GraphRange?
+    public var isPrimary: Bool
+    public var priority: Int?
 
     public init(
         id: EntityID,
@@ -40,7 +47,13 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         range: ValueRange? = nil,
         command: CommandRef? = nil,
         icon: String? = nil,
-        metricID: String? = nil
+        metricID: String? = nil,
+        defaultVisibility: GlanceVisibility = .auto,
+        displayThreshold: DisplayThreshold? = nil,
+        graphStyle: GraphStyle? = nil,
+        defaultGraphRange: GraphRange? = nil,
+        isPrimary: Bool = false,
+        priority: Int? = nil
     ) {
         self.id = id
         self.instanceID = instanceID
@@ -57,6 +70,12 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         self.command = command
         self.icon = icon
         self.metricID = metricID
+        self.defaultVisibility = defaultVisibility
+        self.displayThreshold = displayThreshold
+        self.graphStyle = graphStyle
+        self.defaultGraphRange = defaultGraphRange
+        self.isPrimary = isPrimary
+        self.priority = priority
     }
 }
 
