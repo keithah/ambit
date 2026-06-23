@@ -74,7 +74,7 @@ public enum SurfaceComposer {
         let role: CardRole = d.isPrimary ? .primary : .secondary
         let kind = cardKind(for: d, config: config)
         let style = effectiveGraphStyle(d, config: config)
-        let range: GraphRange? = (kind == .historyGraph || kind == .gauge || kind == .progress)
+        let range: GraphRange? = (kind == .historyGraph)
             ? (config.entityOverrides[d.id]?.graphRange ?? d.defaultGraphRange ?? .m5)
             : nil
         return CardSpec(id: "card.\(d.id.rawValue)", kind: kind, title: d.name,

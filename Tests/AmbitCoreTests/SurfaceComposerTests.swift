@@ -89,4 +89,17 @@ final class SurfaceComposerTests: XCTestCase {
         let plan = SurfaceComposer.detailPlan(descriptors: [sensor("latency", .latency)], states: [:], config: config)
         XCTAssertTrue(plan.cards.isEmpty)
     }
+
+    func testGraphRangeOnlyOnHistoryGraph() {
+        let descriptors = [
+            sensor("g", .percent, graphStyle: .gauge),
+            sensor("p", .battery, graphStyle: .progress),
+            sensor("s", .latency, graphStyle: .sparkline)
+        ]
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        let byID = plan.cards.flatMap { $0.children }.reduce(into: [String: CardSpec]()) { $0[$1.entities.first!.rawValue] = $1 }
+        XCTAssertNil(byID["i/p.g"]?.graphRange)
+        XCTAssertNil(byID["i/p.p"]?.graphRange)
+        XCTAssertEqual(byID["i/p.s"]?.graphRange, .m5)
+    }
 }
