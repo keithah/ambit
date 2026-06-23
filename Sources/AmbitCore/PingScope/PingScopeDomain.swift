@@ -54,6 +54,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
     public var timeout: TimeInterval       // seconds; min 0.25
     public var thresholds: HealthThresholds
     public var policy: AlertPolicy
+    public var tier: NetworkTier?   // explicit override; nil ⇒ classifier infers from address
 
     public init(
         displayName: String,
@@ -63,7 +64,8 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         interval: TimeInterval = 2,
         timeout: TimeInterval = 2,
         thresholds: HealthThresholds = HealthThresholds(),
-        policy: AlertPolicy = .preset(.balanced)
+        policy: AlertPolicy = .preset(.balanced),
+        tier: NetworkTier? = nil
     ) {
         self.displayName = displayName
         self.address = address
@@ -73,10 +75,11 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         self.timeout = timeout
         self.thresholds = thresholds
         self.policy = policy
+        self.tier = tier
     }
 
     enum CodingKeys: String, CodingKey {
-        case displayName, address, method, port, interval, timeout, thresholds, policy
+        case displayName, address, method, port, interval, timeout, thresholds, policy, tier
     }
 
     // Lenient decode: tolerate configs persisted before optional fields existed.
@@ -90,6 +93,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
         timeout = try c.decodeIfPresent(TimeInterval.self, forKey: .timeout) ?? 2
         thresholds = try c.decodeIfPresent(HealthThresholds.self, forKey: .thresholds) ?? HealthThresholds()
         policy = try c.decodeIfPresent(AlertPolicy.self, forKey: .policy) ?? .preset(.balanced)
+        tier = try c.decodeIfPresent(NetworkTier.self, forKey: .tier)
     }
 
     public enum ValidationError: String, Sendable, Equatable {
