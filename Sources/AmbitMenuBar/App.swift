@@ -9,9 +9,8 @@ struct AmbitApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView()
+            PingScopeSettings()
                 .environmentObject(appModel.viewModel)
-                .frame(width: 430)
         }
     }
 }

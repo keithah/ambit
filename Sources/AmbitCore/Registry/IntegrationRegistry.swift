@@ -43,6 +43,9 @@ public protocol IntegrationRegistry: Sendable {
     func save(_ records: [IntegrationInstanceRecord]) throws
     func disabledIntegrationIDs() throws -> Set<IntegrationID>
     func setDisabledIntegrationIDs(_ ids: Set<IntegrationID>) throws
+    /// The instance the menu glyph / "primary" UI tracks (e.g. pingscope primary host).
+    func primaryInstanceID() throws -> IntegrationInstanceID?
+    func setPrimaryInstanceID(_ id: IntegrationInstanceID?) throws
 }
 
 public extension IntegrationRegistry {
@@ -89,16 +92,20 @@ public final class InMemoryIntegrationRegistry: IntegrationRegistry, @unchecked 
     private let lock = NSLock()
     private var records: [IntegrationInstanceRecord]
     private var disabled: Set<IntegrationID>
+    private var primary: IntegrationInstanceID?
 
-    public init(records: [IntegrationInstanceRecord] = [], disabledIntegrations: Set<IntegrationID> = []) {
+    public init(records: [IntegrationInstanceRecord] = [], disabledIntegrations: Set<IntegrationID> = [], primary: IntegrationInstanceID? = nil) {
         self.records = records
         self.disabled = disabledIntegrations
+        self.primary = primary
     }
 
     public func instances() throws -> [IntegrationInstanceRecord] { lock.withLock { records } }
     public func save(_ records: [IntegrationInstanceRecord]) throws { lock.withLock { self.records = records } }
     public func disabledIntegrationIDs() throws -> Set<IntegrationID> { lock.withLock { disabled } }
     public func setDisabledIntegrationIDs(_ ids: Set<IntegrationID>) throws { lock.withLock { disabled = ids } }
+    public func primaryInstanceID() throws -> IntegrationInstanceID? { lock.withLock { primary } }
+    public func setPrimaryInstanceID(_ id: IntegrationInstanceID?) throws { lock.withLock { primary = id } }
 }
 
 /// UserDefaults-backed registry (mirrors UserDefaultsInstalledProviderStore).
@@ -106,6 +113,7 @@ public struct UserDefaultsIntegrationRegistry: IntegrationRegistry, @unchecked S
     private let defaults: UserDefaults
     private let instancesKey = "integrationInstances"
     private let disabledKey = "disabledIntegrationIDs"
+    private let primaryKey = "primaryIntegrationInstanceID"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -127,5 +135,13 @@ public struct UserDefaultsIntegrationRegistry: IntegrationRegistry, @unchecked S
 
     public func setDisabledIntegrationIDs(_ ids: Set<IntegrationID>) throws {
         defaults.set(ids.map(\.rawValue).sorted(), forKey: disabledKey)
+    }
+
+    public func primaryInstanceID() throws -> IntegrationInstanceID? {
+        (defaults.string(forKey: primaryKey)).map(IntegrationInstanceID.init(rawValue:))
+    }
+
+    public func setPrimaryInstanceID(_ id: IntegrationInstanceID?) throws {
+        defaults.set(id?.rawValue, forKey: primaryKey)
     }
 }

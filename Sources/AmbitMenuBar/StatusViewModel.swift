@@ -25,6 +25,7 @@ final class StatusViewModel: ObservableObject {
     @Published var pingScopeRange: TimeRange = .fiveMinutes
     @Published var pingScopeSelection: IntegrationInstanceID?   // nil = All Hosts
     @Published var pingHosts: [PingHostDisplay] = []
+    @Published var pingHostRows: [PingHostRow] = []
     @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
 
     private let engine: Engine
@@ -317,14 +318,27 @@ final class StatusViewModel: ObservableObject {
         Task { await refreshPingScope() }
     }
 
-    /// Rebuild per-host displays (readout + windowed samples + stats) for the pingscope UI.
+    /// Rebuild per-host displays (readout + windowed samples + stats) for the pingscope UI,
+    /// plus the full host list for Settings.
     func refreshPingScope() async {
         let now = Date()
         let freshness = max(pingScopeRange.seconds, 30)
-        let records = ((try? integrationRegistry.activeInstances()) ?? [])
+        let allRecords = ((try? integrationRegistry.instances()) ?? [])
             .filter { $0.integrationID == IntegrationIDs.pingscope }
+        let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
+        let primaryID = (try? integrationRegistry.primaryInstanceID()) ?? nil
+        let activeRecords = disabledTypes.contains(IntegrationIDs.pingscope) ? [] : allRecords.filter(\.enabled)
+        let fallbackPrimary = primaryID ?? activeRecords.first?.id
+
+        // All hosts (enabled + disabled) for the Settings list.
+        pingHostRows = allRecords.compactMap { record in
+            guard let config = PingScopeHostConfig(configObject: record.config) else { return nil }
+            return PingHostRow(instanceID: record.id, config: config, enabled: record.enabled, isPrimary: record.id == fallbackPrimary)
+        }
+
+        // Active hosts (windowed history) for the popover.
         var displays: [PingHostDisplay] = []
-        for (index, record) in records.enumerated() {
+        for (index, record) in activeRecords.enumerated() {
             guard let host = PingScopeHostConfig(configObject: record.config) else { continue }
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
@@ -340,15 +354,46 @@ final class StatusViewModel: ObservableObject {
                 samples: samples,
                 readout: readout,
                 stats: SampleStats.from(samples),
-                isPrimary: index == 0,
+                isPrimary: record.id == fallbackPrimary,
                 colorIndex: index
             ))
         }
         pingHosts = displays
-        if let primary = displays.first(where: \.isPrimary) ?? displays.first {
-            menuGlyph = MenuBarGlyph(latencyText: primary.readout.text, tone: primary.readout.tone)
-        } else {
-            menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+        let primary = displays.first(where: \.isPrimary) ?? displays.first
+        menuGlyph = primary.map { MenuBarGlyph(latencyText: $0.readout.text, tone: $0.readout.tone) }
+            ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+    }
+
+    // MARK: PingScope host management (Settings)
+
+    func addOrUpdatePingHost(_ host: PingScopeHostConfig, replacing oldID: IntegrationInstanceID? = nil) {
+        if let oldID, oldID != host.integrationInstanceID { try? integrationRegistry.remove(oldID) }
+        try? integrationRegistry.upsert(.pingscope(host))
+        reloadPingScopeProviders()
+    }
+
+    func deletePingHost(_ id: IntegrationInstanceID) {
+        try? integrationRegistry.remove(id)
+        if (try? integrationRegistry.primaryInstanceID()) == id { try? integrationRegistry.setPrimaryInstanceID(nil) }
+        reloadPingScopeProviders()
+    }
+
+    func setPrimaryPingHost(_ id: IntegrationInstanceID) {
+        try? integrationRegistry.setPrimaryInstanceID(id)
+        reloadPingScopeProviders()
+    }
+
+    func setPingHostEnabled(_ id: IntegrationInstanceID, enabled: Bool) {
+        try? integrationRegistry.setInstanceEnabled(enabled, instanceID: id)
+        reloadPingScopeProviders()
+    }
+
+    private func reloadPingScopeProviders() {
+        Task {
+            await engine.reloadProviders()
+            await refreshAlertRules()
+            await engine.refresh()
+            await refreshPingScope()
         }
     }
 
