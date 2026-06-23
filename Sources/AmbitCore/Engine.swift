@@ -171,6 +171,23 @@ public actor Engine {
         await history.clear()
     }
 
+    /// Static entity descriptors per provider instance (cached at assembly time).
+    public func entityDescriptors() -> [ProviderInstanceID: [EntityDescriptor]] {
+        descriptorsByInstance
+    }
+
+    /// Current entity states projected from the latest snapshot (missing metrics → .unavailable).
+    public func entityStates() -> [EntityID: EntityState] {
+        var result: [EntityID: EntityState] = [:]
+        for (instanceID, descriptors) in descriptorsByInstance {
+            let providerSnapshot = snapshot.providers[instanceID]?.value
+            for (id, state) in EntityProjection.states(snapshot: providerSnapshot, descriptors: descriptors) {
+                result[id] = state
+            }
+        }
+        return result
+    }
+
     /// Build the active built-in/registry-driven providers: every enabled instance whose
     /// integration type is enabled, expanded through its integration. Disabled instances
     /// produce nothing, so are never polled.
