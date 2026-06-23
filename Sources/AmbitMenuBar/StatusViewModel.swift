@@ -24,6 +24,8 @@ final class StatusViewModel: ObservableObject {
     private let engine: Engine
     private let installedProviderStore: any InstalledProviderStore
     private let credentialStore: any CredentialStore
+    private let integrationRegistry: any IntegrationRegistry
+    private let addressDiscovery: any RouterAddressDiscovery
     private var alertEngine = AlertEngine()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
@@ -33,7 +35,8 @@ final class StatusViewModel: ObservableObject {
         credentialStore: CredentialStore = KeychainCredentialStore(),
         installedProviderStore: any InstalledProviderStore = UserDefaultsInstalledProviderStore(),
         endpointSelector: EndpointSelector = EndpointSelector(),
-        reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe()
+        reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe(),
+        addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
         let routerPassword = (try? credentialStore.password(account: settings.username)) ?? RouterDefaults.routerPassword
@@ -42,7 +45,9 @@ final class StatusViewModel: ObservableObject {
         self.alertNotifier = AlertNotifier()
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
+        self.addressDiscovery = addressDiscovery
         let integrationRegistry = UserDefaultsIntegrationRegistry()
+        self.integrationRegistry = integrationRegistry
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
         self.engine = Engine(
             settingsStore: settingsStore,
@@ -66,9 +71,29 @@ final class StatusViewModel: ObservableObject {
     /// are seeded in M1). Existing installs keep their saved state.
     private static func seedIntegrationRegistryIfNeeded(_ registry: any IntegrationRegistry, settings: AppSettings) {
         guard ((try? registry.instances()) ?? []).isEmpty else { return }
+        // Built-ins listed but disabled (toggleable later); pingscope seeded with sensible
+        // default public DNS hosts so the app isn't empty. The detected gateway is added
+        // asynchronously on start (it needs network detection).
         let builtIns = BuiltInIntegrationSeed.records(ecoflowEnabled: settings.ecoflowEnabled, includeActiveMeasurement: true)
-        try? registry.save(builtIns)
+        let defaultHosts = [
+            PingScopeHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
+            PingScopeHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
+        ]
+        try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.pingscope($0) })
         try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
+    }
+
+    /// Detect the default gateway and add it as a third pingscope host (TCP:80 — routers
+    /// commonly serve a web UI there) via the registry-add + reload path. Idempotent: skips
+    /// if a host for that target already exists.
+    private func seedGatewayHostIfNeeded() async {
+        guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
+        let host = PingScopeHostConfig(displayName: "Gateway", address: gateway, method: .tcp, port: 80)
+        let existing = (try? integrationRegistry.instances())?.contains { $0.id == host.integrationInstanceID } ?? false
+        guard !existing else { return }
+        try? integrationRegistry.upsert(.pingscope(host))
+        await engine.reloadProviders()
+        await engine.refresh()
     }
 
     func start() {
@@ -86,6 +111,7 @@ final class StatusViewModel: ObservableObject {
         }
         Task { await engine.start() }
         Task { await refreshAlertRules() }
+        Task { await seedGatewayHostIfNeeded() }
         refreshInstalledProviders()
         refreshCommandPalette()
     }

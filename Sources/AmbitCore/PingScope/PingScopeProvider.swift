@@ -88,6 +88,20 @@ public struct PingScopeProvider: Provider {
     }
 }
 
+public extension IntegrationInstanceRecord {
+    /// A registry record for a pingscope host (deterministic id from the target).
+    static func pingscope(_ host: PingScopeHostConfig, enabled: Bool = true) -> IntegrationInstanceRecord {
+        IntegrationInstanceRecord(
+            id: host.integrationInstanceID,
+            integrationID: IntegrationIDs.pingscope,
+            displayName: host.displayName,
+            enabled: enabled,
+            origin: .user,
+            config: host.asConfigObject()
+        )
+    }
+}
+
 /// The pingscope integration — the first multi-instance integration. Each enabled host
 /// record stands up one PingScopeProvider.
 public struct PingScopeIntegration: Integration {

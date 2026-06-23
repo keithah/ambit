@@ -230,6 +230,12 @@ public actor Engine {
         rebuildProviders()
     }
 
+    /// Re-assemble providers from the (possibly mutated) registry — e.g. after a pingscope
+    /// host is added/removed/toggled.
+    public func reloadProviders() {
+        rebuildProviders()
+    }
+
     public func refresh() async {
         markRegisteredProvidersLoading()
         publish()
