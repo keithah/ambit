@@ -86,8 +86,10 @@ public enum EntityEnricher {
     }
 
     /// `.elevated` when the entity's numeric value crosses its display threshold. No consecutive
-    /// debounce here — that is the AttentionEngine's temporal concern (P4.4).
-    private static func displaySeverity(value: EntityValue?, threshold: DisplayThreshold?) -> Severity {
+    /// debounce here — that is the AttentionEngine's temporal concern (P4.4). Internal so the
+    /// AttentionEngine folds the SAME threshold rule into its config-resolved severity (one
+    /// threshold function, no duplication) without re-running the staleness check.
+    static func displaySeverity(value: EntityValue?, threshold: DisplayThreshold?) -> Severity {
         guard let threshold, case .number(let n)? = value else { return .normal }
         return threshold.comparison.matches(n, threshold: threshold.value) ? .elevated : .normal
     }
