@@ -433,8 +433,8 @@ final class StatusViewModel: ObservableObject {
     func refreshPing() async {
         let now = Date()
         let freshness = max(pingRange.seconds, 30)
-        let allRecords = ((try? integrationRegistry.instances()) ?? [])
-            .filter { $0.integrationID == IntegrationIDs.ping }
+        let allRegistryRecords = (try? integrationRegistry.instances()) ?? []
+        let allRecords = allRegistryRecords.filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         let primaryID = (try? integrationRegistry.primaryInstanceID()) ?? nil
         let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
@@ -474,7 +474,6 @@ final class StatusViewModel: ObservableObject {
         let allDescriptors = await engine.entityDescriptors()
         let allStates = await engine.entityStates()
         var newSurfaces: [SlotID: SlotSurface] = [:]
-        let allRegistryRecords = ((try? integrationRegistry.instances()) ?? [])
 
         for slot in slots {
             let surface = await buildSlotSurface(

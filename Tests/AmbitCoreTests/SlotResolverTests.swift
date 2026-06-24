@@ -64,6 +64,22 @@ final class SlotResolverTests: XCTestCase {
         XCTAssertEqual(ids(resolved), ["glinet/router.online"])
     }
 
+    func testDistinctSlotsProduceDistinctSurfacePlans() {
+        // The chrome builds one surface per slot via resolve → SurfaceComposer; distinct
+        // selections must yield distinct, independent plans (the N-slots → N-items mechanism).
+        let pingPlan = SurfaceComposer.detailPlan(
+            descriptors: SlotResolver.resolve(.integrationType("ping"), descriptors: descriptors, records: records), states: [:])
+        let glinetPlan = SurfaceComposer.detailPlan(
+            descriptors: SlotResolver.resolve(.integration("glinet"), descriptors: descriptors, records: records), states: [:])
+
+        let pingEntities = Set(pingPlan.cards.flatMap(\.children).flatMap(\.entities).map(\.rawValue))
+        let glinetEntities = Set(glinetPlan.cards.flatMap(\.children).flatMap(\.entities).map(\.rawValue))
+        XCTAssertTrue(pingEntities.contains("ping@1.1.1.1/probe.latency_ms"))
+        XCTAssertFalse(glinetEntities.contains("ping@1.1.1.1/probe.latency_ms"))
+        XCTAssertTrue(glinetEntities.contains("glinet/router.online"))
+        XCTAssertNotEqual(pingPlan, glinetPlan)
+    }
+
     func testProviderInstanceIDDerivesIntegrationInstance() {
         XCTAssertEqual(ProviderInstanceID(rawValue: "ping@1.1.1.1/probe").integrationInstanceID, "ping@1.1.1.1")
         XCTAssertEqual(ProviderInstanceID(rawValue: "glinet/router").integrationInstanceID, "glinet")
