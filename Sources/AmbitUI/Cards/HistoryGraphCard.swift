@@ -71,14 +71,20 @@ public struct HistoryGraphCard: View {
                 }
             }
             if !summary.isEmpty {
-                HStack(spacing: 18) {
-                    ForEach(summary, id: \.label) { item in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.label).font(.system(size: 11)).foregroundStyle(.secondary)
-                            Text(item.value).font(.system(size: 15, weight: .semibold, design: .monospaced))
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(stride(from: 0, to: summary.count, by: 3)), id: \.self) { start in
+                        HStack(spacing: 18) {
+                            ForEach(summary[start..<min(start + 3, summary.count)], id: \.label) { item in
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.label).font(.system(size: 11)).foregroundStyle(.secondary)
+                                    Text(item.value).font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                     }
                 }
+                .padding(.top, 2)
             }
         }
         .padding(.vertical, 4)

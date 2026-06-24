@@ -59,7 +59,7 @@ public struct CardView: View {
                     GraphLine(id: data.title(id), color: Theme.lineColor(index), samples: data.samples(id))
                 }
                 let summary = spec.entities.count == 1
-                    ? GraphSummary.minAvgMax(samples: data.samples(spec.entities[0]), deviceClass: descriptor?.deviceClass, unit: descriptor?.unit)
+                    ? GraphSummary.summary(samples: data.samples(spec.entities[0]), deviceClass: descriptor?.deviceClass, unit: descriptor?.unit)
                     : []
                 HistoryGraphCard(title: spec.title ?? "",
                                  lines: lines,
