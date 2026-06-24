@@ -35,6 +35,9 @@ public actor Engine {
     private var selectedEndpoint: EndpointSelection?
     private var pollTask: Task<Void, Never>?
     private var speedifyFocusTask: Task<Void, Never>?
+    private var cycleTask: Task<Void, Never>?     // the in-flight refresh() cycle (cancellable)
+    private var sleepTask: Task<Void, Never>?     // the inter-cycle wait (interruptible by pollNow)
+    private var pollNowRequested = false
     private var routerBackoffUntil: Date?
     private var installedProviderRecords: [InstalledProviderRecord] = []
     private var installedAlertRules: [AlertRule] = []
@@ -203,6 +206,8 @@ public actor Engine {
 
     deinit {
         pollTask?.cancel()
+        cycleTask?.cancel()
+        sleepTask?.cancel()
         speedifyFocusTask?.cancel()
         snapshotContinuation.finish()
         engineSnapshotContinuation.finish()
@@ -213,11 +218,64 @@ public actor Engine {
         pollTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                await self.refresh()
-                let interval = await self.loopInterval()
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                await self.runBoundedCycle()
+                // pollNow() during a cycle → run the next one immediately (skip the inter-cycle wait).
+                if await self.consumePollNowRequest() { continue }
+                await self.interSleep()
             }
         }
+    }
+
+    /// One poll cycle, bounded by the stall watchdog window: race refresh() against the window
+    /// with an abandon-the-loser gate (same pattern as TimeoutProbe). On window-win, cancel the
+    /// in-flight cycle and proceed — a wedged cycle can never freeze the loop. The window is the
+    /// staleness window, so a stalled cycle and stale data share one threshold.
+    private func runBoundedCycle() async {
+        let window = Staleness.window(interval: loopInterval(), factor: 3, floor: 10)
+        let gate = SingleResume()
+        let cycle = Task { [weak self] in
+            guard let self else { return }
+            await self.refresh()
+        }
+        cycleTask = cycle
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            Task {
+                _ = await cycle.value
+                if gate.claim() { continuation.resume() }
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(window * 1_000_000_000))
+                if gate.claim() {
+                    cycle.cancel()
+                    continuation.resume()
+                }
+            }
+        }
+        cycleTask = nil
+    }
+
+    /// Inter-cycle wait, interruptible: pollNow() cancels it so the loop runs a fresh cycle now.
+    private func interSleep() async {
+        let interval = loopInterval()
+        let sleep = Task { _ = try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+        sleepTask = sleep
+        _ = await sleep.value
+        sleepTask = nil
+    }
+
+    private func consumePollNowRequest() -> Bool {
+        guard pollNowRequested else { return false }
+        pollNowRequested = false
+        return true
+    }
+
+    /// Kick a fresh poll cycle now (e.g. on system wake): abandon any in-flight cycle and cut the
+    /// inter-cycle sleep so the loop immediately runs the next cycle. Does NOT spawn a parallel
+    /// refresh() — only one cycle is ever in flight.
+    public func pollNow() {
+        pollNowRequested = true
+        cycleTask?.cancel()
+        sleepTask?.cancel()
     }
 
     /// Loop cadence = the fastest registered provider's interval (≥1s floor), so a 2s
@@ -231,6 +289,10 @@ public actor Engine {
     public func stop() {
         pollTask?.cancel()
         pollTask = nil
+        cycleTask?.cancel()
+        cycleTask = nil
+        sleepTask?.cancel()
+        sleepTask = nil
         speedifyFocusTask?.cancel()
         speedifyFocusTask = nil
     }
