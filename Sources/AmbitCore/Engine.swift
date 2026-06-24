@@ -26,6 +26,7 @@ public actor Engine {
     private let usageMeter: ModuleUsageMeter
     private let history: HistoryService
     private var descriptorsByInstance: [ProviderInstanceID: [EntityDescriptor]] = [:]
+    private var intervalsByInstance: [ProviderInstanceID: TimeInterval] = [:]
 
     private var snapshot = StatusSnapshot()
     private var providerStates: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:]
@@ -136,12 +137,19 @@ public actor Engine {
         let builtInProviders = Self.assembleBuiltInProviders(integrations: self.builtInIntegrations, registry: self.registry)
         self.providers = Self.mergedProviders(builtIns: builtInProviders + installed.providers, explicit: providers)
         self.descriptorsByInstance = Self.descriptors(of: self.providers)
+        self.intervalsByInstance = Self.intervals(of: self.providers)
     }
 
     /// Static entity descriptors per provider instance, cached at assembly time and used to
     /// feed history (stateClass-gated) without recomputing on every poll.
     private static func descriptors(of providers: [any Provider]) -> [ProviderInstanceID: [EntityDescriptor]] {
         Dictionary(uniqueKeysWithValues: providers.map { ($0.instanceID, $0.entityDescriptors()) })
+    }
+
+    /// Poll intervals per provider instance, cached at assembly time so `entityStates(now:)` can
+    /// compute the per-entity staleness window without holding a provider reference.
+    private static func intervals(of providers: [any Provider]) -> [ProviderInstanceID: TimeInterval] {
+        Dictionary(uniqueKeysWithValues: providers.map { ($0.instanceID, $0.pollInterval) })
     }
 
     /// Record one history sample per stateClass-bearing entity from a fresh poll — the single
@@ -179,13 +187,35 @@ public actor Engine {
         descriptorsByInstance
     }
 
-    /// Current entity states projected from the latest snapshot (missing metrics → .unavailable).
-    public func entityStates() -> [EntityID: EntityState] {
+    /// Current entity states projected from the latest snapshot (missing metrics → .unavailable),
+    /// then enriched via EntityEnricher: `.online → .stale` past the per-instance freshness window
+    /// (so a stalled poll loop surfaces as stale rather than a frozen-online value) plus the
+    /// health-derived severity every surface reads. `displayThreshold`/`alertActive` are NOT applied
+    /// here — those are layered by the AttentionEngine (P4.3+), which holds PresentationConfig and
+    /// the firing-alert set; the Engine stays free of presentation config.
+    public func entityStates(now: Date = Date()) -> [EntityID: EntityState] {
         var result: [EntityID: EntityState] = [:]
         for (instanceID, descriptors) in descriptorsByInstance {
             let providerSnapshot = snapshot.providers[instanceID]?.value
+            let interval = intervalsByInstance[instanceID] ?? 2
+            let lastPolledAt = lastRegisteredProviderPolls[instanceID]
+            let health = providerSnapshot.map { HealthStatus(legacy: $0.health) }
             for (id, state) in EntityProjection.states(snapshot: providerSnapshot, descriptors: descriptors) {
-                result[id] = state
+                let descriptor = descriptors.first { $0.id == id }
+                result[id] = descriptor.map { descriptor in
+                    EntityEnricher.enrich(
+                        EntityEnricher.Inputs(
+                            descriptor: descriptor,
+                            state: state,
+                            interval: interval,
+                            lastSampleAt: lastPolledAt,
+                            displayThreshold: nil,
+                            health: health,
+                            alertActive: false
+                        ),
+                        now: now
+                    )
+                } ?? state
             }
         }
         return result
@@ -624,6 +654,7 @@ public actor Engine {
             explicit: explicitProviders
         )
         descriptorsByInstance = Self.descriptors(of: providers)
+        intervalsByInstance = Self.intervals(of: providers)
         let activeInstanceIDs = Set(providers.map(\.instanceID))
         let inactiveInstanceIDs = Set(providerStates.keys)
             .union(snapshot.providers.keys)

@@ -30,4 +30,30 @@ final class EngineEntityAPITests: XCTestCase {
         XCTAssertEqual(states[latencyID]?.value, .number(20))
         XCTAssertEqual(states[latencyID]?.availability, .online)
     }
+
+    // P4.2: entityStates(now:) enriches against wall-clock `now`, so a stalled loop (no fresh poll)
+    // surfaces as .stale rather than a frozen-online value — recomputed at read time, not poll time.
+    func testEntityStatesGoStaleAgainstWallClockNow() async {
+        let engine = engine(latencyMs: 20)
+        await engine.refresh()
+        let states = await engine.entityStates(now: Date().addingTimeInterval(3600)) // far past any freshness window
+        XCTAssertEqual(states[latencyID]?.availability, .stale)
+        XCTAssertEqual(states[latencyID]?.severity, .elevated) // stale-suppression caps at .elevated
+    }
+
+    func testEntityStatesFreshHealthyHasNormalSeverity() async {
+        let engine = engine(latencyMs: 20)
+        await engine.refresh()
+        let states = await engine.entityStates(now: Date())
+        XCTAssertEqual(states[latencyID]?.availability, .online)
+        XCTAssertEqual(states[latencyID]?.severity, .normal)
+    }
+
+    func testEntityStatesDegradedProviderYieldsDegradedSeverity() async {
+        let engine = engine(latencyMs: 999) // success but above the degraded threshold
+        await engine.refresh()
+        let states = await engine.entityStates(now: Date())
+        XCTAssertEqual(states[latencyID]?.availability, .online)
+        XCTAssertEqual(states[latencyID]?.severity, .degraded)
+    }
 }

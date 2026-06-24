@@ -499,7 +499,7 @@ final class StatusViewModel: ObservableObject {
 
         // Build per-slot surfaces.
         let allDescriptors = await engine.entityDescriptors()
-        let allStates = await engine.entityStates()
+        let allStates = await engine.entityStates(now: now)
         var newSurfaces: [SlotID: SlotSurface] = [:]
 
         for slot in slots {
@@ -569,11 +569,9 @@ final class StatusViewModel: ObservableObject {
             descriptors[latencyID] = latency
             let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
             series[latencyID] = samples
-            if var state = allStates[latencyID] {
-                // Downgrade .online → .stale when the host's data is stale (time-driven), so the
-                // readout reflects "paused monitoring", not a frozen-online value.
-                let interval = PingHostConfig(configObject: record.config)?.interval ?? 2
-                state.availability = Staleness.availability(state.availability, lastUpdate: samples.last?.timestamp, interval: interval, now: now)
+            // States from engine.entityStates(now:) are already enriched (.stale + severity); no
+            // ad-hoc staleness overlay needed here (P4.2).
+            if let state = allStates[latencyID] {
                 states[latencyID] = state
             }
         }
