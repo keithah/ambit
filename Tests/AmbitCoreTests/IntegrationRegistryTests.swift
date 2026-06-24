@@ -16,36 +16,36 @@ final class IntegrationRegistryTests: XCTestCase {
         let registry = InMemoryIntegrationRegistry(records: [
             record("glinet", integration: "glinet"),
             record("speedify", integration: "speedify", enabled: false),  // instance-disabled
-            record("pingscope@a", integration: "pingscope", origin: .user),
-            record("pingscope@b", integration: "pingscope", origin: .user)
+            record("ping@a", integration: "ping", origin: .user),
+            record("ping@b", integration: "ping", origin: .user)
         ])
         try registry.setIntegrationEnabled(false, integrationID: "glinet")   // type-disabled
 
         let active = try registry.activeInstances().map(\.id.rawValue).sorted()
-        XCTAssertEqual(active, ["pingscope@a", "pingscope@b"])  // glinet type-off, speedify instance-off
+        XCTAssertEqual(active, ["ping@a", "ping@b"])  // glinet type-off, speedify instance-off
     }
 
     func testInstanceAndIntegrationEnableToggles() throws {
-        let registry = InMemoryIntegrationRegistry(records: [record("pingscope@a", integration: "pingscope")])
+        let registry = InMemoryIntegrationRegistry(records: [record("ping@a", integration: "ping")])
 
-        try registry.setInstanceEnabled(false, instanceID: "pingscope@a")
+        try registry.setInstanceEnabled(false, instanceID: "ping@a")
         XCTAssertTrue(try registry.activeInstances().isEmpty)
-        try registry.setInstanceEnabled(true, instanceID: "pingscope@a")
+        try registry.setInstanceEnabled(true, instanceID: "ping@a")
         XCTAssertEqual(try registry.activeInstances().count, 1)
 
-        try registry.setIntegrationEnabled(false, integrationID: "pingscope")
+        try registry.setIntegrationEnabled(false, integrationID: "ping")
         XCTAssertTrue(try registry.activeInstances().isEmpty)
-        try registry.setIntegrationEnabled(true, integrationID: "pingscope")
+        try registry.setIntegrationEnabled(true, integrationID: "ping")
         XCTAssertEqual(try registry.activeInstances().count, 1)
     }
 
     func testUpsertAndRemove() throws {
         let registry = InMemoryIntegrationRegistry()
-        try registry.upsert(record("pingscope@a", integration: "pingscope"))
-        try registry.upsert(record("pingscope@a", integration: "pingscope", enabled: false)) // update in place
+        try registry.upsert(record("ping@a", integration: "ping"))
+        try registry.upsert(record("ping@a", integration: "ping", enabled: false)) // update in place
         XCTAssertEqual(try registry.instances().count, 1)
-        XCTAssertEqual(try registry.instance("pingscope@a")?.enabled, false)
-        try registry.remove("pingscope@a")
+        XCTAssertEqual(try registry.instance("ping@a")?.enabled, false)
+        try registry.remove("ping@a")
         XCTAssertTrue(try registry.instances().isEmpty)
     }
 
@@ -53,7 +53,7 @@ final class IntegrationRegistryTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "IntegrationRegistryTests.\(UUID().uuidString)")!
         let registry = UserDefaultsIntegrationRegistry(defaults: defaults)
 
-        var record = record("pingscope@a", integration: "pingscope", origin: .user)
+        var record = record("ping@a", integration: "ping", origin: .user)
         record.config = ["address": .string("1.1.1.1"), "port": .number(443)]
         try registry.save([record])
         try registry.setDisabledIntegrationIDs(["glinet", "speedify"])

@@ -246,27 +246,6 @@ public extension EcoFlowProvider {
     }
 }
 
-// MARK: Ping (ping/ping) — actor, nonisolated descriptors
-
-public extension PingProvider {
-    nonisolated func entityDescriptors() -> [EntityDescriptor] {
-        let instance = instanceID
-        return [
-            EntityProjection.healthDescriptor(instanceID: instance),
-            EntityDescriptor(
-                id: instance.entity("latency_ms"), instanceID: instance, name: "Latency",
-                kind: .sensor, deviceClass: .latency, category: .primary, capability: "uplink",
-                access: .read, unit: "ms", stateClass: .measurement, metricID: "latency_ms"
-            ),
-            EntityDescriptor(
-                id: instance.entity("loss_percent"), instanceID: instance, name: "Packet Loss",
-                kind: .sensor, deviceClass: .percent, category: .diagnostic, access: .read,
-                unit: "%", stateClass: .measurement, metricID: "loss_percent"
-            )
-        ]
-    }
-}
-
 // MARK: iperf3 (iperf3/iperf3) — actor, nonisolated descriptors
 
 public extension Iperf3Provider {

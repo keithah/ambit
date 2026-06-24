@@ -72,10 +72,7 @@ final class BuiltInEntityDescriptorTests: XCTestCase {
         XCTAssertEqual(byKey["vpn_connected"]?.metricID, "connected")
     }
 
-    func testActiveMeasurementProvidersDeclareDescriptors() {
-        let ping = byKey(PingProvider().entityDescriptors())
-        XCTAssertEqual(ping["latency_ms"]?.deviceClass, .latency)
-
+    func testIperf3ProviderDeclaresDescriptors() {
         let iperf3 = byKey(Iperf3Provider().entityDescriptors())
         XCTAssertEqual(iperf3["run"]?.kind, .button)
         XCTAssertEqual(iperf3["download_bps"]?.deviceClass, .throughput)

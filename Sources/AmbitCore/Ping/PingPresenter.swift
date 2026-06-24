@@ -67,7 +67,7 @@ public struct MenuBarGlyph: Equatable, Sendable {
     }
 }
 
-public enum PingScopePresenter {
+public enum PingPresenter {
     /// Format milliseconds as a compact, rounded label; nil → "--ms".
     public static func format(ms: Double?) -> String {
         guard let ms else { return "--ms" }

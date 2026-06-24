@@ -22,19 +22,19 @@ final class EngineRegistryGatingTests: XCTestCase {
 
     func testRegistryAddPlusReloadPicksUpNewPingscopeHost() async {
         // The app's gateway path: add a pingscope host to the registry, then reload.
-        let cloudflare = PingScopeHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
-        let registry = InMemoryIntegrationRegistry(records: [.pingscope(cloudflare)])
+        let cloudflare = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let registry = InMemoryIntegrationRegistry(records: [.ping(cloudflare)])
         let engine = Engine(settings: AppSettings(), integrationRegistry: registry)
 
         let before = await engine.providerDisplayNames()
-        XCTAssertEqual(Set(before.keys), ["pingscope@1.1.1.1:443/probe"])
+        XCTAssertEqual(Set(before.keys), ["ping@1.1.1.1:443/probe"])
 
-        let gateway = PingScopeHostConfig(displayName: "Gateway", address: "192.168.8.1", method: .tcp, port: 80)
-        try? registry.upsert(.pingscope(gateway))
+        let gateway = PingHostConfig(displayName: "Gateway", address: "192.168.8.1", method: .tcp, port: 80)
+        try? registry.upsert(.ping(gateway))
         await engine.reloadProviders()
 
         let after = await engine.providerDisplayNames()
-        XCTAssertEqual(Set(after.keys), ["pingscope@1.1.1.1:443/probe", "pingscope@192.168.8.1:80/probe"])
+        XCTAssertEqual(Set(after.keys), ["ping@1.1.1.1:443/probe", "ping@192.168.8.1:80/probe"])
     }
 
     func testEnablingOneIntegrationRegistersOnlyThatOne() async {

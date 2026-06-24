@@ -3,7 +3,7 @@ import Foundation
 /// A latency probe for one host. Implementations: TCPProbe/UDPProbe/ICMPProbe (added across
 /// M1–M2), wrapped by TimeoutProbe.
 public protocol PingProbe: Sendable {
-    func measure(_ host: PingScopeHostConfig) async -> ProbeResult
+    func measure(_ host: PingHostConfig) async -> ProbeResult
 }
 
 /// Stands in for a probe method that isn't available in this build (e.g. ICMP on
@@ -15,7 +15,7 @@ public struct UnavailableProbe: PingProbe {
         self.reason = reason
     }
 
-    public func measure(_ host: PingScopeHostConfig) async -> ProbeResult {
+    public func measure(_ host: PingHostConfig) async -> ProbeResult {
         ProbeResult(timestamp: Date(), failureReason: reason, note: "Probe method unavailable in this build")
     }
 }
@@ -29,7 +29,7 @@ public struct TimeoutProbe: PingProbe {
         self.wrapped = probe
     }
 
-    public func measure(_ host: PingScopeHostConfig) async -> ProbeResult {
+    public func measure(_ host: PingHostConfig) async -> ProbeResult {
         let timeoutNanos = UInt64(max(0, host.timeout) * 1_000_000_000)
         return await withTaskGroup(of: ProbeResult?.self) { group in
             group.addTask { [wrapped] in await wrapped.measure(host) }

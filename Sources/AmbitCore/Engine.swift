@@ -109,7 +109,7 @@ public actor Engine {
         self.builtInProviderFactory = builtInProviderFactory
         // pingscope is the reference integration — always available; its instances (hosts)
         // come from the registry, so it costs nothing when no host is configured.
-        let integrationList = (builtInProviderFactory?.integrations() ?? []) + [PingScopeIntegration()]
+        let integrationList = (builtInProviderFactory?.integrations() ?? []) + [PingIntegration()]
         self.builtInIntegrations = Dictionary(uniqueKeysWithValues: integrationList.map { ($0.id, $0) })
         // Registry: injected (app) is authoritative; otherwise a default in-memory registry
         // seeded to reproduce the previous built-in set exactly (keeps existing tests green).

@@ -18,10 +18,10 @@ struct PingHostDisplay: Identifiable, Equatable {
     var isPrimary: Bool
     var colorIndex: Int
 
-    var color: Color { PingScopeColors.line(colorIndex) }
+    var color: Color { PingColors.line(colorIndex) }
 }
 
-enum PingScopeColors {
+enum PingColors {
     static let palette: [Color] = [
         Color(red: 0.23, green: 0.51, blue: 0.96),  // blue
         Color(red: 0.20, green: 0.78, blue: 0.35),  // green
@@ -43,7 +43,7 @@ enum PingScopeColors {
 
 // MARK: - Menu-bar glyph (stacked dot over latency)
 
-enum PingScopeGlyphRenderer {
+enum PingGlyphRenderer {
     static func image(_ glyph: MenuBarGlyph) -> NSImage {
         let width = glyph.itemWidth, height = 22.0
         let image = NSImage(size: NSSize(width: width, height: height))
@@ -74,14 +74,14 @@ enum PingScopeGlyphRenderer {
 
 // MARK: - Popover
 
-struct PingScopePopover: View {
+struct PingPopover: View {
     @EnvironmentObject private var viewModel: StatusViewModel
 
     private var hostOptions: [InstanceSelectorCard.Option] {
         viewModel.pingHosts.map { .init(id: $0.instanceID.rawValue, label: $0.name) }
     }
     private var focus: PingHostDisplay? {
-        if let id = viewModel.pingScopeSelection { return viewModel.pingHosts.first { $0.instanceID == id } }
+        if let id = viewModel.pingSelection { return viewModel.pingHosts.first { $0.instanceID == id } }
         return viewModel.pingHosts.first { $0.isPrimary } ?? viewModel.pingHosts.first
     }
 
@@ -101,17 +101,17 @@ struct PingScopePopover: View {
         HStack(alignment: .top) {
             InstanceSelectorCard(
                 options: hostOptions,
-                selectedID: viewModel.pingScopeSelection?.rawValue,
-                onSelect: { viewModel.selectPingScopeHost($0.map { IntegrationInstanceID(rawValue: $0) }) },
+                selectedID: viewModel.pingSelection?.rawValue,
+                onSelect: { viewModel.selectPingHost($0.map { IntegrationInstanceID(rawValue: $0) }) },
                 allLabel: "All Hosts"
             )
             Spacer()
             VStack(alignment: .trailing, spacing: 5) {
                 Text(focus?.readout.text ?? "--ms").font(.system(size: 25, weight: .bold))
                 HStack(spacing: 6) {
-                    Circle().fill(PingScopeColors.tone(focus?.readout.tone ?? .neutral)).frame(width: 9, height: 9)
+                    Circle().fill(PingColors.tone(focus?.readout.tone ?? .neutral)).frame(width: 9, height: 9)
                     Text(focus?.readout.statusLabel ?? "No Data")
-                        .font(.system(size: 13)).foregroundStyle(PingScopeColors.tone(focus?.readout.tone ?? .neutral))
+                        .font(.system(size: 13)).foregroundStyle(PingColors.tone(focus?.readout.tone ?? .neutral))
                 }
             }
             Button { viewModel.toggleOverlay?() } label: {
@@ -128,7 +128,7 @@ struct PingScopePopover: View {
     private var rangePicker: some View {
         HStack(spacing: 14) {
             Text("Range").font(.system(size: 14, weight: .semibold))
-            Picker("", selection: Binding(get: { viewModel.pingScopeRange }, set: { viewModel.setPingScopeRange($0) })) {
+            Picker("", selection: Binding(get: { viewModel.pingRange }, set: { viewModel.setPingRange($0) })) {
                 ForEach(TimeRange.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented).fixedSize()

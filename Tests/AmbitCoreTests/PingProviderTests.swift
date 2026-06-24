@@ -1,31 +1,31 @@
 import XCTest
 @testable import AmbitCore
 
-final class PingScopeProviderTests: XCTestCase {
+final class PingProviderTests: XCTestCase {
     private struct FixedProbe: PingProbe {
         let result: ProbeResult
-        func measure(_ host: PingScopeHostConfig) async -> ProbeResult { result }
+        func measure(_ host: PingHostConfig) async -> ProbeResult { result }
     }
 
     private let ctx = EnvironmentContext(routerHost: nil, settings: AppSettings())
 
-    private func host(_ address: String = "1.1.1.1", degradedAt: Double = 100, downAfter: Int = 3) -> PingScopeHostConfig {
-        PingScopeHostConfig(
+    private func host(_ address: String = "1.1.1.1", degradedAt: Double = 100, downAfter: Int = 3) -> PingHostConfig {
+        PingHostConfig(
             displayName: "CF", address: address, method: .tcp, port: 443,
             interval: 2, timeout: 2, thresholds: HealthThresholds(degradedAt: degradedAt, downAfterFailures: downAfter)
         )
     }
 
-    private func provider(_ host: PingScopeHostConfig, _ result: ProbeResult) -> PingScopeProvider {
-        PingScopeProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: result))
+    private func provider(_ host: PingHostConfig, _ result: ProbeResult) -> PingProvider {
+        PingProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: result))
     }
 
     func testIdentityIsScopedUnderIntegrationInstance() {
         let p = provider(host(), ProbeResult(timestamp: Date(), latencyMs: 10))
-        XCTAssertEqual(p.integrationID, IntegrationIDs.pingscope)
-        XCTAssertEqual(p.integrationInstanceID, IntegrationInstanceID(rawValue: "pingscope@1.1.1.1:443"))
-        XCTAssertEqual(p.instanceID, ProviderInstanceID(rawValue: "pingscope@1.1.1.1:443/probe"))
-        XCTAssertEqual(p.id, "pingscope@1.1.1.1:443/probe")
+        XCTAssertEqual(p.integrationID, IntegrationIDs.ping)
+        XCTAssertEqual(p.integrationInstanceID, IntegrationInstanceID(rawValue: "ping@1.1.1.1:443"))
+        XCTAssertEqual(p.instanceID, ProviderInstanceID(rawValue: "ping@1.1.1.1:443/probe"))
+        XCTAssertEqual(p.id, "ping@1.1.1.1:443/probe")
         XCTAssertEqual(p.instanceID.rawValue, "\(p.integrationInstanceID.rawValue)/\(p.typeID)")
     }
 
@@ -67,29 +67,29 @@ final class PingScopeProviderTests: XCTestCase {
     // MARK: Integration + config bridge
 
     func testHostConfigRoundTripsThroughRecordConfig() {
-        let original = PingScopeHostConfig(
+        let original = PingHostConfig(
             displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443,
             interval: 3, timeout: 1, thresholds: HealthThresholds(degradedAt: 150, downAfterFailures: 4)
         )
-        XCTAssertEqual(PingScopeHostConfig(configObject: original.asConfigObject()), original)
+        XCTAssertEqual(PingHostConfig(configObject: original.asConfigObject()), original)
     }
 
     func testIntegrationBuildsOneProviderPerHostRecord() {
-        let integration = PingScopeIntegration(probeFactory: { _ in FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 5)) })
+        let integration = PingIntegration(probeFactory: { _ in FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 5)) })
         func record(_ address: String) -> IntegrationInstanceRecord {
             let h = host(address)
-            return IntegrationInstanceRecord(id: h.integrationInstanceID, integrationID: IntegrationIDs.pingscope, displayName: h.displayName, origin: .user, config: h.asConfigObject())
+            return IntegrationInstanceRecord(id: h.integrationInstanceID, integrationID: IntegrationIDs.ping, displayName: h.displayName, origin: .user, config: h.asConfigObject())
         }
         let a = integration.makeProviders(instance: record("1.1.1.1"))
         let b = integration.makeProviders(instance: record("8.8.8.8"))
-        XCTAssertEqual(a.first?.instanceID, ProviderInstanceID(rawValue: "pingscope@1.1.1.1:443/probe"))
-        XCTAssertEqual(b.first?.instanceID, ProviderInstanceID(rawValue: "pingscope@8.8.8.8:443/probe"))
+        XCTAssertEqual(a.first?.instanceID, ProviderInstanceID(rawValue: "ping@1.1.1.1:443/probe"))
+        XCTAssertEqual(b.first?.instanceID, ProviderInstanceID(rawValue: "ping@8.8.8.8:443/probe"))
         XCTAssertNotEqual(a.first?.id, b.first?.id)
     }
 
     func testIntegrationReturnsNothingForUndecodableConfig() {
-        let integration = PingScopeIntegration()
-        let record = IntegrationInstanceRecord(id: "pingscope@bad", integrationID: IntegrationIDs.pingscope, displayName: "bad", origin: .user, config: ["nonsense": .bool(true)])
+        let integration = PingIntegration()
+        let record = IntegrationInstanceRecord(id: "ping@bad", integrationID: IntegrationIDs.ping, displayName: "bad", origin: .user, config: ["nonsense": .bool(true)])
         XCTAssertTrue(integration.makeProviders(instance: record).isEmpty)
     }
 }

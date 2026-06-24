@@ -33,7 +33,7 @@ public enum NetworkTier: String, CaseIterable, Codable, Sendable {
 public struct NetworkTierClassifier: Sendable {
     public init() {}
 
-    public func tier(for host: PingScopeHostConfig) -> NetworkTier {
+    public func tier(for host: PingHostConfig) -> NetworkTier {
         host.tier ?? Self.infer(address: host.address)
     }
 

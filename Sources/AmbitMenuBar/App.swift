@@ -36,9 +36,9 @@ final class SettingsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "PingScope Settings"
+        window.title = "Ping Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: PingScopeSettings().environmentObject(viewModel))
+        window.contentView = NSHostingView(rootView: PingSettings().environmentObject(viewModel))
         window.center()
         return window
     }
@@ -86,7 +86,7 @@ private final class StatusBarController: NSObject {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 420, height: 640)
         popover.contentViewController = NSHostingController(
-            rootView: PingScopePopover().environmentObject(viewModel)
+            rootView: PingPopover().environmentObject(viewModel)
         )
 
         if let button = statusItem.button {
@@ -118,7 +118,7 @@ private final class StatusBarController: NSObject {
     }
 
     private func updateGlyph(_ glyph: MenuBarGlyph) {
-        statusItem.button?.image = PingScopeGlyphRenderer.image(glyph)
-        statusItem.button?.toolTip = "PingScope · \(glyph.latencyText)"
+        statusItem.button?.image = PingGlyphRenderer.image(glyph)
+        statusItem.button?.toolTip = "Ping · \(glyph.latencyText)"
     }
 }

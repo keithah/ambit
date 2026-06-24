@@ -20,7 +20,7 @@ final class EnginePollCadenceTests: XCTestCase {
 
     private struct FixedProbe: PingProbe {
         let result: ProbeResult
-        func measure(_ host: PingScopeHostConfig) async -> ProbeResult { result }
+        func measure(_ host: PingHostConfig) async -> ProbeResult { result }
     }
 
     private func engine(providers: [any Provider], prober: SpyProber) -> Engine {
@@ -34,8 +34,8 @@ final class EnginePollCadenceTests: XCTestCase {
 
     func testPingOnlySetupSkipsEndpointResolution() async {
         let spy = SpyProber()
-        let host = PingScopeHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)
-        let provider = PingScopeProvider(host: host, integrationInstanceID: host.integrationInstanceID,
+        let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)
+        let provider = PingProvider(host: host, integrationInstanceID: host.integrationInstanceID,
                                          probe: FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 20)))
         let engine = engine(providers: [provider], prober: spy)
         await engine.refresh()

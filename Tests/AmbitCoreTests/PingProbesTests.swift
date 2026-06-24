@@ -1,9 +1,9 @@
 import XCTest
 @testable import AmbitCore
 
-final class PingScopeProbesTests: XCTestCase {
-    private func host(_ method: ProbeMethod, address: String = "1.1.1.1", port: UInt16? = 443, timeout: TimeInterval = 2) -> PingScopeHostConfig {
-        PingScopeHostConfig(displayName: "H", address: address, method: method, port: method.requiresPort ? port : nil, timeout: timeout)
+final class PingProbesTests: XCTestCase {
+    private func host(_ method: ProbeMethod, address: String = "1.1.1.1", port: UInt16? = 443, timeout: TimeInterval = 2) -> PingHostConfig {
+        PingHostConfig(displayName: "H", address: address, method: method, port: method.requiresPort ? port : nil, timeout: timeout)
     }
 
     // MARK: ProbeFactory selection
@@ -77,7 +77,7 @@ final class PingScopeProbesTests: XCTestCase {
     func testProviderProbesViaICMPAndReportsHealthy() async {
         let host = host(.icmp, address: "192.168.8.1")
         let probe = icmp(["-c 1 -W 2000 192.168.8.1": ProcessResult(exitCode: 0, stdout: "time=4.5 ms", stderr: "")])
-        let provider = PingScopeProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: probe)
+        let provider = PingProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: probe)
         let snap = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
         XCTAssertEqual(snap.health, .ok)
         XCTAssertEqual(snap.metric("latency_ms")?.value, .latency(ms: 4.5))

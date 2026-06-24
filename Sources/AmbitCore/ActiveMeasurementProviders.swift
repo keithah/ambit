@@ -75,23 +75,8 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
 
     public static func summaries(from snapshot: StatusSnapshot) -> [ActiveMeasurementSummary] {
         [
-            pingSummary(from: snapshot.providers[ProviderInstanceIDs.ping]),
             iperf3Summary(from: snapshot.providers[ProviderInstanceIDs.iperf3])
         ].compactMap { $0 }
-    }
-
-    private static func pingSummary(from state: SourceState<ProviderSnapshot>?) -> ActiveMeasurementSummary? {
-        guard let state, let provider = state.value, case .ping(let detail) = provider.detail else { return nil }
-        return ActiveMeasurementSummary(
-            providerID: ProviderIDs.ping,
-            title: "Ping",
-            subtitle: detail.host,
-            health: provider.health,
-            primaryMetric: provider.metric("latency_ms"),
-            secondaryMetrics: ["loss_percent", "received_packets"].compactMap(provider.metric),
-            errorMessage: state.errorMessage ?? provider.error,
-            diagnostic: ProviderDiagnostic.make(providerID: ProviderIDs.ping, providerName: "Ping", snapshot: provider)
-        )
     }
 
     private static func iperf3Summary(from state: SourceState<ProviderSnapshot>?) -> ActiveMeasurementSummary? {
@@ -105,62 +90,6 @@ public struct ActiveMeasurementSummary: Equatable, Identifiable, Sendable {
             secondaryMetrics: ["upload_bps"].compactMap(provider.metric),
             errorMessage: state.errorMessage ?? provider.error,
             diagnostic: ProviderDiagnostic.make(providerID: ProviderIDs.iperf3, providerName: "iperf3", snapshot: provider)
-        )
-    }
-}
-
-public actor PingProvider: Provider {
-    public let id: ProviderID = ProviderIDs.ping
-    public let displayName = "Ping"
-    public let typeID: ProviderTypeID = ProviderIDs.ping
-    public let integrationID = IntegrationIDs.ping
-    public let integrationInstanceID = IntegrationInstanceIDs.ping
-    public let instanceID = ProviderInstanceIDs.ping
-    public let pollInterval: TimeInterval
-
-    private let host: String
-    private let executable: String
-    private let processRunner: ProcessRunner
-
-    public init(host: String = "1.1.1.1", executable: String = "/sbin/ping", pollInterval: TimeInterval = 10, processRunner: ProcessRunner = SystemProcessRunner()) {
-        self.host = host
-        self.executable = executable
-        self.pollInterval = pollInterval
-        self.processRunner = processRunner
-    }
-
-    public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
-        do {
-            let result = try await processRunner.run(executable: executable, arguments: ["-c", "3", "-W", "1000", host], timeout: 5)
-            guard result.exitCode == 0 else {
-                let output = result.stdout.isEmpty ? result.stderr : result.stdout
-                let parsed = Self.parse(host: host, output: output)
-                var snapshot = ProviderSnapshot.ping(parsed)
-                if snapshot.metrics.isEmpty {
-                    snapshot.health = .down
-                }
-                snapshot.error = result.stderr.isEmpty ? "ping exited with status \(result.exitCode)." : result.stderr
-                return snapshot
-            }
-            let snapshot = Self.parse(host: host, output: result.stdout)
-            return ProviderSnapshot.ping(snapshot)
-        } catch {
-            return ProviderSnapshot(health: .down, metrics: [], detail: .ping(PingSnapshot(host: host)), error: error.localizedDescription)
-        }
-    }
-
-    public static func parse(host: String, output: String) -> PingSnapshot {
-        let packetPattern = #"(\d+) packets transmitted, (\d+) packets received, ([0-9.]+)% packet loss"#
-        let latencyPattern = #"round-trip min/avg/max/stddev = [0-9.]+/([0-9.]+)/[0-9.]+/[0-9.]+ ms"#
-        let packets = firstMatch(output, pattern: packetPattern)
-        let latency = firstMatch(output, pattern: latencyPattern)
-        return PingSnapshot(
-            host: host,
-            transmitted: packets.element(at: 1).flatMap(Int.init),
-            received: packets.element(at: 2).flatMap(Int.init),
-            lossPercent: packets.element(at: 3).flatMap(Double.init),
-            averageLatencyMs: latency.element(at: 1).flatMap(Double.init),
-            rawOutput: output
         )
     }
 }

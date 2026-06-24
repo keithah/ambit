@@ -26,7 +26,6 @@ final class IntegrationIdentityTests: XCTestCase {
             SpeedifyProvider(),
             StarlinkProvider(),
             EcoFlowProvider(),
-            PingProvider(),
             Iperf3Provider()
         ]
 

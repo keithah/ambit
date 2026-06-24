@@ -15,21 +15,21 @@ public actor HealthTracker {
 
 /// One pingscope host = one provider instance. Probes on its own interval; health is the
 /// generic HealthState evaluator projected onto the flat Health for the snapshot.
-public struct PingScopeProvider: Provider {
+public struct PingProvider: Provider {
     public let id: ProviderID
     public let displayName: String
     public let pollInterval: TimeInterval
     public let typeID: ProviderTypeID = "probe"
-    public let integrationID = IntegrationIDs.pingscope
+    public let integrationID = IntegrationIDs.ping
     public let integrationInstanceID: IntegrationInstanceID
     public let instanceID: ProviderInstanceID
 
-    private let host: PingScopeHostConfig
+    private let host: PingHostConfig
     private let probe: any PingProbe
     private let tracker = HealthTracker()
 
     public init(
-        host: PingScopeHostConfig,
+        host: PingHostConfig,
         integrationInstanceID: IntegrationInstanceID,
         probe: (any PingProbe)? = nil
     ) {
@@ -90,10 +90,10 @@ public struct PingScopeProvider: Provider {
 
 public extension IntegrationInstanceRecord {
     /// A registry record for a pingscope host (deterministic id from the target).
-    static func pingscope(_ host: PingScopeHostConfig, enabled: Bool = true) -> IntegrationInstanceRecord {
+    static func ping(_ host: PingHostConfig, enabled: Bool = true) -> IntegrationInstanceRecord {
         IntegrationInstanceRecord(
             id: host.integrationInstanceID,
-            integrationID: IntegrationIDs.pingscope,
+            integrationID: IntegrationIDs.ping,
             displayName: host.displayName,
             enabled: enabled,
             origin: .user,
@@ -103,26 +103,26 @@ public extension IntegrationInstanceRecord {
 }
 
 /// The pingscope integration — the first multi-instance integration. Each enabled host
-/// record stands up one PingScopeProvider.
-public struct PingScopeIntegration: Integration {
-    public let id = IntegrationIDs.pingscope
-    public let displayName = "PingScope"
+/// record stands up one PingProvider.
+public struct PingIntegration: Integration {
+    public let id = IntegrationIDs.ping
+    public let displayName = "Ping"
     public let isMultiInstance = true
 
-    private let probeFactory: @Sendable (PingScopeHostConfig) -> any PingProbe
+    private let probeFactory: @Sendable (PingHostConfig) -> any PingProbe
 
-    public init(probeFactory: @escaping @Sendable (PingScopeHostConfig) -> any PingProbe = { DefaultProbeFactory().makeProbe(for: $0) }) {
+    public init(probeFactory: @escaping @Sendable (PingHostConfig) -> any PingProbe = { DefaultProbeFactory().makeProbe(for: $0) }) {
         self.probeFactory = probeFactory
     }
 
     public func makeProviders(instance: IntegrationInstanceRecord) -> [any Provider] {
-        guard let host = PingScopeHostConfig(configObject: instance.config) else { return [] }
-        return [PingScopeProvider(host: host, integrationInstanceID: instance.id, probe: probeFactory(host))]
+        guard let host = PingHostConfig(configObject: instance.config) else { return [] }
+        return [PingProvider(host: host, integrationInstanceID: instance.id, probe: probeFactory(host))]
     }
 
     public func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] {
-        guard let host = PingScopeHostConfig(configObject: instance.config), host.policy.enabled else { return [] }
-        let providerID = "\(instance.id.rawValue)/probe"   // matches PingScopeProvider.instanceID
+        guard let host = PingHostConfig(configObject: instance.config), host.policy.enabled else { return [] }
+        let providerID = "\(instance.id.rawValue)/probe"   // matches PingProvider.instanceID
         // High latency sustained for N consecutive samples (≈ N × interval).
         return [
             .sustained(SustainedAlertRule(

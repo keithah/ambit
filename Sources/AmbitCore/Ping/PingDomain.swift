@@ -45,7 +45,7 @@ public struct ProbeResult: Equatable, Sendable {
 }
 
 /// Per-host configuration — the per-instance config carried in IntegrationInstanceRecord.
-public struct PingScopeHostConfig: Codable, Equatable, Sendable {
+public struct PingHostConfig: Codable, Equatable, Sendable {
     public var displayName: String
     public var address: String
     public var method: ProbeMethod
@@ -116,7 +116,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
     public var isValid: Bool { validationErrors.isEmpty }
 
     /// Switch probe method and adopt its method-aware default port.
-    public func applying(method: ProbeMethod) -> PingScopeHostConfig {
+    public func applying(method: ProbeMethod) -> PingHostConfig {
         var copy = self
         copy.method = method
         copy.port = method.defaultPort
@@ -133,7 +133,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
     /// port). Two engines configured for the same host compute the same id.
     public var integrationInstanceID: IntegrationInstanceID {
         let suffix = port.map { ":\($0)" } ?? ""
-        return IntegrationInstanceID(rawValue: "pingscope@\(address)\(suffix)")
+        return IntegrationInstanceID(rawValue: "ping@\(address)\(suffix)")
     }
 
     /// Encode to / decode from an IntegrationInstanceRecord.config (JSONObject), round-tripped
@@ -147,7 +147,7 @@ public struct PingScopeHostConfig: Codable, Equatable, Sendable {
 
     public init?(configObject: JSONObject) {
         guard let data = try? JSONEncoder().encode(JSONValue.object(configObject)),
-              let host = try? JSONDecoder().decode(PingScopeHostConfig.self, from: data) else { return nil }
+              let host = try? JSONDecoder().decode(PingHostConfig.self, from: data) else { return nil }
         self = host
     }
 }

@@ -3,15 +3,10 @@ import XCTest
 @testable import AmbitCore
 
 final class ActiveMeasurementProviderTests: XCTestCase {
-    func testActiveMeasurementSummariesExposePingAndIperfMetrics() {
+    // Basic ICMP "ping" active-measurement provider retired (superseded by the ping integration
+    // / socket probes); its summary + parse tests were removed with it. iperf3 coverage stays.
+    func testActiveMeasurementSummariesExposeIperf3Metrics() {
         let snapshot = StatusSnapshot(providers: [
-            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot.ping(PingSnapshot(
-                host: "1.1.1.1",
-                transmitted: 3,
-                received: 3,
-                lossPercent: 0,
-                averageLatencyMs: 12.4
-            ))),
             ProviderInstanceIDs.iperf3: SourceState(value: ProviderSnapshot.iperf3(Iperf3Snapshot(
                 host: "iperf.example",
                 downloadBps: 11_000_000,
@@ -21,90 +16,11 @@ final class ActiveMeasurementProviderTests: XCTestCase {
 
         let summaries = ActiveMeasurementSummary.summaries(from: snapshot)
 
-        XCTAssertEqual(summaries.map(\.providerID), [ProviderIDs.ping, ProviderIDs.iperf3])
-        XCTAssertEqual(summaries.map(\.title), ["Ping", "iperf3"])
-        XCTAssertEqual(summaries[0].subtitle, "1.1.1.1")
-        XCTAssertEqual(summaries[0].primaryMetric?.id, "latency_ms")
-        XCTAssertEqual(summaries[0].secondaryMetrics.map(\.id), ["loss_percent", "received_packets"])
-        XCTAssertEqual(summaries[1].subtitle, "iperf.example")
-        XCTAssertEqual(summaries[1].primaryMetric?.id, "download_bps")
-        XCTAssertEqual(summaries[1].secondaryMetrics.map(\.id), ["upload_bps"])
-    }
-
-    func testActiveMeasurementSummaryIncludesDiagnosticsForFailures() {
-        let snapshot = StatusSnapshot(providers: [
-            ProviderInstanceIDs.ping: SourceState(value: ProviderSnapshot(
-                health: .down,
-                metrics: [],
-                detail: .ping(PingSnapshot(host: "1.1.1.1")),
-                error: "Process timed out."
-            ))
-        ])
-
-        let summaries = ActiveMeasurementSummary.summaries(from: snapshot)
-
-        XCTAssertEqual(summaries.first?.diagnostic, ProviderDiagnostic(
-            title: "Ping target unreachable",
-            message: "Process timed out.",
-            nextStep: "Check network reachability to the target host and confirm ICMP is not blocked."
-        ))
-    }
-
-    func testPingProviderParsesMacOSPingOutputIntoMetrics() async {
-        let output = """
-        PING 1.1.1.1 (1.1.1.1): 56 data bytes
-        64 bytes from 1.1.1.1: icmp_seq=0 ttl=58 time=12.100 ms
-        64 bytes from 1.1.1.1: icmp_seq=1 ttl=58 time=10.900 ms
-        64 bytes from 1.1.1.1: icmp_seq=2 ttl=58 time=11.000 ms
-
-        --- 1.1.1.1 ping statistics ---
-        3 packets transmitted, 3 packets received, 0.0% packet loss
-        round-trip min/avg/max/stddev = 10.900/11.333/12.100/0.543 ms
-        """
-        let provider = PingProvider(
-            host: "1.1.1.1",
-            processRunner: StubProcessRunner(results: ["-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 0, stdout: output, stderr: "")])
-        )
-
-        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
-
-        XCTAssertEqual(snapshot.health, .ok)
-        XCTAssertEqual(snapshot.metricValue("latency_ms"), .latency(ms: 11.333))
-        XCTAssertEqual(snapshot.metricValue("loss_percent"), .percent(0))
-        XCTAssertEqual(snapshot.metricValue("received_packets"), .level(3))
-    }
-
-    func testPingProviderKeepsMetricsWhenPingReportsPacketLossWithNonZeroExit() async {
-        let output = """
-        PING 1.1.1.1 (1.1.1.1): 56 data bytes
-
-        --- 1.1.1.1 ping statistics ---
-        3 packets transmitted, 0 packets received, 100.0% packet loss
-        """
-        let provider = PingProvider(
-            host: "1.1.1.1",
-            processRunner: StubProcessRunner(results: ["-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 2, stdout: output, stderr: "")])
-        )
-
-        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
-
-        XCTAssertEqual(snapshot.health, .down)
-        XCTAssertEqual(snapshot.metricValue("loss_percent"), .percent(100))
-        XCTAssertEqual(snapshot.metricValue("received_packets"), .level(0))
-        XCTAssertEqual(snapshot.error, "ping exited with status 2.")
-    }
-
-    func testPingProviderUsesStderrWhenNonZeroExitHasNoParseableMetrics() async {
-        let provider = PingProvider(
-            host: "bad.host",
-            processRunner: StubProcessRunner(results: ["-c 3 -W 1000 bad.host": ProcessResult(exitCode: 68, stdout: "", stderr: "cannot resolve bad.host")])
-        )
-
-        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
-
-        XCTAssertEqual(snapshot.health, .down)
-        XCTAssertEqual(snapshot.metrics, [])
-        XCTAssertEqual(snapshot.error, "cannot resolve bad.host")
+        XCTAssertEqual(summaries.map(\.providerID), [ProviderIDs.iperf3])
+        XCTAssertEqual(summaries.map(\.title), ["iperf3"])
+        XCTAssertEqual(summaries[0].subtitle, "iperf.example")
+        XCTAssertEqual(summaries[0].primaryMetric?.id, "download_bps")
+        XCTAssertEqual(summaries[0].secondaryMetrics.map(\.id), ["upload_bps"])
     }
 
     func testIperf3ProviderRunCommandStoresLatestThroughput() async throws {
