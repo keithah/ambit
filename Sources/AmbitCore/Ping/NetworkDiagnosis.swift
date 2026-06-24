@@ -14,19 +14,24 @@ public struct DiagnosisHost: Equatable, Sendable {
     public var tier: NetworkTier
     public var status: HealthStatus
     public var consecutiveFailures: Int
+    /// True when this host's data is stale (no fresh sample within the staleness window). Stale
+    /// hosts are excluded from fault inference — you can't diagnose from data you didn't collect.
+    public var isStale: Bool
 
-    public init(id: String, tier: NetworkTier, status: HealthStatus, consecutiveFailures: Int = 0) {
+    public init(id: String, tier: NetworkTier, status: HealthStatus, consecutiveFailures: Int = 0, isStale: Bool = false) {
         self.id = id
         self.tier = tier
         self.status = status
         self.consecutiveFailures = consecutiveFailures
+        self.isStale = isStale
     }
 }
 
 public struct NetworkPerspectiveDiagnosis: Equatable, Sendable {
-    public enum Scope: String, Sendable { case noData, allReachable, localNetwork, upstream, remoteService, partialDegradation }
+    public enum Scope: String, Sendable { case noData, monitoringStalled, allReachable, localNetwork, upstream, remoteService, partialDegradation }
     public enum Verdict: Equatable, Sendable {
         case noData
+        case monitoringStalled
         case allReachable
         case localNetworkDown
         case ispPathDown
@@ -71,8 +76,14 @@ public struct NetworkPerspectiveDiagnoser: Sendable {
             break
         }
 
-        let observed = hosts.filter { $0.status != .noData }
+        // Stale hosts are excluded from inference — you cannot diagnose a fault from data you
+        // did not collect. If the only thing wrong is staleness, report that, never "down".
+        let observed = hosts.filter { $0.status != .noData && !$0.isStale }
         guard !observed.isEmpty else {
+            if hosts.contains(where: \.isStale) {
+                return make(.monitoringStalled, .monitoringStalled, .tentative, nil, [], [],
+                            "Monitoring paused", "No fresh data — monitoring resuming.")
+            }
             return make(.noData, .noData, .tentative, nil, [], [], "No data", "No samples yet.")
         }
 

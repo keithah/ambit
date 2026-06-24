@@ -77,4 +77,31 @@ final class NetworkDiagnosisTests: XCTestCase {
         let d = diagnoser.diagnose(hosts: [host("cf", .upstream, .noData)])
         XCTAssertEqual(d.scope, .noData)
     }
+
+    // MARK: Stale-suppression (a stalled monitor must not be reported as a network fault)
+
+    private func staleHost(_ id: String, _ tier: NetworkTier, _ status: HealthStatus) -> DiagnosisHost {
+        DiagnosisHost(id: id, tier: tier, status: status, isStale: true)
+    }
+
+    func testStaleDownGatewayReportsMonitoringStalledNotLocalNetworkDown() {
+        let d = diagnoser.diagnose(hosts: [staleHost("gw", .localGateway, .down)])
+        XCTAssertEqual(d.scope, .monitoringStalled)
+        XCTAssertEqual(d.verdict, .monitoringStalled)
+        XCTAssertEqual(d.title, "Monitoring paused")
+        XCTAssertNotEqual(d.verdict, .localNetworkDown)
+    }
+
+    func testFreshHostsWinOverStaleHosts() {
+        // A stale (last-seen-down) gateway must not drag a freshly-healthy remote into a fault.
+        let d = diagnoser.diagnose(hosts: [staleHost("gw", .localGateway, .down), host("cf", .upstream, .healthy)])
+        XCTAssertEqual(d.scope, .allReachable)
+        XCTAssertEqual(d.verdict, .allReachable)
+    }
+
+    func testOnlyNoDataHostsStayNoDataNotStalled() {
+        // Never-sampled (noData) is distinct from "we were monitoring and it stopped" (stalled).
+        let d = diagnoser.diagnose(hosts: [host("cf", .upstream, .noData)])
+        XCTAssertEqual(d.verdict, .noData)
+    }
 }
