@@ -74,6 +74,11 @@ private final class MenuBarAppModel: ObservableObject {
         viewModel.showPopover = { [weak firstController] in firstController?.showPopover() }
         viewModel.openSettings = { [weak settingsController] in settingsController?.show() }
         viewModel.start()
+        // On system wake, kick a fresh poll cycle — a probe in flight at sleep is wedged and the
+        // inter-cycle sleep won't have advanced. (Core stays UI-free; NSWorkspace lives here.)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak viewModel] _ in MainActor.assumeIsolated { viewModel?.kickPoll() } }
         NSApp.setActivationPolicy(.accessory)
     }
 }

@@ -62,6 +62,7 @@ final class StatusViewModel: ObservableObject {
     private var alertEngine = AlertEngine()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
+    private var staleTickTask: Task<Void, Never>?
 
     init(
         settingsStore: SettingsStore = UserDefaultsSettingsStore(),
@@ -112,6 +113,7 @@ final class StatusViewModel: ObservableObject {
 
     deinit {
         subscriptionTask?.cancel()
+        staleTickTask?.cancel()
     }
 
     /// Load persisted slots; seed one dedicated Ping slot on first run (parity with today's
@@ -230,11 +232,26 @@ final class StatusViewModel: ObservableObject {
                 await self.alertNotifier.deliver(events)
             }
         }
+        // Time-driven staleness tick — recomputes staleness/diagnosis against wall-clock `now`
+        // on a cadence INDEPENDENT of the engine snapshot stream. When the poll loop stalls (no
+        // snapshots), this is what flips entities to .stale and the banner to "Monitoring paused"
+        // instead of freezing on the last .online snapshot.
+        staleTickTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                await self?.refreshPing()
+            }
+        }
         Task { await engine.start() }
         Task { await refreshAlertRules() }
         Task { await seedGatewayHostIfNeeded() }
         refreshInstalledProviders()
         refreshCommandPalette()
+    }
+
+    /// Kick a fresh poll cycle (called by the wake observer on system wake).
+    func kickPoll() {
+        Task { await engine.pollNow() }
     }
 
     func refresh() async {
@@ -451,6 +468,7 @@ final class StatusViewModel: ObservableObject {
         var alertHosts: [AlertHost] = []
         // Also collect per-host readouts keyed by instanceID (used by buildSlotSurface for the glyph).
         var hostReadouts: [IntegrationInstanceID: LatencyReadout] = [:]
+        var newestSample: Date?
         for record in activeRecords {
             guard let host = PingHostConfig(configObject: record.config) else { continue }
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
@@ -459,13 +477,22 @@ final class StatusViewModel: ObservableObject {
             let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
             let readout = PingPresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
             hostReadouts[record.id] = readout
-            diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: pingTierClassifier.tier(for: host), status: health))
+            // Staleness is evaluated against wall-clock `now` from the last sample — so a stalled
+            // loop (stale data) suppresses fault inference rather than reporting a false "down".
+            let isStale = Staleness.isStale(lastUpdate: samples.last?.timestamp, interval: host.interval, now: now)
+            if let last = samples.last?.timestamp, last > (newestSample ?? .distantPast) { newestSample = last }
+            diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: pingTierClassifier.tier(for: host), status: health, isStale: isStale))
             alertHosts.append(AlertHost(id: record.id.rawValue, name: record.displayName, status: health,
                                         notifyOnRecovery: host.policy.notifyOnRecovery, cooldown: host.policy.cooldown))
         }
 
-        // Tier diagnosis + network/host alerts.
-        let diagnosis = pingDiagnoser.diagnose(hosts: diagnosisHosts)
+        // Tier diagnosis + network/host alerts. Enrich a stalled diagnosis with the data age
+        // (the diagnoser stays timestamp-free; the host knows when data last arrived).
+        var diagnosis = pingDiagnoser.diagnose(hosts: diagnosisHosts)
+        if case .monitoringStalled = diagnosis.verdict {
+            let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
+            diagnosis.detail = "Monitoring paused — data is \(age)s old."
+        }
         pingDiagnosis = diagnosis
         let events = pingAlertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
         await alertNotifier.deliver(events)
@@ -540,8 +567,15 @@ final class StatusViewModel: ObservableObject {
             latency.name = record.displayName
             latencyDescriptors.append(latency)
             descriptors[latencyID] = latency
-            states[latencyID] = allStates[latencyID]
-            series[latencyID] = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
+            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
+            series[latencyID] = samples
+            if var state = allStates[latencyID] {
+                // Downgrade .online → .stale when the host's data is stale (time-driven), so the
+                // readout reflects "paused monitoring", not a frozen-online value.
+                let interval = PingHostConfig(configObject: record.config)?.interval ?? 2
+                state.availability = Staleness.availability(state.availability, lastUpdate: samples.last?.timestamp, interval: interval, now: now)
+                states[latencyID] = state
+            }
         }
 
         // Build plan: for ping slot prepend diagnosis banner.
