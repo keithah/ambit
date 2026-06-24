@@ -82,4 +82,52 @@ final class PingProbesTests: XCTestCase {
         XCTAssertEqual(snap.health, .ok)
         XCTAssertEqual(snap.metric("latency_ms")?.value, .latency(ms: 4.5))
     }
+
+    // MARK: TimeoutProbe abandon-the-loser
+
+    /// A probe that never returns on its own (sleeps far past any test window) but observes
+    /// cancellation — stands in for a socket wedged across system sleep.
+    private final class NeverResolvingProbe: PingProbe, @unchecked Sendable {
+        private let lock = NSLock()
+        private var _cancelled = false
+        var wasCancelled: Bool { lock.withLock { _cancelled } }
+        func measure(_ host: PingHostConfig) async -> ProbeResult {
+            do {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+            } catch {
+                lock.withLock { _cancelled = true }
+            }
+            return ProbeResult(timestamp: Date(), failureReason: .timeout)
+        }
+    }
+
+    private struct ImmediateStubProbe: PingProbe {
+        let result: ProbeResult
+        func measure(_ host: PingHostConfig) async -> ProbeResult { result }
+    }
+
+    private func pollUntil(_ timeout: TimeInterval, _ cond: @escaping () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !cond() && Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
+    }
+
+    func testTimeoutProbeAbandonsAHungProbeAndReportsTimeout() async {
+        let result = await TimeoutProbe(wrapping: NeverResolvingProbe()).measure(host(.tcp, timeout: 0.05))
+        XCTAssertEqual(result.failureReason, .timeout)
+        XCTAssertNil(result.latencyMs)
+    }
+
+    func testTimeoutProbeReturnsTheRealResultWhenProbeWins() async {
+        let stub = ImmediateStubProbe(result: ProbeResult(timestamp: Date(), latencyMs: 12))
+        let result = await TimeoutProbe(wrapping: stub).measure(host(.tcp, timeout: 2))
+        XCTAssertEqual(result.latencyMs, 12)
+        XCTAssertNil(result.failureReason)
+    }
+
+    func testTimeoutProbeCancelsTheLosingProbe() async {
+        let probe = NeverResolvingProbe()
+        _ = await TimeoutProbe(wrapping: probe).measure(host(.tcp, timeout: 0.05))
+        await pollUntil(1.0) { probe.wasCancelled }   // cancellation propagates asynchronously
+        XCTAssertTrue(probe.wasCancelled)
+    }
 }
