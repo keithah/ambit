@@ -26,13 +26,12 @@ final class StatusViewModel: ObservableObject {
     @Published var pingRange: TimeRange = .fiveMinutes {
         didSet { UserDefaults.standard.set(pingRange.rawValue, forKey: "pingRange") }
     }
-    @Published var pingSelection: IntegrationInstanceID?   // nil = All Hosts
-    @Published var pingHosts: [PingHostDisplay] = []
     @Published var pingHostRows: [PingHostRow] = []
-    @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
     @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
-    @Published var surfaceData = SurfaceData()
-    @Published var surfacePlan = SurfacePlan()
+    /// Per-slot surface values (plan + data + glyph + hostOptions), keyed by SlotID.
+    @Published var slotSurfaces: [SlotID: SlotSurface] = [:]
+    /// Per-slot focused instance (nil = show all resolved instances for the slot).
+    @Published var slotFocus: [SlotID: IntegrationInstanceID] = [:]
 
     // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
     // one status item per slot.
@@ -424,13 +423,13 @@ final class StatusViewModel: ObservableObject {
         Task { await refreshPing() }
     }
 
-    func selectPingHost(_ id: IntegrationInstanceID?) {
-        pingSelection = id
+    /// Set or clear the per-slot focus. Clears focus when `id` is nil (show all).
+    func selectInstance(_ slot: SlotID, _ id: IntegrationInstanceID?) {
+        slotFocus[slot] = id
         Task { await refreshPing() }
     }
 
-    /// Rebuild per-host displays (readout + windowed samples + stats) for the pingscope UI,
-    /// plus the full host list for Settings.
+    /// Rebuild per-host rows + diagnosis/alerts (settings), then build per-slot surfaces.
     func refreshPing() async {
         let now = Date()
         let freshness = max(pingRange.seconds, 30)
@@ -447,75 +446,133 @@ final class StatusViewModel: ObservableObject {
             return PingHostRow(instanceID: record.id, config: config, enabled: record.enabled, isPrimary: record.id == fallbackPrimary)
         }
 
-        // Active hosts (windowed history) for the popover, plus diagnosis/alert inputs.
-        var displays: [PingHostDisplay] = []
+        // Active hosts: per-host readout for diagnosis + alert inputs.
         var diagnosisHosts: [DiagnosisHost] = []
         var alertHosts: [AlertHost] = []
-        for (index, record) in activeRecords.enumerated() {
+        // Also collect per-host readouts keyed by instanceID (used by buildSlotSurface for the glyph).
+        var hostReadouts: [IntegrationInstanceID: LatencyReadout] = [:]
+        for record in activeRecords {
             guard let host = PingHostConfig(configObject: record.config) else { continue }
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
             let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
             let readout = PingPresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
-            displays.append(PingHostDisplay(
-                instanceID: record.id,
-                providerInstanceID: providerInstance,
-                latencyEntityID: latencyID,
-                name: record.displayName,
-                detail: host.detailLine,
-                samples: samples,
-                readout: readout,
-                stats: SampleStats.from(samples),
-                isPrimary: record.id == fallbackPrimary,
-                colorIndex: index
-            ))
+            hostReadouts[record.id] = readout
             diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: pingTierClassifier.tier(for: host), status: health))
             alertHosts.append(AlertHost(id: record.id.rawValue, name: record.displayName, status: health,
                                         notifyOnRecovery: host.policy.notifyOnRecovery, cooldown: host.policy.cooldown))
         }
-        pingHosts = displays
-        let primary = displays.first(where: \.isPrimary) ?? displays.first
-        menuGlyph = primary.map { MenuBarGlyph(latencyText: $0.readout.text, tone: $0.readout.tone) }
-            ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral)
 
-        // Tier diagnosis + network/host alerts (integration-internal).
+        // Tier diagnosis + network/host alerts.
         let diagnosis = pingDiagnoser.diagnose(hosts: diagnosisHosts)
         pingDiagnosis = diagnosis
         let events = pingAlertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
         await alertNotifier.deliver(events)
 
-        // Generic surface: latency entities of the shown hosts (single host when one is selected,
-        // all enabled hosts otherwise) + the diagnosis banner. The composer collapses same-class
-        // latency series into one multi-line graph; a single host stays single-series (keeps stats).
-        let shown = pingSelection.map { id in activeRecords.filter { $0.id == id } } ?? activeRecords
+        // Build per-slot surfaces.
         let allDescriptors = await engine.entityDescriptors()
         let allStates = await engine.entityStates()
+        var newSurfaces: [SlotID: SlotSurface] = [:]
+        let allRegistryRecords = ((try? integrationRegistry.instances()) ?? [])
+
+        for slot in slots {
+            let surface = await buildSlotSurface(
+                slot: slot,
+                diagnosis: diagnosis,
+                allRecords: activeRecords,
+                allRegistryRecords: allRegistryRecords,
+                fallbackPrimary: fallbackPrimary,
+                hostReadouts: hostReadouts,
+                allDescriptors: allDescriptors,
+                allStates: allStates,
+                now: now
+            )
+            newSurfaces[slot.id] = surface
+        }
+        slotSurfaces = newSurfaces
+    }
+
+    private func buildSlotSurface(
+        slot: Slot,
+        diagnosis: NetworkPerspectiveDiagnosis,
+        allRecords: [IntegrationInstanceRecord],         // enabled ping records
+        allRegistryRecords: [IntegrationInstanceRecord], // all records (for SlotResolver)
+        fallbackPrimary: IntegrationInstanceID?,
+        hostReadouts: [IntegrationInstanceID: LatencyReadout],
+        allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
+        allStates: [EntityID: EntityState],
+        now: Date
+    ) async -> SlotSurface {
+        // Flatten descriptors for SlotResolver.
+        let flatDescriptors = allDescriptors.values.flatMap { $0 }
+
+        // Resolve the slot's selection to descriptors.
+        let resolved = SlotResolver.resolve(slot.selection, descriptors: flatDescriptors, records: allRegistryRecords)
+
+        // Distinct integration instances the slot resolved to (for hostOptions).
+        let resolvedInstanceIDs = Set(resolved.map { $0.instanceID.integrationInstanceID })
+        let resolvedRecords = allRecords.filter { resolvedInstanceIDs.contains($0.id) }
+        let hostOptions = resolvedRecords.map { InstanceSelectorCard.Option(id: $0.id.rawValue, label: $0.displayName) }
+
+        // Apply per-slot focus: filter to the focused instance if set.
+        let focusedID = slotFocus[slot.id]
+        let shownRecords = focusedID.map { id in resolvedRecords.filter { $0.id == id } } ?? resolvedRecords
+
+        // Compute glyph from the primary (or focused) host's readout.
+        let primaryRecord = shownRecords.first(where: { $0.id == fallbackPrimary }) ?? shownRecords.first
+        let glyph: MenuBarGlyph
+        if let primary = primaryRecord, let readout = hostReadouts[primary.id] {
+            glyph = MenuBarGlyph(latencyText: readout.text, tone: readout.tone)
+        } else {
+            glyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+        }
+
+        // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
+        // for multi-host legend, matching today's behaviour).
         var descriptors: [EntityID: EntityDescriptor] = [:]
         var states: [EntityID: EntityState] = [:]
         var series: [EntityID: [Sample]] = [:]
         var latencyDescriptors: [EntityDescriptor] = []
-        for record in shown {
+        for record in shownRecords {
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
-            latency.name = record.displayName    // legend/label reads the host, not "Latency"
+            latency.name = record.displayName
             latencyDescriptors.append(latency)
             descriptors[latencyID] = latency
             states[latencyID] = allStates[latencyID]
             series[latencyID] = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
         }
 
+        // Build plan: for ping slot prepend diagnosis banner.
+        // P4: promote diagnosis to an attention-emitted entity rather than host-gluing it here.
         var planCards: [CardSpec] = []
-        if let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
+        let isPingSlot: Bool
+        if case .integrationType(let integID) = slot.selection, integID == IntegrationIDs.ping {
+            isPingSlot = true
+        } else {
+            isPingSlot = false
+        }
+        if isPingSlot, let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
             descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
             states[diagnosisDescriptor.id] = diagnosisState
-            planCards.append(CardSpec(id: "card.\(diagnosisDescriptor.id.rawValue)", kind: .statusBanner,
-                                      title: diagnosisDescriptor.name, entities: [diagnosisDescriptor.id], role: .banner))
+            planCards.append(CardSpec(
+                id: "card.\(diagnosisDescriptor.id.rawValue)",
+                kind: .statusBanner,
+                title: diagnosisDescriptor.name,
+                entities: [diagnosisDescriptor.id],
+                role: .banner
+            ))
         }
         planCards.append(contentsOf: SurfaceComposer.detailPlan(descriptors: latencyDescriptors, states: states).cards)
-        surfaceData = SurfaceData(descriptors: descriptors, states: states, series: series)
-        surfacePlan = SurfacePlan(cards: planCards)
+
+        return SlotSurface(
+            plan: SurfacePlan(cards: planCards),
+            data: SurfaceData(descriptors: descriptors, states: states, series: series),
+            glyph: glyph,
+            hostOptions: hostOptions
+        )
     }
 
     // MARK: Ping host management (Settings)

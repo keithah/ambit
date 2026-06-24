@@ -14,6 +14,19 @@ public extension DisplayTone {
     }
 }
 
+// Bridge: map LatencyTone (ping-domain) to DisplayTone (generic) for the popover's
+// status dot, so SlotPopover stays free of PingColors.
+public extension DisplayTone {
+    init(latencyTone: LatencyTone) {
+        switch latencyTone {
+        case .neutral: self = .neutral
+        case .good: self = .good
+        case .warn: self = .warn
+        case .bad: self = .bad
+        }
+    }
+}
+
 /// Deterministic per-line colors for multi-series graphs (harvested from pingscope's palette).
 public enum Theme {
     public static let linePalette: [Color] = [

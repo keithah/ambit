@@ -47,46 +47,55 @@ final class SettingsWindowController {
 @MainActor
 private final class MenuBarAppModel: ObservableObject {
     let viewModel: StatusViewModel
-    private let statusBarController: StatusBarController
+    private var statusBarControllers: [StatusBarController] = []
     private let overlayController: OverlayController
     private let settingsController: SettingsWindowController
 
     init() {
         let viewModel = StatusViewModel()
         self.viewModel = viewModel
-        let statusBarController = StatusBarController(viewModel: viewModel)
-        self.statusBarController = statusBarController
+
+        // Create one StatusBarController per slot. Today there is exactly one (Ping).
+        let controllers = viewModel.slots.map { slot in
+            StatusBarController(slotID: slot.id, viewModel: viewModel)
+        }
+        self.statusBarControllers = controllers
+
+        // Overlay and settings always target the first (ping) slot's popover.
+        let firstController = controllers.first
         let overlayController = OverlayController(
             viewModel: viewModel,
-            onOpenPopover: { [weak statusBarController] in statusBarController?.showPopover() }
+            onOpenPopover: { [weak firstController] in firstController?.showPopover() }
         )
         self.overlayController = overlayController
         let settingsController = SettingsWindowController(viewModel: viewModel)
         self.settingsController = settingsController
         viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
-        viewModel.showPopover = { [weak statusBarController] in statusBarController?.showPopover() }
+        viewModel.showPopover = { [weak firstController] in firstController?.showPopover() }
         viewModel.openSettings = { [weak settingsController] in settingsController?.show() }
         viewModel.start()
         NSApp.setActivationPolicy(.accessory)
     }
 }
 
-/// Owns the status-bar item (stacked latency glyph) and the popover.
+/// Owns one NSStatusItem + one NSPopover for a single slot.
 @MainActor
 private final class StatusBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: 34)
     private let popover = NSPopover()
     private let viewModel: StatusViewModel
+    private let slotID: SlotID
     private var cancellables: Set<AnyCancellable> = []
 
-    init(viewModel: StatusViewModel) {
+    init(slotID: SlotID, viewModel: StatusViewModel) {
+        self.slotID = slotID
         self.viewModel = viewModel
         super.init()
 
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 420, height: 640)
         popover.contentViewController = NSHostingController(
-            rootView: PingPopover().environmentObject(viewModel)
+            rootView: SlotPopover(slotID: slotID).environmentObject(viewModel)
         )
 
         if let button = statusItem.button {
@@ -95,10 +104,14 @@ private final class StatusBarController: NSObject {
             button.imagePosition = .imageOnly
         }
 
-        updateGlyph(viewModel.menuGlyph)
-        viewModel.$menuGlyph
+        // Initial glyph from current slotSurfaces (may be .empty on first tick).
+        updateGlyph(viewModel.slotSurfaces[slotID]?.glyph ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral))
+        viewModel.$slotSurfaces
             .receive(on: RunLoop.main)
-            .sink { [weak self] glyph in self?.updateGlyph(glyph) }
+            .sink { [weak self] surfaces in
+                guard let self else { return }
+                self.updateGlyph(surfaces[self.slotID]?.glyph ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral))
+            }
             .store(in: &cancellables)
     }
 
@@ -118,7 +131,9 @@ private final class StatusBarController: NSObject {
     }
 
     private func updateGlyph(_ glyph: MenuBarGlyph) {
-        statusItem.button?.image = PingGlyphRenderer.image(glyph)
-        statusItem.button?.toolTip = "Ping · \(glyph.latencyText)"
+        let slot = viewModel.slots.first(where: { $0.id == slotID })
+        let title = slot?.title ?? slotID.rawValue
+        statusItem.button?.image = StatusGlyphRenderer.image(glyph)
+        statusItem.button?.toolTip = "\(title) · \(glyph.latencyText)"
     }
 }
