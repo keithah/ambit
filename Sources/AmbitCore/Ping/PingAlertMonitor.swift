@@ -88,7 +88,7 @@ public struct PingAlertMonitor: Sendable {
 
     private static func specific(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> (type: String, title: String, severity: AlertSeverity)? {
         switch verdict {
-        case .allReachable, .noData: return nil
+        case .allReachable, .noData, .monitoringStalled: return nil   // stalled monitoring is not an outage — never alert
         case .localNetworkDown: return ("localNetworkDown", "Local network down", .critical)
         case .ispPathDown: return ("ispPathDown", "ISP path down", .critical)
         case .upstreamDown: return ("upstreamDown", "Internet unreachable", .critical)

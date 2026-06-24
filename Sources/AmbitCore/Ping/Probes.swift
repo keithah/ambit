@@ -20,8 +20,10 @@ public struct UnavailableProbe: PingProbe {
     }
 }
 
-/// Wraps a probe and races it against the host's timeout; whichever finishes first wins and
-/// the loser is cancelled. A timeout yields a `.timeout` failure (never a late/garbage value).
+/// Wraps a probe and races it against the host's timeout; whichever finishes first wins. The
+/// loser is abandoned (best-effort cancelled), NEVER awaited — so a wedged probe (e.g. an
+/// NWConnection stuck across system sleep) cannot block the poll cycle. A timeout yields a
+/// `.timeout` failure (never a late/garbage value).
 public struct TimeoutProbe: PingProbe {
     private let wrapped: any PingProbe
 
@@ -31,18 +33,22 @@ public struct TimeoutProbe: PingProbe {
 
     public func measure(_ host: PingHostConfig) async -> ProbeResult {
         let timeoutNanos = UInt64(max(0, host.timeout) * 1_000_000_000)
-        return await withTaskGroup(of: ProbeResult?.self) { group in
-            group.addTask { [wrapped] in await wrapped.measure(host) }
-            group.addTask {
+        let gate = SingleResume()
+        // No structured group: the continuation returns the instant one side claims the gate;
+        // the loser is never awaited. On deadline-win we cancel the in-flight probe and move on.
+        return await withCheckedContinuation { (continuation: CheckedContinuation<ProbeResult, Never>) in
+            let probeTask = Task { [wrapped] in
+                let result = await wrapped.measure(host)
+                if gate.claim() { continuation.resume(returning: result) }
+            }
+            let probeBox = UncheckedSendableBox(probeTask)
+            Task {
                 try? await Task.sleep(nanoseconds: timeoutNanos)
-                return nil
+                if gate.claim() {
+                    probeBox.value.cancel()   // best-effort; the probe's own SingleResume path cancels its NWConnection
+                    continuation.resume(returning: ProbeResult(timestamp: Date(), failureReason: .timeout))
+                }
             }
-            defer { group.cancelAll() }
-            for await outcome in group {
-                if let outcome { return outcome }            // probe finished first
-                return ProbeResult(timestamp: Date(), failureReason: .timeout)  // timeout won
-            }
-            return ProbeResult(timestamp: Date(), failureReason: .timeout)
         }
     }
 }

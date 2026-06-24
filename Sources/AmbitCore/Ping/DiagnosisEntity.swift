@@ -23,6 +23,7 @@ public enum DiagnosisEntity {
     static func severity(for verdict: NetworkPerspectiveDiagnosis.Verdict) -> Severity? {
         switch verdict {
         case .allReachable, .noData: return nil
+        case .monitoringStalled: return .elevated   // calm "Monitoring paused" banner, not a fault
         case .partialDegradation: return .degraded
         case .localNetworkDown, .ispPathDown, .upstreamDown: return .down
         case .remoteServiceDown: return .alerting
