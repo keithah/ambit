@@ -3,8 +3,8 @@ import XCTest
 
 final class NetworkTierClassifierTests: XCTestCase {
     private let classifier = NetworkTierClassifier()
-    private func host(_ address: String, tier: NetworkTier? = nil) -> PingScopeHostConfig {
-        PingScopeHostConfig(displayName: "H", address: address, method: .icmp, tier: tier)
+    private func host(_ address: String, tier: NetworkTier? = nil) -> PingHostConfig {
+        PingHostConfig(displayName: "H", address: address, method: .icmp, tier: tier)
     }
 
     func testPrivateAddressesAreLocalGateway() {

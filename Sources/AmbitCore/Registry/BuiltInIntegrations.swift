@@ -51,15 +51,6 @@ public struct EcoFlowIntegration: Integration {
     }
 }
 
-public struct PingIntegration: Integration {
-    public let id = IntegrationIDs.ping
-    public let displayName = "Ping"
-    let processRunner: any ProcessRunner
-    public func makeProviders(instance: IntegrationInstanceRecord) -> [any Provider] {
-        [PingProvider(processRunner: processRunner)]
-    }
-}
-
 public struct Iperf3Integration: Integration {
     public let id = IntegrationIDs.iperf3
     public let displayName = "iperf3"
@@ -85,7 +76,6 @@ public enum BuiltInIntegrationSeed {
             record(IntegrationIDs.ecoflow, IntegrationInstanceIDs.ecoflow, "EcoFlow", enabled: ecoflowEnabled)
         ]
         if includeActiveMeasurement {
-            seed.append(record(IntegrationIDs.ping, IntegrationInstanceIDs.ping, "Ping"))
             seed.append(record(IntegrationIDs.iperf3, IntegrationInstanceIDs.iperf3, "iperf3"))
         }
         return seed
@@ -93,6 +83,6 @@ public enum BuiltInIntegrationSeed {
 
     public static let integrationIDs: Set<IntegrationID> = [
         IntegrationIDs.glinet, IntegrationIDs.reachability, IntegrationIDs.speedify,
-        IntegrationIDs.starlink, IntegrationIDs.ecoflow, IntegrationIDs.ping, IntegrationIDs.iperf3
+        IntegrationIDs.starlink, IntegrationIDs.ecoflow, IntegrationIDs.iperf3
     ]
 }

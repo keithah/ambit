@@ -2,7 +2,7 @@ import Foundation
 
 /// Selects the probe implementation for a host's method.
 public protocol ProbeFactory: Sendable {
-    func makeProbe(for host: PingScopeHostConfig) -> any PingProbe
+    func makeProbe(for host: PingHostConfig) -> any PingProbe
 }
 
 public struct DefaultProbeFactory: ProbeFactory {
@@ -20,7 +20,7 @@ public struct DefaultProbeFactory: ProbeFactory {
         self.processRunner = processRunner
     }
 
-    public func makeProbe(for host: PingScopeHostConfig) -> any PingProbe {
+    public func makeProbe(for host: PingHostConfig) -> any PingProbe {
         switch host.method {
         case .tcp:
             return TimeoutProbe(wrapping: TCPProbe())

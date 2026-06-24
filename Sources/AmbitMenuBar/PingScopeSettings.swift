@@ -5,7 +5,7 @@ import SwiftUI
 struct PingHostRow: Identifiable, Equatable {
     var id: String { instanceID.rawValue }
     let instanceID: IntegrationInstanceID
-    let config: PingScopeHostConfig
+    let config: PingHostConfig
     let enabled: Bool
     let isPrimary: Bool
     var name: String { config.displayName }
@@ -29,7 +29,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-struct PingScopeSettings: View {
+struct PingSettings: View {
     @EnvironmentObject private var viewModel: StatusViewModel
     @State private var tab: SettingsTab = .hosts
 
@@ -56,7 +56,7 @@ struct PingScopeSettings: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("PingScope").font(.system(size: 18, weight: .bold))
+                Text("Ping").font(.system(size: 18, weight: .bold))
                 Text("Settings").font(.system(size: 12)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10)
@@ -102,8 +102,8 @@ private struct DisplayPane: View {
                 paneHeader("Display", "display", "Default graph range and readouts.")
                 Form {
                     Picker("Default range", selection: Binding(
-                        get: { viewModel.pingScopeRange },
-                        set: { viewModel.setPingScopeRange($0) }
+                        get: { viewModel.pingRange },
+                        set: { viewModel.setPingRange($0) }
                     )) {
                         ForEach(TimeRange.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
@@ -181,7 +181,7 @@ private struct AdvancedPane: View {
             VStack(alignment: .leading, spacing: 16) {
                 paneHeader("Advanced", "slider.horizontal.3", "Reset and maintenance.")
                 Form {
-                    Button("Reset Hosts to Defaults", role: .destructive) { viewModel.resetPingScopeHostsToDefaults() }
+                    Button("Reset Hosts to Defaults", role: .destructive) { viewModel.resetPingHostsToDefaults() }
                 }
                 .formStyle(.grouped)
                 Text("Replaces all hosts with Cloudflare, Google, and the detected gateway.")
@@ -199,7 +199,7 @@ private struct AboutPane: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 40)).foregroundStyle(.tint)
-            Text("PingScope").font(.system(size: 22, weight: .bold))
+            Text("Ping").font(.system(size: 22, weight: .bold))
             Text("Version \(version)").foregroundStyle(.secondary)
             Text("Multi-host latency monitoring, built on Ambit.").font(.callout).foregroundStyle(.secondary)
         }
@@ -314,7 +314,7 @@ private struct HostsPane: View {
 
 private struct HostEditor: View {
     let existing: PingHostRow?
-    let onSave: (PingScopeHostConfig) -> Void
+    let onSave: (PingHostConfig) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
@@ -327,7 +327,7 @@ private struct HostEditor: View {
     @State private var downAfter: Int
     @State private var preset: AlertPreset
 
-    init(existing: PingHostRow?, onSave: @escaping (PingScopeHostConfig) -> Void) {
+    init(existing: PingHostRow?, onSave: @escaping (PingHostConfig) -> Void) {
         self.existing = existing
         self.onSave = onSave
         let c = existing?.config
@@ -342,8 +342,8 @@ private struct HostEditor: View {
         _preset = State(initialValue: c?.policy.preset ?? .balanced)
     }
 
-    private var draft: PingScopeHostConfig {
-        PingScopeHostConfig(
+    private var draft: PingHostConfig {
+        PingHostConfig(
             displayName: name, address: address, method: method,
             port: method.requiresPort ? UInt16(port) : nil,
             interval: intervalMs / 1000, timeout: timeoutMs / 1000,

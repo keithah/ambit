@@ -1,14 +1,14 @@
 import XCTest
 @testable import AmbitCore
 
-final class PingScopeAlertRulesTests: XCTestCase {
+final class PingAlertRulesTests: XCTestCase {
     private func record(policy: AlertPolicy, interval: TimeInterval = 2) -> IntegrationInstanceRecord {
-        let host = PingScopeHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443, interval: interval, policy: policy)
+        let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443, interval: interval, policy: policy)
         return .pingscope(host)
     }
 
     func testBuildsHighLatencyRuleFromPolicy() {
-        let rules = PingScopeIntegration().alertRules(instance: record(policy: .preset(.verbose)))
+        let rules = PingIntegration().alertRules(instance: record(policy: .preset(.verbose)))
         guard case .sustained(let rule)? = rules.first else { return XCTFail("expected sustained rule") }
         XCTAssertEqual(rule.id, "pingscope@1.1.1.1:443.highLatency")
         XCTAssertEqual(rule.providerID, "pingscope@1.1.1.1:443/probe")  // matches the provider instance id
@@ -21,7 +21,7 @@ final class PingScopeAlertRulesTests: XCTestCase {
 
     func testNoRulesWhenPolicyDisabled() {
         var policy = AlertPolicy.preset(.balanced); policy.enabled = false
-        XCTAssertTrue(PingScopeIntegration().alertRules(instance: record(policy: policy)).isEmpty)
+        XCTAssertTrue(PingIntegration().alertRules(instance: record(policy: policy)).isEmpty)
     }
 
     func testEngineAggregatesPingscopeRulesForActiveInstances() {
@@ -38,9 +38,9 @@ final class PingScopeAlertRulesTests: XCTestCase {
     }
 
     func testConfigWithoutPolicyDecodesToBalancedDefault() {
-        var config = PingScopeHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443).asConfigObject()
+        var config = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443).asConfigObject()
         config["policy"] = nil   // simulate a config persisted before policy existed
-        let decoded = PingScopeHostConfig(configObject: config)
+        let decoded = PingHostConfig(configObject: config)
         XCTAssertEqual(decoded?.policy, .preset(.balanced))
     }
 }

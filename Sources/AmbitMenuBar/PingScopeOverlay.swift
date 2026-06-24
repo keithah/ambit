@@ -23,9 +23,9 @@ struct OverlayView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
         .contextMenu {
             Menu("Host") {
-                Button("All Hosts") { viewModel.selectPingScopeHost(nil) }
+                Button("All Hosts") { viewModel.selectPingHost(nil) }
                 ForEach(viewModel.pingHosts) { host in
-                    Button(host.name) { viewModel.selectPingScopeHost(host.instanceID) }
+                    Button(host.name) { viewModel.selectPingHost(host.instanceID) }
                 }
             }
             Button("Open Popover", action: openPopover)

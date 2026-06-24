@@ -13,7 +13,7 @@ public struct ICMPProbe: PingProbe {
         self.processRunner = processRunner
     }
 
-    public func measure(_ host: PingScopeHostConfig) async -> ProbeResult {
+    public func measure(_ host: PingHostConfig) async -> ProbeResult {
         let waitMs = Int((host.timeout * 1000).rounded())
         let arguments = ["-c", "1", "-W", "\(waitMs)", host.address]
         do {

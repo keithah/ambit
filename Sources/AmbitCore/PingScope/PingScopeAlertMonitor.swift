@@ -25,7 +25,7 @@ public struct AlertHost: Equatable, Sendable {
     }
 }
 
-public struct PingScopeAlertMonitor: Sendable {
+public struct PingAlertMonitor: Sendable {
     public var sensitivity: DiagnosisSensitivity
     public var networkCooldown: TimeInterval
     public var pathDegradedConsecutive: Int

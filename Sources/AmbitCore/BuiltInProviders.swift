@@ -40,7 +40,6 @@ public struct BuiltInProviderFactory: Sendable {
             providers.append(EcoFlowProvider(clientFactory: ecoFlowClientFactory))
         }
         if let activeMeasurementProcessRunner {
-            providers.append(PingProvider(processRunner: activeMeasurementProcessRunner))
             providers.append(Iperf3Provider(processRunner: activeMeasurementProcessRunner))
         }
         return providers
@@ -53,7 +52,6 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.speedify,
         ProviderIDs.starlink,
         ProviderIDs.ecoflow,
-        ProviderIDs.ping,
         ProviderIDs.iperf3
     ]
 
@@ -68,7 +66,6 @@ public struct BuiltInProviderFactory: Sendable {
             EcoFlowIntegration(clientFactory: ecoFlowClientFactory)
         ]
         if let activeMeasurementProcessRunner {
-            result.append(PingIntegration(processRunner: activeMeasurementProcessRunner))
             result.append(Iperf3Integration(processRunner: activeMeasurementProcessRunner))
         }
         return result

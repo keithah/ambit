@@ -7,7 +7,7 @@ import Network
 public struct UDPProbe: PingProbe {
     public init() {}
 
-    public func measure(_ host: PingScopeHostConfig) async -> ProbeResult {
+    public func measure(_ host: PingHostConfig) async -> ProbeResult {
         guard let rawPort = host.port, let port = NWEndpoint.Port(rawValue: rawPort) else {
             return ProbeResult(timestamp: Date(), failureReason: .unknown, note: "UDP requires a port")
         }

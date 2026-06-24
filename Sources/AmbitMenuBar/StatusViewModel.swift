@@ -22,11 +22,11 @@ final class StatusViewModel: ObservableObject {
     @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
     @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
-    // PingScope UI state
-    @Published var pingScopeRange: TimeRange = .fiveMinutes {
-        didSet { UserDefaults.standard.set(pingScopeRange.rawValue, forKey: "pingScopeRange") }
+    // Ping UI state
+    @Published var pingRange: TimeRange = .fiveMinutes {
+        didSet { UserDefaults.standard.set(pingRange.rawValue, forKey: "pingRange") }
     }
-    @Published var pingScopeSelection: IntegrationInstanceID?   // nil = All Hosts
+    @Published var pingSelection: IntegrationInstanceID?   // nil = All Hosts
     @Published var pingHosts: [PingHostDisplay] = []
     @Published var pingHostRows: [PingHostRow] = []
     @Published var menuGlyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
@@ -36,7 +36,7 @@ final class StatusViewModel: ObservableObject {
 
     private let pingDiagnoser = NetworkPerspectiveDiagnoser()
     private let pingTierClassifier = NetworkTierClassifier()
-    private var pingAlertMonitor = PingScopeAlertMonitor()
+    private var pingAlertMonitor = PingAlertMonitor()
 
     @Published var diagnosisSensitivity: DiagnosisSensitivity = .balanced {
         didSet {
@@ -78,14 +78,14 @@ final class StatusViewModel: ObservableObject {
         let integrationRegistry = UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
-        Self.dedupePingScopeHostsByAddress(integrationRegistry)
+        Self.dedupePingHostsByAddress(integrationRegistry)
         if let raw = UserDefaults.standard.string(forKey: "pingDiagnosisSensitivity"),
            let sensitivity = DiagnosisSensitivity(rawValue: raw) {
             diagnosisSensitivity = sensitivity
             pingAlertMonitor.sensitivity = sensitivity
         }
-        if let raw = UserDefaults.standard.string(forKey: "pingScopeRange"), let range = TimeRange(rawValue: raw) {
-            pingScopeRange = range
+        if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
+            pingRange = range
         }
         let historyStore: any HistoryStore = (try? SQLiteHistoryStore.defaultURL()).map { SQLiteHistoryStore(url: $0) } ?? InMemoryHistoryStore()
         self.engine = Engine(
@@ -116,8 +116,8 @@ final class StatusViewModel: ObservableObject {
         // asynchronously on start (it needs network detection).
         let builtIns = BuiltInIntegrationSeed.records(ecoflowEnabled: settings.ecoflowEnabled, includeActiveMeasurement: true)
         let defaultHosts = [
-            PingScopeHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
-            PingScopeHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
+            PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
         ]
         try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.pingscope($0) })
         try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
@@ -125,7 +125,7 @@ final class StatusViewModel: ObservableObject {
 
     /// Remove pingscope hosts that target an address already monitored (keeping the primary,
     /// else the first), cleaning up duplicates left by earlier seeding changes.
-    private static func dedupePingScopeHostsByAddress(_ registry: any IntegrationRegistry) {
+    private static func dedupePingHostsByAddress(_ registry: any IntegrationRegistry) {
         guard let all = try? registry.instances() else { return }
         let pingscope = all.filter { $0.integrationID == IntegrationIDs.pingscope }
         let primary = (try? registry.primaryInstanceID()) ?? nil
@@ -133,7 +133,7 @@ final class StatusViewModel: ObservableObject {
         var seen = Set<String>()
         var removeIDs = Set<IntegrationInstanceID>()
         for record in ordered {
-            guard let address = PingScopeHostConfig(configObject: record.config)?.address else { continue }
+            guard let address = PingHostConfig(configObject: record.config)?.address else { continue }
             if seen.contains(address) { removeIDs.insert(record.id) } else { seen.insert(address) }
         }
         guard !removeIDs.isEmpty else { return }
@@ -145,12 +145,12 @@ final class StatusViewModel: ObservableObject {
     /// host for that target already exists.
     private func seedGatewayHostIfNeeded() async {
         guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
-        let host = PingScopeHostConfig(displayName: "Gateway", address: gateway, method: .icmp)
+        let host = PingHostConfig(displayName: "Gateway", address: gateway, method: .icmp)
         // Dedup by target address (not exact id) so a gateway already monitored under any
         // method/port isn't added again.
         let alreadyMonitored = ((try? integrationRegistry.instances()) ?? [])
             .filter { $0.integrationID == IntegrationIDs.pingscope }
-            .compactMap { PingScopeHostConfig(configObject: $0.config)?.address }
+            .compactMap { PingHostConfig(configObject: $0.config)?.address }
             .contains(gateway)
         guard !alreadyMonitored else { return }
         try? integrationRegistry.upsert(.pingscope(host))
@@ -167,7 +167,7 @@ final class StatusViewModel: ObservableObject {
                 self.snapshot = snapshot
                 self.selectedEndpoint = await self.engine.currentSelectedEndpoint()
                 self.providerDisplayNames = await self.engine.providerDisplayNames()
-                await self.refreshPingScope()
+                await self.refreshPing()
                 await self.refreshModuleUsage()
                 let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
                 await self.alertNotifier.deliver(events)
@@ -361,21 +361,21 @@ final class StatusViewModel: ObservableObject {
         moduleUsageSnapshots = Array(await engine.usageSnapshots().values)
     }
 
-    func setPingScopeRange(_ range: TimeRange) {
-        pingScopeRange = range
-        Task { await refreshPingScope() }
+    func setPingRange(_ range: TimeRange) {
+        pingRange = range
+        Task { await refreshPing() }
     }
 
-    func selectPingScopeHost(_ id: IntegrationInstanceID?) {
-        pingScopeSelection = id
-        Task { await refreshPingScope() }
+    func selectPingHost(_ id: IntegrationInstanceID?) {
+        pingSelection = id
+        Task { await refreshPing() }
     }
 
     /// Rebuild per-host displays (readout + windowed samples + stats) for the pingscope UI,
     /// plus the full host list for Settings.
-    func refreshPingScope() async {
+    func refreshPing() async {
         let now = Date()
-        let freshness = max(pingScopeRange.seconds, 30)
+        let freshness = max(pingRange.seconds, 30)
         let allRecords = ((try? integrationRegistry.instances()) ?? [])
             .filter { $0.integrationID == IntegrationIDs.pingscope }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
@@ -385,7 +385,7 @@ final class StatusViewModel: ObservableObject {
 
         // All hosts (enabled + disabled) for the Settings list.
         pingHostRows = allRecords.compactMap { record in
-            guard let config = PingScopeHostConfig(configObject: record.config) else { return nil }
+            guard let config = PingHostConfig(configObject: record.config) else { return nil }
             return PingHostRow(instanceID: record.id, config: config, enabled: record.enabled, isPrimary: record.id == fallbackPrimary)
         }
 
@@ -394,12 +394,12 @@ final class StatusViewModel: ObservableObject {
         var diagnosisHosts: [DiagnosisHost] = []
         var alertHosts: [AlertHost] = []
         for (index, record) in activeRecords.enumerated() {
-            guard let host = PingScopeHostConfig(configObject: record.config) else { continue }
+            guard let host = PingHostConfig(configObject: record.config) else { continue }
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
-            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingScopeRange.seconds))
+            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
             let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
-            let readout = PingScopePresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
+            let readout = PingPresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
             displays.append(PingHostDisplay(
                 instanceID: record.id,
                 providerInstanceID: providerInstance,
@@ -430,7 +430,7 @@ final class StatusViewModel: ObservableObject {
         // Generic surface: latency entities of the shown hosts (single host when one is selected,
         // all enabled hosts otherwise) + the diagnosis banner. The composer collapses same-class
         // latency series into one multi-line graph; a single host stays single-series (keeps stats).
-        let shown = pingScopeSelection.map { id in activeRecords.filter { $0.id == id } } ?? activeRecords
+        let shown = pingSelection.map { id in activeRecords.filter { $0.id == id } } ?? activeRecords
         let allDescriptors = await engine.entityDescriptors()
         let allStates = await engine.entityStates()
         var descriptors: [EntityID: EntityDescriptor] = [:]
@@ -445,7 +445,7 @@ final class StatusViewModel: ObservableObject {
             latencyDescriptors.append(latency)
             descriptors[latencyID] = latency
             states[latencyID] = allStates[latencyID]
-            series[latencyID] = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingScopeRange.seconds))
+            series[latencyID] = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
         }
 
         var planCards: [CardSpec] = []
@@ -460,52 +460,52 @@ final class StatusViewModel: ObservableObject {
         surfacePlan = SurfacePlan(cards: planCards)
     }
 
-    // MARK: PingScope host management (Settings)
+    // MARK: Ping host management (Settings)
 
-    func addOrUpdatePingHost(_ host: PingScopeHostConfig, replacing oldID: IntegrationInstanceID? = nil) {
+    func addOrUpdatePingHost(_ host: PingHostConfig, replacing oldID: IntegrationInstanceID? = nil) {
         if let oldID, oldID != host.integrationInstanceID { try? integrationRegistry.remove(oldID) }
         try? integrationRegistry.upsert(.pingscope(host))
-        reloadPingScopeProviders()
+        reloadPingProviders()
     }
 
     func deletePingHost(_ id: IntegrationInstanceID) {
         try? integrationRegistry.remove(id)
         if (try? integrationRegistry.primaryInstanceID()) == id { try? integrationRegistry.setPrimaryInstanceID(nil) }
-        reloadPingScopeProviders()
+        reloadPingProviders()
     }
 
     func setPrimaryPingHost(_ id: IntegrationInstanceID) {
         try? integrationRegistry.setPrimaryInstanceID(id)
-        reloadPingScopeProviders()
+        reloadPingProviders()
     }
 
     func setPingHostEnabled(_ id: IntegrationInstanceID, enabled: Bool) {
         try? integrationRegistry.setInstanceEnabled(enabled, instanceID: id)
-        reloadPingScopeProviders()
+        reloadPingProviders()
     }
 
     func clearHistory() {
-        Task { await engine.clearHistory(); await refreshPingScope() }
+        Task { await engine.clearHistory(); await refreshPing() }
     }
 
-    func resetPingScopeHostsToDefaults() {
+    func resetPingHostsToDefaults() {
         let others = ((try? integrationRegistry.instances()) ?? []).filter { $0.integrationID != IntegrationIDs.pingscope }
         let defaults = [
-            PingScopeHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
-            PingScopeHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
+            PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
         ].map { IntegrationInstanceRecord.pingscope($0) }
         try? integrationRegistry.save(others + defaults)
         try? integrationRegistry.setPrimaryInstanceID(nil)
-        reloadPingScopeProviders()
+        reloadPingProviders()
         Task { await seedGatewayHostIfNeeded() }
     }
 
-    private func reloadPingScopeProviders() {
+    private func reloadPingProviders() {
         Task {
             await engine.reloadProviders()
             await refreshAlertRules()
             await engine.refresh()
-            await refreshPingScope()
+            await refreshPing()
         }
     }
 

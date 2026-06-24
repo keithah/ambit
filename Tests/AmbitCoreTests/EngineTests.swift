@@ -518,17 +518,8 @@ final class EngineTests: XCTestCase {
     }
 
     func testRefreshCanRegisterActiveMeasurementProvidersByDefault() async {
-        let pingOutput = """
-        PING 1.1.1.1 (1.1.1.1): 56 data bytes
-        64 bytes from 1.1.1.1: icmp_seq=0 ttl=58 time=10.000 ms
-
-        --- 1.1.1.1 ping statistics ---
-        3 packets transmitted, 3 packets received, 0.0% packet loss
-        round-trip min/avg/max/stddev = 10.000/10.000/10.000/0.000 ms
-        """
-        let processRunner = StubProcessRunner(results: [
-            "-c 3 -W 1000 1.1.1.1": ProcessResult(exitCode: 0, stdout: pingOutput, stderr: "")
-        ])
+        // Basic ICMP ping retired; iperf3 is the remaining active-measurement built-in.
+        let processRunner = StubProcessRunner(results: [:])
         let engine = Engine(
             settingsStore: InMemorySettingsStore(settings: AppSettings(localHost: "router.local")),
             credentialStore: InMemoryCredentialStore(password: "secret"),
@@ -552,7 +543,6 @@ final class EngineTests: XCTestCase {
         await engine.refresh()
 
         let snapshot = await engine.currentSnapshot()
-        XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.ping]?.value?.metricValue("latency_ms"), .latency(ms: 10))
         XCTAssertEqual(snapshot.providers[ProviderInstanceIDs.iperf3]?.value?.detail, .iperf3(Iperf3Snapshot(host: "")))
         XCTAssertNil(snapshot.providers[ProviderInstanceIDs.iperf3]?.errorMessage)
         let commands = await engine.commands(provider: ProviderIDs.iperf3)

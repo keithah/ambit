@@ -4,7 +4,7 @@ import XCTest
 final class EngineHistoryFeedTests: XCTestCase {
     private struct FixedProbe: PingProbe {
         let result: ProbeResult
-        func measure(_ host: PingScopeHostConfig) async -> ProbeResult { result }
+        func measure(_ host: PingHostConfig) async -> ProbeResult { result }
     }
 
     private let epoch = Date(timeIntervalSince1970: 0)
@@ -12,9 +12,9 @@ final class EngineHistoryFeedTests: XCTestCase {
     private let healthID = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.health")
 
     private func engine(latencyMs: Double?, failure: ProbeFailureReason? = nil) -> Engine {
-        let host = PingScopeHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)
+        let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)
         let result = ProbeResult(timestamp: Date(), latencyMs: latencyMs, failureReason: failure)
-        let provider = PingScopeProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: result))
+        let provider = PingProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: result))
         return Engine(
             settings: AppSettings(remoteHost: "", endpointMode: .forceRemote),
             providers: [provider],
@@ -52,10 +52,10 @@ final class EngineHistoryFeedTests: XCTestCase {
     }
 
     func testHistoryStatsAggregateAcrossPolls() async {
-        let host = PingScopeHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443, interval: 0.25)
+        let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443, interval: 0.25)
         // Probe alternates aren't easy with a fixed probe; use three engines is overkill —
         // instead poll the same engine repeatedly with a fixed latency (interval small).
-        let provider = PingScopeProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 30)))
+        let provider = PingProvider(host: host, integrationInstanceID: host.integrationInstanceID, probe: FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 30)))
         let engine = Engine(settings: AppSettings(remoteHost: "", endpointMode: .forceRemote), providers: [provider], registerBuiltInProviders: false)
         await engine.refresh()
 

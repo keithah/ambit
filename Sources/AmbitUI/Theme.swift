@@ -2,7 +2,7 @@ import SwiftUI
 import AmbitCore
 
 // Maps the UI-free DisplayTone to concrete colors. The single place tone → color is decided,
-// harvested from pingscope's PingScopeColors.tone.
+// harvested from pingscope's PingColors.tone.
 public extension DisplayTone {
     var color: Color {
         switch self {
