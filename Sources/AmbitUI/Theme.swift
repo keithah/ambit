@@ -13,3 +13,15 @@ public extension DisplayTone {
         }
     }
 }
+
+/// Deterministic per-line colors for multi-series graphs (harvested from pingscope's palette).
+public enum Theme {
+    public static let linePalette: [Color] = [
+        Color(red: 0.23, green: 0.51, blue: 0.96),  // blue
+        Color(red: 0.20, green: 0.78, blue: 0.35),  // green
+        Color(red: 1.00, green: 0.62, blue: 0.26),  // orange
+        Color(red: 0.69, green: 0.45, blue: 0.95),  // purple
+        Color(red: 0.30, green: 0.78, blue: 0.85)   // teal
+    ]
+    public static func lineColor(_ index: Int) -> Color { linePalette[index % linePalette.count] }
+}

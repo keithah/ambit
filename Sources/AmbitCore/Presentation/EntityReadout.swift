@@ -18,7 +18,7 @@ public struct EntityReadout: Equatable, Sendable {
     public static func make(descriptor: EntityDescriptor, state: EntityState?) -> EntityReadout {
         guard let state else { return EntityReadout(text: "—", tone: .neutral) }
 
-        let tone = toneFor(availability: state.availability)
+        let tone = displayTone(for: state)
         guard let value = state.value else {
             return EntityReadout(text: "—", tone: tone)
         }
@@ -35,6 +35,19 @@ public struct EntityReadout: Equatable, Sendable {
         }
     }
 
+    private static func displayTone(for state: EntityState) -> DisplayTone {
+        if let severity = state.severity, severity >= .elevated { return tone(for: severity) }
+        return toneFor(availability: state.availability)
+    }
+
+    private static func tone(for severity: Severity) -> DisplayTone {
+        switch severity {
+        case .normal: return .neutral
+        case .elevated, .degraded: return .warn
+        case .alerting, .down: return .bad
+        }
+    }
+
     private static func toneFor(availability: Availability) -> DisplayTone {
         switch availability {
         case .unavailable: return .bad
@@ -43,8 +56,8 @@ public struct EntityReadout: Equatable, Sendable {
         }
     }
 
-    private static func format(_ n: Double, descriptor: EntityDescriptor) -> String {
-        switch descriptor.deviceClass {
+    public static func format(_ n: Double, deviceClass: DeviceClass?, unit: String?) -> String {
+        switch deviceClass {
         case .latency: return "\(Int(n.rounded()))ms"
         case .percent, .battery: return "\(Int(n.rounded()))%"
         case .throughput: return formatThroughput(bitsPerSecond: n)
@@ -52,9 +65,13 @@ public struct EntityReadout: Equatable, Sendable {
         case .duration: return "\(Int(n.rounded()))s"
         case .power: return "\(Int(n.rounded()))W"
         case .connectivity, .none:
-            if let unit = descriptor.unit { return "\(trim(n)) \(unit)" }
+            if let unit { return "\(trim(n)) \(unit)" }
             return trim(n)
         }
+    }
+
+    private static func format(_ n: Double, descriptor: EntityDescriptor) -> String {
+        format(n, deviceClass: descriptor.deviceClass, unit: descriptor.unit)
     }
 
     private static func fraction(_ n: Double, descriptor: EntityDescriptor) -> Double? {

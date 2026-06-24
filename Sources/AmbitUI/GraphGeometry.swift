@@ -6,13 +6,19 @@ import AmbitCore
 // separate from the View so it is unit-testable and reusable by every graph card.
 public enum GraphGeometry {
 
-    private static let ladder: [Double] = [50, 100, 150, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000]
+    // Scale-invariant "nice" ceiling: a mantissa rung × the data's order of magnitude. Works
+    // for any unit (ms, bps, %, °C) — replaces the latency-only rung ladder.
+    private static let mantissas: [Double] = [1, 1.5, 2, 2.5, 3, 5, 7.5, 10]
 
     /// Smallest "nice" ceiling at or above the max value; 100 when there is no positive data.
     public static func niceMax(_ values: [Double]) -> Double {
         guard let maxValue = values.max(), maxValue > 0 else { return 100 }
-        if let step = ladder.first(where: { $0 >= maxValue }) { return step }
-        return (maxValue / 1000).rounded(.up) * 1000
+        let exponent = (log10(maxValue)).rounded(.down)
+        let base = pow(10, exponent)
+        for mantissa in mantissas where mantissa * base >= maxValue {
+            return mantissa * base
+        }
+        return 10 * base
     }
 
     /// Sample series mapped into a box: x spreads evenly across width, y inverts value/axisMax.

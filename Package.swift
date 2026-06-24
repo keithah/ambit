@@ -17,7 +17,7 @@ let package = Package(
         .target(name: "AmbitUI", dependencies: ["AmbitCore"]),
         .executableTarget(
             name: "AmbitMenuBar",
-            dependencies: ["AmbitCore"],
+            dependencies: ["AmbitCore", "AmbitUI"],
             resources: [
                 .process("Resources")
             ]

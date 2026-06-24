@@ -83,10 +83,43 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertTrue(plan.cards.isEmpty)
     }
 
+    func testSameClassMeasurementSeriesCombineIntoOneGraph() {
+        let descriptors = [
+            sensor("lat_a", .latency, stateClass: .measurement),
+            sensor("lat_b", .latency, stateClass: .measurement)
+        ]
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        let network = plan.cards.first { $0.title == "Network" }
+        XCTAssertEqual(network?.children.count, 1)
+        XCTAssertEqual(network?.children.first?.kind, .historyGraph)
+        XCTAssertEqual(network?.children.first?.entities.map(\.rawValue), ["i/p.lat_a", "i/p.lat_b"])
+        XCTAssertNil(network?.children.first?.title)
+    }
+
+    func testSingleMeasurementSeriesStaysSingleLineWithName() {
+        let plan = SurfaceComposer.detailPlan(descriptors: [sensor("lat", .latency, stateClass: .measurement)], states: [:])
+        let card = plan.cards.first?.children.first
+        XCTAssertEqual(card?.entities.map(\.rawValue), ["i/p.lat"])
+        XCTAssertEqual(card?.title, "lat")
+    }
+
     func testDisabledOverrideDropsEntity() {
         var config = PresentationConfig.empty
         config.entityOverrides["i/p.latency"] = EntityPresentationOverride(enabled: false)
         let plan = SurfaceComposer.detailPlan(descriptors: [sensor("latency", .latency)], states: [:], config: config)
         XCTAssertTrue(plan.cards.isEmpty)
+    }
+
+    func testGraphRangeOnlyOnHistoryGraph() {
+        let descriptors = [
+            sensor("g", .percent, graphStyle: .gauge),
+            sensor("p", .battery, graphStyle: .progress),
+            sensor("s", .latency, graphStyle: .sparkline)
+        ]
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        let byID = plan.cards.flatMap { $0.children }.reduce(into: [String: CardSpec]()) { $0[$1.entities.first!.rawValue] = $1 }
+        XCTAssertNil(byID["i/p.g"]?.graphRange)
+        XCTAssertNil(byID["i/p.p"]?.graphRange)
+        XCTAssertEqual(byID["i/p.s"]?.graphRange, .m5)
     }
 }

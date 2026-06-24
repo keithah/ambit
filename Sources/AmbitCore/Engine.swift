@@ -171,6 +171,23 @@ public actor Engine {
         await history.clear()
     }
 
+    /// Static entity descriptors per provider instance (cached at assembly time).
+    public func entityDescriptors() -> [ProviderInstanceID: [EntityDescriptor]] {
+        descriptorsByInstance
+    }
+
+    /// Current entity states projected from the latest snapshot (missing metrics → .unavailable).
+    public func entityStates() -> [EntityID: EntityState] {
+        var result: [EntityID: EntityState] = [:]
+        for (instanceID, descriptors) in descriptorsByInstance {
+            let providerSnapshot = snapshot.providers[instanceID]?.value
+            for (id, state) in EntityProjection.states(snapshot: providerSnapshot, descriptors: descriptors) {
+                result[id] = state
+            }
+        }
+        return result
+    }
+
     /// Build the active built-in/registry-driven providers: every enabled instance whose
     /// integration type is enabled, expanded through its integration. Disabled instances
     /// produce nothing, so are never polled.
@@ -294,8 +311,13 @@ public actor Engine {
         markRegisteredProvidersLoading()
         publish()
 
-        let endpoint = await resolveEndpoint()
-        selectedEndpoint = endpoint.value
+        // Resolve the router endpoint only when an active provider actually consumes it.
+        // Otherwise a router-less setup (e.g. ping-only) would block every cycle on the
+        // ~60s router probe, starving fast providers and leaving history graphs sparse.
+        if providers.contains(where: { Self.consumesRouterHost($0.id) }) {
+            let endpoint = await resolveEndpoint()
+            selectedEndpoint = endpoint.value
+        }
         providerStates = await pollRegisteredProviders(routerHost: selectedEndpoint?.host)
         snapshot.lastUpdated = Date()
         publish()
@@ -617,6 +639,15 @@ public actor Engine {
 
     private static func usesRouterLogin(_ providerID: ProviderID) -> Bool {
         providerID == ProviderIDs.router || providerID == ProviderIDs.vpn
+    }
+
+    /// Providers that read `context.routerHost`. Endpoint resolution (and its ~60s probe on a
+    /// router-less network) is skipped when none of these are active.
+    static func consumesRouterHost(_ providerID: ProviderID) -> Bool {
+        providerID == ProviderIDs.router
+            || providerID == ProviderIDs.vpn
+            || providerID == ProviderIDs.speedify
+            || providerID == ProviderIDs.ecoflow
     }
 
     private static func routerBackoffMessage(until date: Date) -> String {

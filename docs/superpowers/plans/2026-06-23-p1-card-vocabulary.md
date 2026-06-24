@@ -764,7 +764,7 @@ git commit -m "P1: add EntityReadout value formatting"
 **Composition rules (the binding decision):**
 1. Drop entities whose `config.entityOverrides[id]?.enabled == false`, and `category == .config` entities (config belongs to settings, P5).
 2. Group survivors into ordered sections: **Network** (`.connectivity`/`.throughput`/`.latency`), **Power** (`.battery`/`.power`), **State** (binarySensor/text with no networking/power class), **Controls** (toggle/select/number/button), **Other** (everything else). This preserves the retired `ProviderMetricSection` grouping intent on entities (deviceClass wins over kind).
-3. Within a section: `isPrimary` first, then descending `priority` (nil last), then `name`.
+3. Within a section: `isPrimary` first, then descending `priority` (nil last), then stable insertion order.
 4. Per descriptor → a `CardSpec` via `cardKind(for:)`:
    - control kinds → `.control`
    - `binarySensor` / `text` → `.statusRow`

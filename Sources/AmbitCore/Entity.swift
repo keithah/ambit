@@ -86,23 +86,32 @@ public struct EntityState: Equatable, Sendable {
     public var availability: Availability
     public var lastUpdated: Date?
     public var error: String?
+    public var severity: Severity?
 
     public init(
         id: EntityID,
         value: EntityValue? = nil,
         availability: Availability = .unavailable,
         lastUpdated: Date? = nil,
-        error: String? = nil
+        error: String? = nil,
+        severity: Severity? = nil
     ) {
         self.id = id
         self.value = value
         self.availability = availability
         self.lastUpdated = lastUpdated
         self.error = error
+        self.severity = severity
     }
 }
 
 public enum Availability: String, Sendable, Codable { case online, stale, unavailable }
+
+/// Generic state severity (parent spec §5). Ascending rank; UI-free. P4's attention engine reuses it.
+public enum Severity: Int, Sendable, Codable, Comparable {
+    case normal, elevated, degraded, alerting, down
+    public static func < (lhs: Severity, rhs: Severity) -> Bool { lhs.rawValue < rhs.rawValue }
+}
 
 public enum EntityKind: String, Sendable, Codable {
     case sensor

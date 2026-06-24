@@ -60,7 +60,7 @@ and come first.
   - `allReachable` / `noData → normal` (banner omitted),
   - `partialDegradation → degraded`,
   - connectivity-loss verdicts `localNetworkDown` / `ispPathDown` / `upstreamDown → down` (no path out — catastrophic),
-  - isolated/partial failures `remoteServiceDown` / `multipleFailures → alerting` (notable, but still connected).
+  - isolated/partial failures `remoteServiceDown → alerting` (notable, but still connected).
 
   The "catastrophic vs notable" split is the user-visible judgment. The banner title is the entity name;
   the detail text is the value.
