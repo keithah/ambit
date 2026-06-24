@@ -34,6 +34,11 @@ final class StatusViewModel: ObservableObject {
     @Published var surfaceData = SurfaceData()
     @Published var surfacePlan = SurfacePlan()
 
+    // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
+    // one status item per slot.
+    @Published var slots: [Slot] = []
+    private let configStore: any PresentationConfigStore
+
     private let pingDiagnoser = NetworkPerspectiveDiagnoser()
     private let pingTierClassifier = NetworkTierClassifier()
     private var pingAlertMonitor = PingAlertMonitor()
@@ -65,7 +70,8 @@ final class StatusViewModel: ObservableObject {
         installedProviderStore: any InstalledProviderStore = UserDefaultsInstalledProviderStore(),
         endpointSelector: EndpointSelector = EndpointSelector(),
         reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe(),
-        addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery()
+        addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
+        configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
         let routerPassword = (try? credentialStore.password(account: settings.username)) ?? RouterDefaults.routerPassword
@@ -75,6 +81,8 @@ final class StatusViewModel: ObservableObject {
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
+        self.configStore = configStore
+        self.slots = Self.loadOrSeedSlots(configStore)
         let integrationRegistry = UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.migrateRetiredPingscopeRecords(integrationRegistry)
@@ -105,6 +113,18 @@ final class StatusViewModel: ObservableObject {
 
     deinit {
         subscriptionTask?.cancel()
+    }
+
+    /// Load persisted slots; seed one dedicated Ping slot on first run (parity with today's
+    /// single menu item). `.integrationType` resolves to the live ping hosts, so the slot needs
+    /// no membership maintenance as hosts come and go.
+    private static func loadOrSeedSlots(_ store: any PresentationConfigStore) -> [Slot] {
+        var config = store.load()
+        if config.slots.isEmpty {
+            config.slots = [Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)]
+            store.save(config)
+        }
+        return config.slots
     }
 
     /// First-run seed: the built-in integrations are listed (so they remain toggleable) but
