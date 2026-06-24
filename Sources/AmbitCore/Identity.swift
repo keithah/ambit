@@ -52,6 +52,17 @@ public struct ProviderInstanceID: StringIdentifier {
     public init(rawValue: String) { self.rawValue = rawValue }
 }
 
+public extension ProviderInstanceID {
+    /// The integration instance this provider is scoped under. Provider ids are
+    /// `"<IntegrationInstanceID>/<providerType>"`; an unscoped id maps to itself.
+    var integrationInstanceID: IntegrationInstanceID {
+        guard let slash = rawValue.lastIndex(of: "/") else {
+            return IntegrationInstanceID(rawValue: rawValue)
+        }
+        return IntegrationInstanceID(rawValue: String(rawValue[..<slash]))
+    }
+}
+
 /// `"<ProviderInstanceID>.<entityKey>"`, e.g. `"glinet/vpn.connected"` (entity-model.md).
 public struct EntityID: StringIdentifier {
     public let rawValue: String

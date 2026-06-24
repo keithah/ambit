@@ -47,13 +47,28 @@ public struct IntegrationPresentationOverride: Equatable, Sendable, Codable {
 public struct PresentationConfig: Equatable, Sendable, Codable {
     public var entityOverrides: [EntityID: EntityPresentationOverride]
     public var integrationOverrides: [IntegrationInstanceID: IntegrationPresentationOverride]
+    public var slots: [Slot]
 
     public init(
         entityOverrides: [EntityID: EntityPresentationOverride] = [:],
-        integrationOverrides: [IntegrationInstanceID: IntegrationPresentationOverride] = [:]
+        integrationOverrides: [IntegrationInstanceID: IntegrationPresentationOverride] = [:],
+        slots: [Slot] = []
     ) {
         self.entityOverrides = entityOverrides
         self.integrationOverrides = integrationOverrides
+        self.slots = slots
+    }
+
+    // Forward-compatible decode: every field is optional-with-default, so a config saved by an
+    // older or newer build (missing or with extra keys) loads instead of failing. encode(to:)
+    // is synthesized from these keys.
+    private enum CodingKeys: String, CodingKey { case entityOverrides, integrationOverrides, slots }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        entityOverrides = try container.decodeIfPresent([EntityID: EntityPresentationOverride].self, forKey: .entityOverrides) ?? [:]
+        integrationOverrides = try container.decodeIfPresent([IntegrationInstanceID: IntegrationPresentationOverride].self, forKey: .integrationOverrides) ?? [:]
+        slots = try container.decodeIfPresent([Slot].self, forKey: .slots) ?? []
     }
 
     public static var empty: PresentationConfig { PresentationConfig() }

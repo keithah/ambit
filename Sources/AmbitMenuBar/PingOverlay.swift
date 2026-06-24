@@ -9,13 +9,17 @@ struct OverlayView: View {
     let openPopover: () -> Void
     let close: () -> Void
 
+    /// The ping slot is always slots.first (seeded by loadOrSeedSlots).
+    private var pingSlotID: SlotID { viewModel.slots.first?.id ?? SlotID(rawValue: "ping") }
+    private var surface: SlotSurface { viewModel.slotSurfaces[pingSlotID] ?? .empty }
+
     var body: some View {
-        let flattened: [CardSpec] = viewModel.surfacePlan.cards
+        let flattened: [CardSpec] = surface.plan.cards
             .flatMap { (card: CardSpec) -> [CardSpec] in card.kind == .section ? card.children : [card] }
         let graphCards = flattened
             .filter { $0.kind == .historyGraph || $0.kind == .dualLineGraph }
         VStack(spacing: 5) {
-            SurfaceView(plan: SurfacePlan(cards: graphCards), data: viewModel.surfaceData)
+            SurfaceView(plan: SurfacePlan(cards: graphCards), data: surface.data)
         }
         .padding(8)
         .frame(minWidth: 180, maxWidth: .infinity, minHeight: 64, maxHeight: .infinity)
@@ -23,9 +27,11 @@ struct OverlayView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
         .contextMenu {
             Menu("Host") {
-                Button("All Hosts") { viewModel.selectPingHost(nil) }
-                ForEach(viewModel.pingHosts) { host in
-                    Button(host.name) { viewModel.selectPingHost(host.instanceID) }
+                Button("All Hosts") { viewModel.selectInstance(pingSlotID, nil) }
+                ForEach(surface.hostOptions) { option in
+                    Button(option.label) {
+                        viewModel.selectInstance(pingSlotID, IntegrationInstanceID(rawValue: option.id))
+                    }
                 }
             }
             Button("Open Popover", action: openPopover)
