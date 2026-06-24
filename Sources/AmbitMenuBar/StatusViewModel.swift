@@ -119,7 +119,7 @@ final class StatusViewModel: ObservableObject {
             PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
             PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
         ]
-        try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.pingscope($0) })
+        try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.ping($0) })
         try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
     }
 
@@ -127,7 +127,7 @@ final class StatusViewModel: ObservableObject {
     /// else the first), cleaning up duplicates left by earlier seeding changes.
     private static func dedupePingHostsByAddress(_ registry: any IntegrationRegistry) {
         guard let all = try? registry.instances() else { return }
-        let pingscope = all.filter { $0.integrationID == IntegrationIDs.pingscope }
+        let pingscope = all.filter { $0.integrationID == IntegrationIDs.ping }
         let primary = (try? registry.primaryInstanceID()) ?? nil
         let ordered = pingscope.filter { $0.id == primary } + pingscope.filter { $0.id != primary }
         var seen = Set<String>()
@@ -149,11 +149,11 @@ final class StatusViewModel: ObservableObject {
         // Dedup by target address (not exact id) so a gateway already monitored under any
         // method/port isn't added again.
         let alreadyMonitored = ((try? integrationRegistry.instances()) ?? [])
-            .filter { $0.integrationID == IntegrationIDs.pingscope }
+            .filter { $0.integrationID == IntegrationIDs.ping }
             .compactMap { PingHostConfig(configObject: $0.config)?.address }
             .contains(gateway)
         guard !alreadyMonitored else { return }
-        try? integrationRegistry.upsert(.pingscope(host))
+        try? integrationRegistry.upsert(.ping(host))
         await engine.reloadProviders()
         await refreshAlertRules()
         await engine.refresh()
@@ -377,10 +377,10 @@ final class StatusViewModel: ObservableObject {
         let now = Date()
         let freshness = max(pingRange.seconds, 30)
         let allRecords = ((try? integrationRegistry.instances()) ?? [])
-            .filter { $0.integrationID == IntegrationIDs.pingscope }
+            .filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         let primaryID = (try? integrationRegistry.primaryInstanceID()) ?? nil
-        let activeRecords = disabledTypes.contains(IntegrationIDs.pingscope) ? [] : allRecords.filter(\.enabled)
+        let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
         let fallbackPrimary = primaryID ?? activeRecords.first?.id
 
         // All hosts (enabled + disabled) for the Settings list.
@@ -464,7 +464,7 @@ final class StatusViewModel: ObservableObject {
 
     func addOrUpdatePingHost(_ host: PingHostConfig, replacing oldID: IntegrationInstanceID? = nil) {
         if let oldID, oldID != host.integrationInstanceID { try? integrationRegistry.remove(oldID) }
-        try? integrationRegistry.upsert(.pingscope(host))
+        try? integrationRegistry.upsert(.ping(host))
         reloadPingProviders()
     }
 
@@ -489,11 +489,11 @@ final class StatusViewModel: ObservableObject {
     }
 
     func resetPingHostsToDefaults() {
-        let others = ((try? integrationRegistry.instances()) ?? []).filter { $0.integrationID != IntegrationIDs.pingscope }
+        let others = ((try? integrationRegistry.instances()) ?? []).filter { $0.integrationID != IntegrationIDs.ping }
         let defaults = [
             PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
             PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
-        ].map { IntegrationInstanceRecord.pingscope($0) }
+        ].map { IntegrationInstanceRecord.ping($0) }
         try? integrationRegistry.save(others + defaults)
         try? integrationRegistry.setPrimaryInstanceID(nil)
         reloadPingProviders()

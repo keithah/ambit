@@ -20,9 +20,9 @@ final class PingAlertMonitorTests: XCTestCase {
         let stillDown = monitor.evaluate(hosts: [host(.down)], diagnosis: healthy, now: at(2))
         let recovered = monitor.evaluate(hosts: [host(.healthy)], diagnosis: healthy, now: at(70))
 
-        XCTAssertEqual(down.map(\.ruleID), ["pingscope.hostDown.cf"])
+        XCTAssertEqual(down.map(\.ruleID), ["ping.hostDown.cf"])
         XCTAssertTrue(stillDown.isEmpty)                                   // no re-fire while down
-        XCTAssertEqual(recovered.map(\.ruleID), ["pingscope.recovered.cf"])
+        XCTAssertEqual(recovered.map(\.ruleID), ["ping.recovered.cf"])
         XCTAssertEqual(recovered.first?.severity, .info)
     }
 
@@ -36,19 +36,19 @@ final class PingAlertMonitorTests: XCTestCase {
     func testHighConfidenceEmitsSpecificNetworkAlert() {
         var monitor = PingAlertMonitor(sensitivity: .balanced)
         let events = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .high), now: at(0))
-        XCTAssertEqual(events.map(\.ruleID), ["pingscope.upstreamDown"])
+        XCTAssertEqual(events.map(\.ruleID), ["ping.upstreamDown"])
     }
 
     func testTentativeBalancedFallsBackToInternetLoss() {
         var monitor = PingAlertMonitor(sensitivity: .balanced)
         let events = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .tentative), now: at(0))
-        XCTAssertEqual(events.map(\.ruleID), ["pingscope.internetLoss"])
+        XCTAssertEqual(events.map(\.ruleID), ["ping.internetLoss"])
     }
 
     func testTentativeSensitiveUsesSpecificType() {
         var monitor = PingAlertMonitor(sensitivity: .sensitive)
         let events = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .tentative), now: at(0))
-        XCTAssertEqual(events.map(\.ruleID), ["pingscope.upstreamDown"])
+        XCTAssertEqual(events.map(\.ruleID), ["ping.upstreamDown"])
     }
 
     func testTentativeConservativeEmitsNothing() {
@@ -63,7 +63,7 @@ final class PingAlertMonitorTests: XCTestCase {
         XCTAssertTrue(monitor.evaluate(hosts: [], diagnosis: d, now: at(0)).isEmpty)
         XCTAssertTrue(monitor.evaluate(hosts: [], diagnosis: d, now: at(1)).isEmpty)
         let third = monitor.evaluate(hosts: [], diagnosis: d, now: at(2))
-        XCTAssertEqual(third.map(\.ruleID), ["pingscope.pathDegraded"])
+        XCTAssertEqual(third.map(\.ruleID), ["ping.pathDegraded"])
     }
 
     func testNetworkAlertCooldownSuppressesRepeat() {

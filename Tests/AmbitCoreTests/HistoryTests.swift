@@ -32,7 +32,7 @@ final class HistoryTests: XCTestCase {
 
     func testHistoryServiceRecordsReadsByRangeAndComputesStats() async {
         let service = HistoryService(store: InMemoryHistoryStore(), retention: 86_400, pruneInterval: 60)
-        let id = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.latency_ms")
+        let id = EntityID(rawValue: "ping@1.1.1.1:443/probe.latency_ms")
         await service.record(ok(10, 0), for: id)
         await service.record(ok(30, 10), for: id)
         await service.record(ok(50, 20), for: id)

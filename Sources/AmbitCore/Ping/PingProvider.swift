@@ -20,7 +20,7 @@ public struct PingProvider: Provider {
     public let displayName: String
     public let pollInterval: TimeInterval
     public let typeID: ProviderTypeID = "probe"
-    public let integrationID = IntegrationIDs.pingscope
+    public let integrationID = IntegrationIDs.ping
     public let integrationInstanceID: IntegrationInstanceID
     public let instanceID: ProviderInstanceID
 
@@ -90,10 +90,10 @@ public struct PingProvider: Provider {
 
 public extension IntegrationInstanceRecord {
     /// A registry record for a pingscope host (deterministic id from the target).
-    static func pingscope(_ host: PingHostConfig, enabled: Bool = true) -> IntegrationInstanceRecord {
+    static func ping(_ host: PingHostConfig, enabled: Bool = true) -> IntegrationInstanceRecord {
         IntegrationInstanceRecord(
             id: host.integrationInstanceID,
-            integrationID: IntegrationIDs.pingscope,
+            integrationID: IntegrationIDs.ping,
             displayName: host.displayName,
             enabled: enabled,
             origin: .user,
@@ -105,7 +105,7 @@ public extension IntegrationInstanceRecord {
 /// The pingscope integration — the first multi-instance integration. Each enabled host
 /// record stands up one PingProvider.
 public struct PingIntegration: Integration {
-    public let id = IntegrationIDs.pingscope
+    public let id = IntegrationIDs.ping
     public let displayName = "Ping"
     public let isMultiInstance = true
 

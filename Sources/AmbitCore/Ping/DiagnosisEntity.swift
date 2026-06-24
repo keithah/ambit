@@ -5,8 +5,8 @@ import Foundation
 // level, so the id is a stable synthetic summary id (no EngineID). P3/P4 can promote production
 // of this entity into an aggregate / the attention engine.
 public enum DiagnosisEntity {
-    public static let instanceID = ProviderInstanceID(rawValue: "pingscope.summary")
-    public static let entityID = EntityID(rawValue: "pingscope.summary.diagnosis")
+    public static let instanceID = ProviderInstanceID(rawValue: "ping.summary")
+    public static let entityID = EntityID(rawValue: "ping.summary.diagnosis")
 
     /// nil when the network is healthy / has no data (banner omitted).
     public static func make(_ diagnosis: NetworkPerspectiveDiagnosis) -> (EntityDescriptor, EntityState)? {

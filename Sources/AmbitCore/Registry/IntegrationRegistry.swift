@@ -4,8 +4,8 @@ import Foundation
 /// per-ProviderID manifest record to a per-IntegrationInstance record that also covers the
 /// built-ins and dynamic (pingscope) instances.
 public struct IntegrationInstanceRecord: Codable, Equatable, Identifiable, Sendable {
-    public var id: IntegrationInstanceID      // "glinet", "pingscope@<uuid>"
-    public var integrationID: IntegrationID   // "glinet", "pingscope"
+    public var id: IntegrationInstanceID      // "glinet", "ping@<uuid>"
+    public var integrationID: IntegrationID   // "glinet", "ping"
     public var displayName: String
     public var enabled: Bool
     public var origin: Origin

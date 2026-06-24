@@ -6,8 +6,8 @@ final class EngineEntityAPITests: XCTestCase {
         let result: ProbeResult
         func measure(_ host: PingHostConfig) async -> ProbeResult { result }
     }
-    private let latencyID = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.latency_ms")
-    private let providerInstance = ProviderInstanceID(rawValue: "pingscope@1.1.1.1:443/probe")
+    private let latencyID = EntityID(rawValue: "ping@1.1.1.1:443/probe.latency_ms")
+    private let providerInstance = ProviderInstanceID(rawValue: "ping@1.1.1.1:443/probe")
 
     private func engine(latencyMs: Double?) -> Engine {
         let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)

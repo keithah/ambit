@@ -4,7 +4,7 @@ import XCTest
 final class SQLiteHistoryStoreTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000)
     private func at(_ o: TimeInterval) -> Date { t0.addingTimeInterval(o) }
-    private let id = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.latency_ms")
+    private let id = EntityID(rawValue: "ping@1.1.1.1:443/probe.latency_ms")
 
     private func tempURL() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("ambit-history-\(UUID().uuidString).sqlite")

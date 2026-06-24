@@ -8,8 +8,8 @@ final class EngineHistoryFeedTests: XCTestCase {
     }
 
     private let epoch = Date(timeIntervalSince1970: 0)
-    private let latencyID = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.latency_ms")
-    private let healthID = EntityID(rawValue: "pingscope@1.1.1.1:443/probe.health")
+    private let latencyID = EntityID(rawValue: "ping@1.1.1.1:443/probe.latency_ms")
+    private let healthID = EntityID(rawValue: "ping@1.1.1.1:443/probe.health")
 
     private func engine(latencyMs: Double?, failure: ProbeFailureReason? = nil) -> Engine {
         let host = PingHostConfig(displayName: "CF", address: "1.1.1.1", method: .tcp, port: 443)

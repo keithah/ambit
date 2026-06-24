@@ -133,7 +133,7 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
     /// port). Two engines configured for the same host compute the same id.
     public var integrationInstanceID: IntegrationInstanceID {
         let suffix = port.map { ":\($0)" } ?? ""
-        return IntegrationInstanceID(rawValue: "pingscope@\(address)\(suffix)")
+        return IntegrationInstanceID(rawValue: "ping@\(address)\(suffix)")
     }
 
     /// Encode to / decode from an IntegrationInstanceRecord.config (JSONObject), round-tripped
