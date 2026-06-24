@@ -165,9 +165,9 @@ final class StatusViewModel: ObservableObject {
     /// else the first), cleaning up duplicates left by earlier seeding changes.
     private static func dedupePingHostsByAddress(_ registry: any IntegrationRegistry) {
         guard let all = try? registry.instances() else { return }
-        let pingscope = all.filter { $0.integrationID == IntegrationIDs.ping }
+        let hosts = all.filter { $0.integrationID == IntegrationIDs.ping }
         let primary = (try? registry.primaryInstanceID()) ?? nil
-        let ordered = pingscope.filter { $0.id == primary } + pingscope.filter { $0.id != primary }
+        let ordered = hosts.filter { $0.id == primary } + hosts.filter { $0.id != primary }
         var seen = Set<String>()
         var removeIDs = Set<IntegrationInstanceID>()
         for record in ordered {
