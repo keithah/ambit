@@ -4,9 +4,10 @@ import XCTest
 final class SurfaceComposerTests: XCTestCase {
     private func sensor(_ key: String, _ deviceClass: DeviceClass?, kind: EntityKind = .sensor,
                         stateClass: StateClass? = nil, graphStyle: GraphStyle? = nil,
-                        isPrimary: Bool = false, priority: Int? = nil, category: EntityCategory = .primary) -> EntityDescriptor {
+                        isPrimary: Bool = false, priority: Int? = nil, category: EntityCategory = .primary,
+                        capability: ProviderCapability? = nil) -> EntityDescriptor {
         EntityDescriptor(id: EntityID(rawValue: "i/p.\(key)"), instanceID: "i/p", name: key, kind: kind,
-                         deviceClass: deviceClass, category: category, stateClass: stateClass,
+                         deviceClass: deviceClass, category: category, capability: capability, stateClass: stateClass,
                          graphStyle: graphStyle, isPrimary: isPrimary, priority: priority)
     }
 
@@ -153,5 +154,62 @@ final class SurfaceComposerTests: XCTestCase {
         let card = plan.cards.flatMap(\.children).first
         XCTAssertEqual(card?.kind, .statTable)
         XCTAssertEqual(card?.entities, [table.id])
+    }
+
+    func testSystemCapabilitiesProduceGenericSectionsInOrder() {
+        let descriptors = [
+            sensor("fan", nil, capability: "system.fans"),
+            sensor("disk", nil, kind: .table, capability: "system.disk"),
+            sensor("mem", .percent, capability: "system.memory"),
+            sensor("cpu", .percent, capability: "system.cpu"),
+            sensor("net", .throughput, capability: "system.network"),
+            sensor("temp", .percent, capability: "system.sensors")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        XCTAssertEqual(plan.cards.map(\.title), ["CPU", "Memory", "Disk", "Network", "Sensors", "Fans"])
+        XCTAssertEqual(plan.cards.flatMap(\.children).map { $0.entities.first?.rawValue }, [
+            "i/p.cpu", "i/p.mem", "i/p.disk", "i/p.net", "i/p.temp", "i/p.fan"
+        ])
+    }
+
+    func testPowerBatteryCapabilityProducesPowerSectionBeforeDeviceClassFallback() {
+        let descriptor = sensor("battery", .percent, capability: "power.battery")
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [descriptor], states: [:])
+
+        XCTAssertEqual(plan.cards.map(\.title), ["Power"])
+        XCTAssertEqual(plan.cards.first?.children.first?.entities, [descriptor.id])
+    }
+
+    func testPingNetworkAndDiagnosticSectionsStayStable() {
+        let descriptors = [
+            sensor("latency", .latency, stateClass: .measurement, capability: "uplink"),
+            sensor("diagnosis", nil, kind: .text, category: .diagnostic)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        XCTAssertEqual(plan.cards.map(\.title), ["Network", "State"])
+        XCTAssertEqual(plan.cards[0].children.first?.entities, [descriptors[0].id])
+        XCTAssertEqual(plan.cards[1].children.first?.entities, [descriptors[1].id])
+    }
+
+    func testControlsAndConfigExclusionSurviveCapabilitySections() {
+        let control = EntityDescriptor(
+            id: "i/p.toggle",
+            instanceID: "i/p",
+            name: "Toggle",
+            kind: .toggle,
+            capability: "system.cpu",
+            command: CommandRef(commandID: "toggle")
+        )
+        let config = sensor("config", nil, kind: .text, category: .config, capability: "system.memory")
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [config, control], states: [:])
+
+        XCTAssertEqual(plan.cards.map(\.title), ["Controls"])
+        XCTAssertEqual(plan.cards.first?.children.first?.entities, [control.id])
     }
 }

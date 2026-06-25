@@ -7,11 +7,16 @@ import Foundation
 public enum SurfaceComposer {
 
     private enum Section: Int, CaseIterable {
-        case network, power, state, controls, other
+        case cpu, memory, disk, network, power, sensors, fans, state, controls, other
         var title: String {
             switch self {
+            case .cpu: return "CPU"
+            case .memory: return "Memory"
+            case .disk: return "Disk"
             case .network: return "Network"
             case .power: return "Power"
+            case .sensors: return "Sensors"
+            case .fans: return "Fans"
             case .state: return "State"
             case .controls: return "Controls"
             case .other: return "Other"
@@ -49,6 +54,7 @@ public enum SurfaceComposer {
 
     private static func section(for d: EntityDescriptor) -> Section {
         if isControl(d.kind) { return .controls }
+        if let section = section(for: d.capability) { return section }
         switch d.deviceClass {
         case .connectivity, .throughput, .latency: return .network
         case .battery, .power: return .power
@@ -58,6 +64,19 @@ public enum SurfaceComposer {
             case .binarySensor, .text: return .state
             default: return .other
             }
+        }
+    }
+
+    private static func section(for capability: ProviderCapability?) -> Section? {
+        switch capability?.rawValue {
+        case "system.cpu": return .cpu
+        case "system.memory": return .memory
+        case "system.disk": return .disk
+        case "system.network": return .network
+        case "power.battery": return .power
+        case "system.sensors": return .sensors
+        case "system.fans": return .fans
+        default: return nil
         }
     }
 
