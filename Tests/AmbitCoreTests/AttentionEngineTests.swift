@@ -28,9 +28,21 @@ final class AttentionEngineTests: XCTestCase {
         _ candidates: [AttentionCandidate],
         lanes: Int = 1,
         alerting: Set<EntityID> = [],
-        config: PresentationConfig = .empty
+        config: PresentationConfig = .empty,
+        now: Date? = nil
     ) -> AttentionSelection {
         var engine = AttentionEngine()
+        return selection(candidates, engine: &engine, lanes: lanes, alerting: alerting, config: config, now: now ?? self.now)
+    }
+
+    private func selection(
+        _ candidates: [AttentionCandidate],
+        engine: inout AttentionEngine,
+        lanes: Int = 1,
+        alerting: Set<EntityID> = [],
+        config: PresentationConfig = .empty,
+        now: Date
+    ) -> AttentionSelection {
         return engine.evaluate(
             candidates: candidates,
             surfaces: [bar: SurfaceCapacity(lanes: lanes)],
@@ -162,5 +174,122 @@ final class AttentionEngineTests: XCTestCase {
         XCTAssertFalse(reason!.summary.isEmpty)
         XCTAssertEqual(reason?.severity, .down)
         XCTAssertEqual(reason?.tier, .surfaced)
+    }
+
+    // MARK: Debounce and transition boost
+
+    func testAutoDebounceSurfacesAndUnsurfacesAfterConsecutiveSamples() {
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 100, consecutive: 3)
+        var engine = AttentionEngine()
+        let high = [candidate("a", value: .number(150), displayThreshold: threshold)]
+        let low = [candidate("a", value: .number(50), displayThreshold: threshold)]
+
+        XCTAssertEqual(selection(high, engine: &engine, now: now).lanes.first?.tier, .detail)
+        XCTAssertEqual(selection(high, engine: &engine, now: now.addingTimeInterval(1)).lanes.first?.tier, .detail)
+
+        let surfaced = selection(high, engine: &engine, now: now.addingTimeInterval(2))
+        XCTAssertEqual(laneIDs(surfaced), ["inst.a"])
+        XCTAssertEqual(surfaced.lanes.first?.tier, .surfaced)
+
+        XCTAssertEqual(selection(low, engine: &engine, now: now.addingTimeInterval(3)).lanes.first?.tier, .surfaced)
+        XCTAssertEqual(selection(low, engine: &engine, now: now.addingTimeInterval(4)).lanes.first?.tier, .surfaced)
+
+        let unsurfaced = selection(low, engine: &engine, now: now.addingTimeInterval(5))
+        XCTAssertEqual(unsurfaced.lanes.first?.tier, .detail)
+    }
+
+    func testDefaultConsecutiveOneSurfacesImmediately() {
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 100)
+        let s = selection([candidate("a", value: .number(150), displayThreshold: threshold)])
+        XCTAssertEqual(laneIDs(s), ["inst.a"])
+        XCTAssertEqual(s.lanes.first?.tier, .surfaced)
+    }
+
+    func testAlwaysAndAlertedIgnoreDebounce() {
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 100, consecutive: 3)
+        var engine = AttentionEngine()
+
+        let always = selection(
+            [candidate("always", value: .number(50), visibility: .always, displayThreshold: threshold)],
+            engine: &engine,
+            now: now
+        )
+        XCTAssertEqual(laneIDs(always), ["inst.always"])
+        XCTAssertEqual(always.lanes.first?.tier, .surfaced)
+
+        let alerted = selection(
+            [candidate("alert", value: .number(50), displayThreshold: threshold)],
+            engine: &engine,
+            alerting: [id("alert")],
+            now: now.addingTimeInterval(1)
+        )
+        XCTAssertEqual(laneIDs(alerted), ["inst.alert"])
+        XCTAssertEqual(alerted.lanes.first?.tier, .alerted)
+    }
+
+    func testTransitionBoostOutranksChronicWithinSeverityTierThenExpires() {
+        var engine = AttentionEngine()
+        _ = selection([
+            candidate("chronic", severity: .degraded, visibility: .auto),
+            candidate("riser", severity: .elevated, visibility: .auto)
+        ], engine: &engine, lanes: 2, now: now)
+
+        let boosted = selection([
+            candidate("chronic", severity: .degraded, visibility: .auto),
+            candidate("riser", severity: .degraded, visibility: .auto)
+        ], engine: &engine, lanes: 2, now: now.addingTimeInterval(1))
+        XCTAssertEqual(laneIDs(boosted), ["inst.riser", "inst.chronic"])
+        XCTAssertEqual(boosted.lanes.first?.reason.transitionBoosted, true)
+
+        let expired = selection([
+            candidate("chronic", severity: .degraded, visibility: .auto),
+            candidate("riser", severity: .degraded, visibility: .auto)
+        ], engine: &engine, lanes: 2, now: now.addingTimeInterval(21))
+        XCTAssertEqual(laneIDs(expired), ["inst.chronic", "inst.riser"])
+        XCTAssertEqual(expired.lanes.first?.reason.transitionBoosted, false)
+    }
+
+    func testTransitionBoostCannotCrossSeverityTier() {
+        var engine = AttentionEngine()
+        _ = selection([
+            candidate("chronic", severity: .degraded, visibility: .auto),
+            candidate("riser", severity: .normal, visibility: .auto)
+        ], engine: &engine, lanes: 2, now: now)
+
+        let s = selection([
+            candidate("chronic", severity: .degraded, visibility: .auto),
+            candidate("riser", severity: .elevated, visibility: .auto)
+        ], engine: &engine, lanes: 2, now: now.addingTimeInterval(1))
+        XCTAssertEqual(laneIDs(s), ["inst.chronic", "inst.riser"])
+        XCTAssertEqual(s.lanes.last?.reason.transitionBoosted, true)
+    }
+
+    func testPrunedStateMeansReturningEntityStartsFresh() {
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 100, consecutive: 3)
+        var engine = AttentionEngine()
+        let highA = [candidate("a", value: .number(150), displayThreshold: threshold)]
+
+        XCTAssertEqual(selection(highA, engine: &engine, now: now).lanes.first?.tier, .detail)
+        XCTAssertEqual(selection([candidate("b", severity: .normal, isPrimary: true)], engine: &engine, now: now.addingTimeInterval(1)).lanes.first?.id, id("b"))
+
+        let returned = selection(highA, engine: &engine, now: now.addingTimeInterval(2))
+        XCTAssertEqual(returned.lanes.first?.tier, .detail)
+    }
+
+    func testReasonStringsIncludeSustainedCountAndTransitionBoostFlag() {
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 100, consecutive: 4)
+        var engine = AttentionEngine()
+        let high = [candidate("a", value: .number(150), displayThreshold: threshold)]
+
+        _ = selection([candidate("a", value: .number(50), displayThreshold: threshold)], engine: &engine, now: now)
+        _ = selection(high, engine: &engine, now: now.addingTimeInterval(1))
+        _ = selection(high, engine: &engine, now: now.addingTimeInterval(2))
+        _ = selection(high, engine: &engine, now: now.addingTimeInterval(3))
+        let s = selection(high, engine: &engine, now: now.addingTimeInterval(4))
+
+        let reason = s.lanes.first?.reason
+        XCTAssertTrue(reason?.summary.contains("sustained 4/4") ?? false)
+        XCTAssertTrue(reason?.summary.contains("transitionBoosted true") ?? false)
+        XCTAssertEqual(reason?.transitionBoosted, true)
     }
 }

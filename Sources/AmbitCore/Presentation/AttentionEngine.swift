@@ -82,10 +82,23 @@ public struct AttentionCandidate: Equatable, Sendable {
 }
 
 public struct AttentionEngine {
+    private struct AttentionState {
+        var surfacedStreak: Int = 0
+        var unsurfacedStreak: Int = 0
+        var isSurfaced: Bool = false
+        var lastSeverity: Severity?
+        var lastChangeAt: Date?
+    }
+
+    private static let boostWindow: TimeInterval = 20.0
+    private static let boostBonus = 100
+
+    private var states: [EntityID: AttentionState] = [:]
+
     public init() {}
 
-    /// Stateless in P4.3 (the debounce/transition state lands in P4.4). `surfaces` maps a SurfaceID
-    /// to its capacity; `alertingIDs` are entities the AlertEngine is currently firing on.
+    /// `surfaces` maps a SurfaceID to its capacity; `alertingIDs` are entities the AlertEngine is
+    /// currently firing on.
     public mutating func evaluate(
         candidates: [AttentionCandidate],
         surfaces: [SurfaceID: SurfaceCapacity],
@@ -93,7 +106,10 @@ public struct AttentionEngine {
         config: PresentationConfig,
         now: Date
     ) -> [SurfaceID: AttentionSelection] {
-        let evaluated = candidates.map { resolve($0, alertingIDs: alertingIDs, config: config) }
+        let candidateIDs = Set(candidates.map(\.descriptor.id))
+        states = states.filter { candidateIDs.contains($0.key) }
+
+        let evaluated = candidates.map { resolve($0, alertingIDs: alertingIDs, config: config, now: now) }
         var result: [SurfaceID: AttentionSelection] = [:]
         for (surfaceID, capacity) in surfaces {
             result[surfaceID] = select(evaluated, capacity: capacity)
@@ -112,6 +128,9 @@ public struct AttentionEngine {
         var score: Int
         var tier: AttentionTier
         var thresholdCrossed: Bool
+        var sustained: Int
+        var consecutive: Int
+        var transitionBoosted: Bool
         // Disjoint lane groups (an entity belongs to exactly one): alerted > reserved > surfaced.
         var isAlerted: Bool
         var isReserved: Bool
@@ -119,7 +138,7 @@ public struct AttentionEngine {
         var reasonSummary: String
     }
 
-    private func resolve(_ candidate: AttentionCandidate, alertingIDs: Set<EntityID>, config: PresentationConfig) -> Evaluated {
+    private mutating func resolve(_ candidate: AttentionCandidate, alertingIDs: Set<EntityID>, config: PresentationConfig, now: Date) -> Evaluated {
         let d = candidate.descriptor
         let override = config.entityOverrides[d.id]
         let visibility = override?.visibility ?? d.defaultVisibility
@@ -139,20 +158,33 @@ public struct AttentionEngine {
 
         let isAlerted = alertingIDs.contains(d.id) && visibility != .never
         let isReserved = !isAlerted && (visibility == .always || pinned) && visibility != .never
-        let autoSurfaced = !isAlerted && !isReserved && visibility == .auto && displaySeverity >= .elevated
-
-        let tier: AttentionTier = isAlerted ? .alerted : ((isReserved || autoSurfaced) ? .surfaced : .detail)
         // Alerting outranks everything below it even when display+health stayed lower.
         let effectiveSeverity = Swift.max(displaySeverity, isAlerted ? .alerting : .normal)
-        let score = effectiveSeverity.rawValue * 1000 + clampedPriority(priority)
+        let state = updateState(
+            id: d.id,
+            thresholdCrossed: thresholdCrossed,
+            consecutive: Swift.max(threshold?.consecutive ?? 1, 1),
+            severity: effectiveSeverity,
+            now: now
+        )
+        let transitionBoosted = state.lastChangeAt.map { now.timeIntervalSince($0) < Self.boostWindow } ?? false
+        let healthSurfaced = baseSeverity >= .elevated
+        let autoSurfaced = !isAlerted && !isReserved && visibility == .auto && (healthSurfaced || state.isSurfaced)
+
+        let tier: AttentionTier = isAlerted ? .alerted : ((isReserved || autoSurfaced) ? .surfaced : .detail)
+        let score = effectiveSeverity.rawValue * 1000 + clampedPriority(priority) + (transitionBoosted ? Self.boostBonus : 0)
 
         let summary = reasonSummary(id: d.id, tier: tier, severity: effectiveSeverity,
                                     score: score, priority: priority, thresholdCrossed: thresholdCrossed,
-                                    reserved: isReserved)
+                                    reserved: isReserved, sustained: state.surfacedStreak,
+                                    consecutive: Swift.max(threshold?.consecutive ?? 1, 1),
+                                    transitionBoosted: transitionBoosted)
 
         return Evaluated(
             id: d.id, isPrimary: d.isPrimary, priority: priority, visibility: visibility,
             severity: effectiveSeverity, score: score, tier: tier, thresholdCrossed: thresholdCrossed,
+            sustained: state.surfacedStreak, consecutive: Swift.max(threshold?.consecutive ?? 1, 1),
+            transitionBoosted: transitionBoosted,
             isAlerted: isAlerted, isReserved: isReserved, isSurfaced: autoSurfaced, reasonSummary: summary
         )
     }
@@ -202,7 +234,13 @@ public struct AttentionEngine {
     private func surfacedEntity(_ e: Evaluated) -> SurfacedEntity {
         SurfacedEntity(
             id: e.id, tier: e.tier, score: e.score,
-            reason: AttentionReason(summary: e.reasonSummary, tier: e.tier, severity: e.severity, score: e.score)
+            reason: AttentionReason(
+                summary: e.reasonSummary,
+                tier: e.tier,
+                severity: e.severity,
+                score: e.score,
+                transitionBoosted: e.transitionBoosted
+            )
         )
     }
 
@@ -216,9 +254,44 @@ public struct AttentionEngine {
 
     private func clampedPriority(_ p: Int) -> Int { Swift.min(Swift.max(p, 0), 999) }
 
+    private mutating func updateState(
+        id: EntityID,
+        thresholdCrossed: Bool,
+        consecutive: Int,
+        severity: Severity,
+        now: Date
+    ) -> AttentionState {
+        var state = states[id] ?? AttentionState()
+
+        if thresholdCrossed {
+            state.surfacedStreak += 1
+            state.unsurfacedStreak = 0
+            if state.surfacedStreak >= consecutive {
+                state.isSurfaced = true
+            }
+        } else {
+            state.unsurfacedStreak += 1
+            state.surfacedStreak = 0
+            if state.unsurfacedStreak >= consecutive {
+                state.isSurfaced = false
+            }
+        }
+
+        if let lastSeverity = state.lastSeverity, severity > lastSeverity {
+            state.lastChangeAt = now
+        }
+        state.lastSeverity = severity
+
+        states[id] = state
+        return state
+    }
+
     private func reasonSummary(id: EntityID, tier: AttentionTier, severity: Severity, score: Int,
-                               priority: Int, thresholdCrossed: Bool, reserved: Bool) -> String {
+                               priority: Int, thresholdCrossed: Bool, reserved: Bool,
+                               sustained: Int, consecutive: Int, transitionBoosted: Bool) -> String {
         var parts = ["\(id.rawValue) \(tier): severity \(severity), priority \(priority), score \(score)"]
+        parts.append("sustained \(Swift.min(sustained, consecutive))/\(consecutive)")
+        parts.append("transitionBoosted \(transitionBoosted)")
         if reserved { parts.append("reserved lane") }
         if thresholdCrossed { parts.append("display threshold crossed") }
         return parts.joined(separator: ", ")
