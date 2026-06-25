@@ -39,7 +39,7 @@ public enum SurfaceComposer {
         for section in Section.allCases {
             guard let group = bySection[section], !group.isEmpty else { continue }
             let ordered = group.sorted(by: ordering)
-            let children = buildCards(for: ordered, config: config)
+            let children = buildCards(for: ordered, states: states, config: config)
             let role: CardRole = ordered.contains(where: \.isPrimary) ? .primary : .secondary
             cards.append(CardSpec(id: "section.\(section.title)", kind: .section,
                                   title: section.title, children: children, role: role))
@@ -72,12 +72,12 @@ public enum SurfaceComposer {
 
     /// Build a section's cards, collapsing same-deviceClass/unit measurement history graphs into
     /// one multi-line card (generic: drives the multi-host pingscope graph and P6 cores/disks).
-    private static func buildCards(for ordered: [EntityDescriptor], config: PresentationConfig) -> [CardSpec] {
+    private static func buildCards(for ordered: [EntityDescriptor], states: [EntityID: EntityState], config: PresentationConfig) -> [CardSpec] {
         var result: [CardSpec] = []
         var combinedIndexByKey: [String: Int] = [:]
         for d in ordered {
-            guard cardKind(for: d, config: config) == .historyGraph, d.stateClass == .measurement else {
-                result.append(card(for: d, config: config))
+            guard cardKind(for: d, state: states[d.id], config: config) == .historyGraph, d.stateClass == .measurement else {
+                result.append(card(for: d, state: states[d.id], config: config))
                 continue
             }
             let key = "\(d.deviceClass?.rawValue ?? "none")|\(d.unit ?? "")"
@@ -86,15 +86,15 @@ public enum SurfaceComposer {
                 result[index].title = nil   // multi-line: the legend names the series, not a title
             } else {
                 combinedIndexByKey[key] = result.count
-                result.append(card(for: d, config: config))
+                result.append(card(for: d, state: states[d.id], config: config))
             }
         }
         return result
     }
 
-    private static func card(for d: EntityDescriptor, config: PresentationConfig) -> CardSpec {
-        let role: CardRole = d.isPrimary ? .primary : .secondary
-        let kind = cardKind(for: d, config: config)
+    private static func card(for d: EntityDescriptor, state: EntityState?, config: PresentationConfig) -> CardSpec {
+        let kind = cardKind(for: d, state: state, config: config)
+        let role: CardRole = kind == .statusBanner ? .banner : (d.isPrimary ? .primary : .secondary)
         let style = effectiveGraphStyle(d, config: config)
         let range: GraphRange? = (kind == .historyGraph)
             ? (config.entityOverrides[d.id]?.graphRange ?? d.defaultGraphRange ?? .m5)
@@ -103,8 +103,11 @@ public enum SurfaceComposer {
                         entities: [d.id], graphStyle: style, graphRange: range, role: role)
     }
 
-    private static func cardKind(for d: EntityDescriptor, config: PresentationConfig) -> CardKind {
+    private static func cardKind(for d: EntityDescriptor, state: EntityState?, config: PresentationConfig) -> CardKind {
         if isControl(d.kind) { return .control }
+        if d.category == .diagnostic, d.kind == .text, (state?.severity ?? .normal) >= .elevated {
+            return .statusBanner
+        }
         if d.kind == .binarySensor || d.kind == .text { return .statusRow }
         switch effectiveGraphStyle(d, config: config) {
         case .some(.gauge): return .gauge

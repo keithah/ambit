@@ -23,6 +23,23 @@ final class NetworkDiagnosisTests: XCTestCase {
         XCTAssertEqual(d.faultTier, .localGateway)
     }
 
+    func testMixedGatewayHealthIsDegradationNotLocalNetworkDown() {
+        let d = diagnoser.diagnose(hosts: [
+            host("gw1", .localGateway, .healthy),
+            host("gw2", .localGateway, .down),
+            host("cf", .upstream, .healthy),
+            host("goog", .upstream, .healthy)
+        ])
+        XCTAssertEqual(d.scope, .partialDegradation)
+        XCTAssertEqual(d.confidence, .tentative)
+        if case .partialDegradation(let tier) = d.verdict {
+            XCTAssertEqual(tier, .localGateway)
+        } else {
+            XCTFail("expected partialDegradation")
+        }
+        XCTAssertNotEqual(d.verdict, .localNetworkDown)
+    }
+
     func testUpstreamDownWhenLocalHealthy() {
         let d = diagnoser.diagnose(hosts: [host("gw", .localGateway, .healthy), host("cf", .upstream, .down)])
         XCTAssertEqual(d.scope, .upstream)

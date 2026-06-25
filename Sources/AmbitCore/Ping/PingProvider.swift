@@ -74,7 +74,8 @@ public struct PingProvider: Provider {
             EntityDescriptor(
                 id: EntityProjection.entityID(instance, "latency_ms"), instanceID: instance, name: "Latency",
                 kind: .sensor, deviceClass: .latency, category: .primary, capability: "uplink",
-                access: .read, unit: "ms", stateClass: .measurement, metricID: "latency_ms"
+                access: .read, unit: "ms", stateClass: .measurement, metricID: "latency_ms",
+                isPrimary: true
             ),
             EntityProjection.healthDescriptor(instanceID: instance),
             config("address", "Address"),

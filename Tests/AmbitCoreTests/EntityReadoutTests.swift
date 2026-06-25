@@ -30,9 +30,9 @@ final class EntityReadoutTests: XCTestCase {
         XCTAssertEqual(r.tone, .good)
     }
 
-    func testUnavailableIsBadAndDashed() {
+    func testUnavailableIsBadAndLabeledDown() {
         let r = EntityReadout.make(descriptor: descriptor(.latency), state: EntityState(id: "i/p.e", value: nil, availability: .unavailable))
-        XCTAssertEqual(r.text, "—")
+        XCTAssertEqual(r.text, "Down")
         XCTAssertEqual(r.tone, .bad)
     }
 

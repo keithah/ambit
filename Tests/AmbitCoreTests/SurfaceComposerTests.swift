@@ -110,6 +110,28 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertTrue(plan.cards.isEmpty)
     }
 
+    func testDiagnosticTextWithElevatedSeverityRendersAsStatusBanner() {
+        let diagnosis = sensor("diagnosis", nil, kind: .text, category: .diagnostic)
+        let plan = SurfaceComposer.detailPlan(
+            descriptors: [diagnosis],
+            states: [diagnosis.id: EntityState(id: diagnosis.id, value: .text("Monitoring paused"), availability: .online, severity: .elevated)]
+        )
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .statusBanner)
+        XCTAssertEqual(card?.entities, [diagnosis.id])
+    }
+
+    func testDiagnosticTextWithoutElevatedSeverityStaysStatusRow() {
+        let diagnosis = sensor("diagnosis", nil, kind: .text, category: .diagnostic)
+        let plan = SurfaceComposer.detailPlan(
+            descriptors: [diagnosis],
+            states: [diagnosis.id: EntityState(id: diagnosis.id, value: .text("All reachable"), availability: .online, severity: .normal)]
+        )
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .statusRow)
+        XCTAssertEqual(card?.role, .secondary)
+    }
+
     func testGraphRangeOnlyOnHistoryGraph() {
         let descriptors = [
             sensor("g", .percent, graphStyle: .gauge),

@@ -5,6 +5,68 @@ import XCTest
 final class StatusViewModelDynamicSlotTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 20_000)
 
+    func testGatewaySeedReconciliationKeepsOnlyCurrentAutoGateway() {
+        let cloudflare = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        let oldGateway = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp))
+        let currentGateway = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Gateway", address: "192.168.8.1", method: .icmp))
+
+        let result = StatusViewModel.reconciledGatewaySeedRecords(
+            [cloudflare, oldGateway, currentGateway],
+            currentGateway: "192.168.8.1"
+        )
+
+        XCTAssertTrue(result.changed)
+        XCTAssertEqual(result.records.map(\.id.rawValue), [
+            "ping@1.1.1.1:443",
+            "ping@192.168.8.1"
+        ])
+    }
+
+    func testGatewaySeedReconciliationAddsCurrentGatewayWhenMissing() {
+        let cloudflare = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+
+        let result = StatusViewModel.reconciledGatewaySeedRecords(
+            [cloudflare],
+            currentGateway: "192.168.8.1"
+        )
+
+        XCTAssertTrue(result.changed)
+        XCTAssertEqual(result.records.map(\.id.rawValue), [
+            "ping@1.1.1.1:443",
+            "ping@192.168.8.1"
+        ])
+    }
+
+    func testLatencyStateBackfillsNilCurrentValueFromLatestHistorySample() {
+        let id = EntityID(rawValue: "ping@8.8.8.8:443/probe.latency_ms")
+        let sampleTime = now.addingTimeInterval(5)
+        let current = EntityState(id: id, value: nil, availability: .online, severity: .normal)
+
+        let result = StatusViewModel.latencyStateForSurface(
+            id: id,
+            current: current,
+            samples: [Sample(timestamp: sampleTime, value: 6.4, ok: true)]
+        )
+
+        XCTAssertEqual(result?.value, .number(6.4))
+        XCTAssertEqual(result?.availability, .online)
+        XCTAssertEqual(result?.lastUpdated, sampleTime)
+        XCTAssertEqual(result?.severity, .normal)
+    }
+
+    func testLatencyStateKeepsCurrentNumericValueOverHistoryFallback() {
+        let id = EntityID(rawValue: "ping@8.8.8.8:443/probe.latency_ms")
+        let current = EntityState(id: id, value: .number(12), availability: .online, severity: .normal)
+
+        let result = StatusViewModel.latencyStateForSurface(
+            id: id,
+            current: current,
+            samples: [Sample(timestamp: now, value: 6.4, ok: true)]
+        )
+
+        XCTAssertEqual(result?.value, .number(12))
+    }
+
     func testDynamicReadoutUsesHighestAttentionEntityOverStaticPrimary() {
         var engine = AttentionEngine()
         let primary = descriptor("primary", isPrimary: true)
@@ -20,6 +82,31 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             states: [
                 primary.id: state(primary.id, value: 10, severity: .normal),
                 degraded.id: state(degraded.id, value: 250, severity: .degraded)
+            ],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(glyph.latencyText, "250ms")
+        XCTAssertEqual(glyph.tone, .warn)
+    }
+
+    func testDynamicReadoutUsesSelectedCandidateStateWhenStateMapIsMissingIt() {
+        var engine = AttentionEngine()
+        let primary = descriptor("primary", isPrimary: true)
+        let degraded = descriptor("degraded")
+
+        let glyph = StatusSlotReadout.resolveGlyph(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: primary, state: state(primary.id, value: 10, severity: .normal)),
+                AttentionCandidate(descriptor: degraded, state: state(degraded.id, value: 250, severity: .degraded))
+            ],
+            descriptors: [primary.id: primary, degraded.id: degraded],
+            states: [
+                primary.id: state(primary.id, value: 10, severity: .normal)
             ],
             alertingIDs: [],
             config: .empty,
@@ -100,6 +187,42 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(glyph.tone, .good)
     }
 
+    func testMonitoringStalledDiagnosisSurfacesAsElevatedCalmBannerCandidate() {
+        var engine = AttentionEngine()
+        let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis(.monitoringStalled))!
+
+        let selection = StatusSlotReadout.resolveSelection(
+            candidates: [AttentionCandidate(descriptor: diagnosisDescriptor, state: diagnosisState)],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(selection.lanes.first?.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(selection.lanes.first?.tier, .surfaced)
+        XCTAssertEqual(selection.lanes.first?.reason.severity, .elevated)
+        XCTAssertTrue(selection.alerted.isEmpty)
+    }
+
+    func testLocalNetworkDownDiagnosisEscalatesAsAlertedDownCandidate() {
+        var engine = AttentionEngine()
+        let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis(.localNetworkDown))!
+
+        let selection = StatusSlotReadout.resolveSelection(
+            candidates: [AttentionCandidate(descriptor: diagnosisDescriptor, state: diagnosisState)],
+            alertingIDs: [DiagnosisEntity.entityID],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(selection.lanes.first?.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(selection.lanes.first?.tier, .alerted)
+        XCTAssertEqual(selection.lanes.first?.reason.severity, .down)
+        XCTAssertEqual(selection.alerted.map(\.id), [DiagnosisEntity.entityID])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),
@@ -114,5 +237,18 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
     private func state(_ id: EntityID, value: Double, severity: Severity) -> EntityState {
         EntityState(id: id, value: .number(value), availability: .online, severity: severity)
+    }
+
+    private func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {
+        NetworkPerspectiveDiagnosis(
+            scope: .monitoringStalled,
+            verdict: verdict,
+            confidence: .high,
+            faultTier: nil,
+            affectedHostIDs: [],
+            title: "Monitoring paused",
+            detail: "Monitoring paused - data is stale.",
+            tierEvidence: []
+        )
     }
 }

@@ -96,6 +96,10 @@ public struct NetworkPerspectiveDiagnoser: Sendable {
             let down = group.filter { $0.status == .down }
             guard !down.isEmpty else { continue }
             let ratio = Double(down.count) / Double(group.count)
+            if tier == .localGateway, ratio < 1.0 {
+                return make(.partialDegradation, .partialDegradation(tier: tier), .tentative, tier, down.map(\.id), evidence,
+                            "\(tier.displayName) degraded", "\(down.count)/\(group.count) gateway host(s) unreachable.")
+            }
             let confidence: NetworkPerspectiveDiagnosis.Confidence = ratio >= 1.0 ? .high : .tentative
             let (title, detail) = describe(tier: tier, down: down.count, total: group.count)
             return make(scope(for: tier), verdict(for: tier, downIDs: down.map(\.id)), confidence, tier, down.map(\.id), evidence, title, detail)

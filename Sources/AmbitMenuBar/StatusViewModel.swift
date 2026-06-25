@@ -200,20 +200,54 @@ final class StatusViewModel: ObservableObject {
         try? registry.save(all.filter { !removeIDs.contains($0.id) })
     }
 
+    nonisolated static func reconciledGatewaySeedRecords(
+        _ records: [IntegrationInstanceRecord],
+        currentGateway: String
+    ) -> (records: [IntegrationInstanceRecord], changed: Bool) {
+        let currentHost = PingHostConfig(displayName: "Gateway", address: currentGateway, method: .icmp)
+        let currentID = currentHost.integrationInstanceID
+        var changed = false
+        var reconciled: [IntegrationInstanceRecord] = []
+        var hasCurrentGateway = false
+
+        for record in records {
+            guard Self.isAutoSeededGateway(record) else {
+                reconciled.append(record)
+                continue
+            }
+            if record.id == currentID {
+                reconciled.append(record)
+                hasCurrentGateway = true
+            } else {
+                changed = true
+            }
+        }
+
+        if !hasCurrentGateway {
+            reconciled.append(.ping(currentHost))
+            changed = true
+        }
+
+        return (reconciled, changed)
+    }
+
+    nonisolated private static func isAutoSeededGateway(_ record: IntegrationInstanceRecord) -> Bool {
+        guard record.integrationID == IntegrationIDs.ping,
+              record.displayName == "Gateway",
+              let host = PingHostConfig(configObject: record.config)
+        else { return false }
+        return host.displayName == "Gateway" && host.method == .icmp && host.port == nil
+    }
+
     /// Detect the default gateway and add it as a third pingscope host (ICMP — truest hop
     /// latency, no port guessing) via the registry-add + reload path. Idempotent: skips if a
     /// host for that target already exists.
     private func seedGatewayHostIfNeeded() async {
         guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
-        let host = PingHostConfig(displayName: "Gateway", address: gateway, method: .icmp)
-        // Dedup by target address (not exact id) so a gateway already monitored under any
-        // method/port isn't added again.
-        let alreadyMonitored = ((try? integrationRegistry.instances()) ?? [])
-            .filter { $0.integrationID == IntegrationIDs.ping }
-            .compactMap { PingHostConfig(configObject: $0.config)?.address }
-            .contains(gateway)
-        guard !alreadyMonitored else { return }
-        try? integrationRegistry.upsert(.ping(host))
+        let all = (try? integrationRegistry.instances()) ?? []
+        let result = Self.reconciledGatewaySeedRecords(all, currentGateway: gateway)
+        guard result.changed else { return }
+        try? integrationRegistry.save(result.records)
         await engine.reloadProviders()
         await refreshAlertRules()
         await engine.refresh()
@@ -450,7 +484,6 @@ final class StatusViewModel: ObservableObject {
     /// Rebuild per-host rows + diagnosis/alerts (settings), then build per-slot surfaces.
     func refreshPing() async {
         let now = Date()
-        let freshness = max(pingRange.seconds, 30)
         let allRegistryRecords = (try? integrationRegistry.instances()) ?? []
         let allRecords = allRegistryRecords.filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
@@ -467,8 +500,6 @@ final class StatusViewModel: ObservableObject {
         // Active hosts: per-host readout for diagnosis + alert inputs.
         var diagnosisHosts: [DiagnosisHost] = []
         var alertHosts: [AlertHost] = []
-        // Also collect per-host readouts keyed by instanceID (used by buildSlotSurface for the glyph).
-        var hostReadouts: [IntegrationInstanceID: LatencyReadout] = [:]
         var newestSample: Date?
         for record in activeRecords {
             guard let host = PingHostConfig(configObject: record.config) else { continue }
@@ -476,8 +507,6 @@ final class StatusViewModel: ObservableObject {
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
             let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
-            let readout = PingPresenter.readout(latest: samples.last, health: health, now: now, freshness: freshness)
-            hostReadouts[record.id] = readout
             // Staleness is evaluated against wall-clock `now` from the last sample — so a stalled
             // loop (stale data) suppresses fault inference rather than reporting a false "down".
             let isStale = Staleness.isStale(lastUpdate: samples.last?.timestamp, interval: host.interval, now: now)
@@ -509,8 +538,6 @@ final class StatusViewModel: ObservableObject {
                 diagnosis: diagnosis,
                 allRecords: activeRecords,
                 allRegistryRecords: allRegistryRecords,
-                fallbackPrimary: fallbackPrimary,
-                hostReadouts: hostReadouts,
                 allDescriptors: allDescriptors,
                 allStates: allStates,
                 firedAlertEvents: events,
@@ -526,8 +553,6 @@ final class StatusViewModel: ObservableObject {
         diagnosis: NetworkPerspectiveDiagnosis,
         allRecords: [IntegrationInstanceRecord],         // enabled ping records
         allRegistryRecords: [IntegrationInstanceRecord], // all records (for SlotResolver)
-        fallbackPrimary: IntegrationInstanceID?,
-        hostReadouts: [IntegrationInstanceID: LatencyReadout],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
         allStates: [EntityID: EntityState],
         firedAlertEvents: [AlertEvent],
@@ -553,31 +578,45 @@ final class StatusViewModel: ObservableObject {
             : resolved.filter { descriptor in
                 shownInstanceIDs.contains(descriptor.instanceID.integrationInstanceID)
             }
+        let isPingSlot: Bool
+        if case .integrationType(let integID) = slot.selection, integID == IntegrationIDs.ping {
+            isPingSlot = true
+        } else {
+            isPingSlot = false
+        }
 
         // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
         // for multi-host legend, matching today's behaviour).
         var descriptors: [EntityID: EntityDescriptor] = [:]
         var states: [EntityID: EntityState] = [:]
         var series: [EntityID: [Sample]] = [:]
-        var latencyDescriptors: [EntityDescriptor] = []
+        var attentionDescriptors = shownResolved
+        var detailDescriptors: [EntityDescriptor] = []
         for record in shownRecords {
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
             latency.name = record.displayName
-            latencyDescriptors.append(latency)
+            detailDescriptors.append(latency)
             descriptors[latencyID] = latency
             let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
             series[latencyID] = samples
             // States from engine.entityStates(now:) are already enriched (.stale + severity); no
             // ad-hoc staleness overlay needed here (P4.2).
-            if let state = allStates[latencyID] {
+            if let state = Self.latencyStateForSurface(id: latencyID, current: allStates[latencyID], samples: samples) {
                 states[latencyID] = state
             }
         }
 
-        let candidates = shownResolved.compactMap { descriptor -> AttentionCandidate? in
-            guard let state = allStates[descriptor.id] else { return nil }
+        if isPingSlot, let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
+            descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
+            states[diagnosisDescriptor.id] = diagnosisState
+            attentionDescriptors.append(diagnosisDescriptor)
+            detailDescriptors.append(diagnosisDescriptor)
+        }
+
+        let candidates = attentionDescriptors.compactMap { descriptor -> AttentionCandidate? in
+            guard let state = states[descriptor.id] ?? allStates[descriptor.id] else { return nil }
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
         let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
@@ -592,27 +631,7 @@ final class StatusViewModel: ObservableObject {
             attentionEngine: &attentionEngine
         )
 
-        // Build plan: for ping slot prepend diagnosis banner.
-        // P4: promote diagnosis to an attention-emitted entity rather than host-gluing it here.
-        var planCards: [CardSpec] = []
-        let isPingSlot: Bool
-        if case .integrationType(let integID) = slot.selection, integID == IntegrationIDs.ping {
-            isPingSlot = true
-        } else {
-            isPingSlot = false
-        }
-        if isPingSlot, let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
-            descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
-            states[diagnosisDescriptor.id] = diagnosisState
-            planCards.append(CardSpec(
-                id: "card.\(diagnosisDescriptor.id.rawValue)",
-                kind: .statusBanner,
-                title: diagnosisDescriptor.name,
-                entities: [diagnosisDescriptor.id],
-                role: .banner
-            ))
-        }
-        planCards.append(contentsOf: SurfaceComposer.detailPlan(descriptors: latencyDescriptors, states: states).cards)
+        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states).cards
 
         return SlotSurface(
             plan: SurfacePlan(cards: planCards),
@@ -625,11 +644,28 @@ final class StatusViewModel: ObservableObject {
     private static func alertingEntityIDs(from events: [AlertEvent], candidates: [AttentionCandidate]) -> Set<EntityID> {
         let candidateIDs = Set(candidates.map(\.descriptor.id))
         let ids = events.flatMap { event -> [EntityID] in
-            if event.providerID == "ping.network" { return [] }
+            if event.providerID == "ping.network" {
+                return candidateIDs.contains(DiagnosisEntity.entityID) ? [DiagnosisEntity.entityID] : []
+            }
             let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
             return candidateIDs.contains(pingLatencyID) ? [pingLatencyID] : []
         }
         return Set(ids)
+    }
+
+    nonisolated static func latencyStateForSurface(id: EntityID, current: EntityState?, samples: [Sample]) -> EntityState? {
+        if let current, current.value != nil {
+            return current
+        }
+        guard let latest = samples.last, latest.ok, let value = latest.value else {
+            return current
+        }
+        var state = current ?? EntityState(id: id, availability: .online)
+        state.value = .number(value)
+        state.availability = .online
+        state.lastUpdated = latest.timestamp
+        state.severity = state.severity ?? .normal
+        return state
     }
 
     // MARK: Ping host management (Settings)
@@ -759,6 +795,22 @@ final class StatusViewModel: ObservableObject {
 struct StatusSlotReadout {
     private static let surfaceID = SurfaceID(rawValue: "macos.bar")
 
+    static func resolveSelection(
+        candidates: [AttentionCandidate],
+        alertingIDs: Set<EntityID>,
+        config: PresentationConfig,
+        now: Date,
+        attentionEngine: inout AttentionEngine
+    ) -> AttentionSelection {
+        attentionEngine.evaluate(
+            candidates: candidates,
+            surfaces: [surfaceID: SurfaceCapacity(lanes: 1, overflow: .countBadge)],
+            alertingIDs: alertingIDs,
+            config: config,
+            now: now
+        )[surfaceID] ?? AttentionSelection()
+    }
+
     static func resolveGlyph(
         mode: BarReadoutMode,
         candidates: [AttentionCandidate],
@@ -776,20 +828,21 @@ struct StatusSlotReadout {
             }
             return staticFallback(candidates: candidates, states: states)
         case .dynamic:
-            let selections = attentionEngine.evaluate(
+            let selection = resolveSelection(
                 candidates: candidates,
-                surfaces: [surfaceID: SurfaceCapacity(lanes: 1, overflow: .countBadge)],
                 alertingIDs: alertingIDs,
                 config: config,
-                now: now
+                now: now,
+                attentionEngine: &attentionEngine
             )
             guard
-                let selectedID = selections[surfaceID]?.lanes.first?.id,
-                let descriptor = descriptors[selectedID] ?? candidates.first(where: { $0.descriptor.id == selectedID })?.descriptor
+                let selectedID = selection.lanes.first?.id,
+                let selectedCandidate = candidates.first(where: { $0.descriptor.id == selectedID })
             else {
                 return staticFallback(candidates: candidates, states: states)
             }
-            return glyph(descriptor: descriptor, state: states[selectedID])
+            let descriptor = descriptors[selectedID] ?? selectedCandidate.descriptor
+            return glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state)
         }
     }
 

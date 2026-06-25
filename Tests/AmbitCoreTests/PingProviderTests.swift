@@ -59,7 +59,9 @@ final class PingProviderTests: XCTestCase {
         let descriptors = provider(host(), ProbeResult(timestamp: Date(), latencyMs: 10)).entityDescriptors()
         let byKey = Dictionary(uniqueKeysWithValues: descriptors.map { (String($0.id.rawValue.split(separator: ".").last ?? ""), $0) })
         XCTAssertEqual(byKey["latency_ms"]?.deviceClass, .latency)
+        XCTAssertEqual(byKey["latency_ms"]?.isPrimary, true)
         XCTAssertEqual(byKey["health"]?.deviceClass, .connectivity)
+        XCTAssertEqual(byKey["health"]?.isPrimary, false)
         XCTAssertEqual(byKey["address"]?.category, .config)
         XCTAssertEqual(byKey["down_after_failures"]?.category, .config)
     }

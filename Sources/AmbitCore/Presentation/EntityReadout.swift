@@ -20,6 +20,9 @@ public struct EntityReadout: Equatable, Sendable {
 
         let tone = displayTone(for: state)
         guard let value = state.value else {
+            if state.availability == .unavailable || state.severity == .down {
+                return EntityReadout(text: "Down", tone: tone)
+            }
             return EntityReadout(text: "—", tone: tone)
         }
 
