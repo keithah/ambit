@@ -107,13 +107,17 @@ aggregator/viewport, never the coordinator.
   (host = instance); TCP/UDP/ICMP probes; the shared `HistoryService`; `AlertEngine` upgrade; the macOS UI;
   tier-diagnosis (`NetworkPerspectiveDiagnosis`).
 - **`pingscope → ping` rename** (RESET migration) — merged.
-- **Presentation program: P1, P2, P3 merged.**
+- **Presentation program: P1, P2, P3, P4 merged.**
   - P1: generic card vocabulary + `SurfaceComposer` (retired old display models).
   - P2: pingscope renders entirely through generic primitives; bespoke Canvas UI deleted. (Recent-samples
     table deferred to P6.)
   - P3: slot model + generic chrome; menu bar is slot-driven; `.integrationType("ping")`; `StatusViewModel`
     shrunk to a slot host; `PingGlyphRenderer → StatusGlyphRenderer`.
-- Current: ~351 tests green on master. The app runs as **"Ping"**, all hosts polling through slot-driven chrome.
+- **Hardening task complete** — merged earlier as `71b2f81` (poll-loop resilience + staleness-vs-down).
+- **P4 complete** — merged on master through `917ce10`: `EntityEnricher → AttentionEngine → dynamic lane[0]`;
+  ping diagnosis is a generic entity; staleness/diagnosis severity flows through the same entity/attention path.
+- Current master: **408 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, all hosts
+  polling through slot-driven chrome and dynamic attention-driven bar readout.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -122,13 +126,10 @@ aggregator/viewport, never the coordinator.
 
 ## 6. Roadmap (presentation program)
 
-- **HARDENING TASK (in flight, before P4)** — see §7.
-- **P4 — Attention engine.** The dynamic, "show what matters now" bar readout (the differentiator vs static
-  iStat). Three-tier escalation: detail → surfaced → alerted, with **separate display vs alert thresholds**;
-  per-entity visibility (always/auto/never); severity+priority ranking; per-surface capacity/overflow;
-  consumer of Health/Alert state; surface-agnostic (Dynamic Island/Live Activity are later renderers). Also:
-  promote the host-produced ping diagnosis banner to a generic/attention-emitted entity. **The staleness fix
-  (§7) lands its richer severity/attention integration here.**
+- **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
+  escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
+  severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
+  are all in Core. Ping diagnosis is promoted into a generic diagnostic entity and rendered by generic surfaces.
 - **P5 — Generic progressive-disclosure settings** renderer (deletes remaining bespoke settings; the typed
   per-field host editor that P3 left bespoke).
 - **P6 — Second integration: `system` (iStat-style)** — CPU/mem/disk/network/sensors/fans/battery. **This is
@@ -143,14 +144,13 @@ aggregator/viewport, never the coordinator.
 
 ---
 
-## 7. In-flight hardening task (decisions locked, being planned/built)
+## 7. Completed hardening task
 
 A monitoring tool that silently stops monitoring and falsely says "Local network down" is a **correctness
-bug in the core value prop.** It has disrupted eyeball checkpoints three times (App Nap ×2, system sleep).
-Being fixed on its own branch **before P4.** Two parts:
+bug in the core value prop.** This was fixed before P4 and merged as `71b2f81`. Two parts shipped:
 
 1. **Loop resilience (pure engine correctness).** Root cause: `withTaskGroup` *awaits* a wedged probe.
-   - Fix: rewrite `TimeoutProbe` to **abandon-the-loser** — resolve via a continuation on first-to-finish
+   - Fix: rewrote `TimeoutProbe` to **abandon-the-loser** — resolve via a continuation on first-to-finish
      (probe OR deadline); on deadline return `.timeout` and best-effort-cancel the in-flight probe **without
      awaiting it**. Reuse the existing resolve-once `ContinuationGate`. Ensure wedged probes don't leak
      unbounded.
@@ -161,8 +161,9 @@ Being fixed on its own branch **before P4.** Two parts:
    - **CRITICAL:** staleness must be evaluated against wall-clock *now* on a cadence **independent of the poll
      loop** (a refresh timer) — a stalled loop produces no snapshots, so a poll-driven projection would never
      fire. Model availability as a pure function of `(lastUpdated, interval, now)`, recomputed on refresh.
-   - The diagnoser must **suppress** network-fault/down inference on stale data (you can't diagnose from data
-     you didn't collect) and report a distinct **"Monitoring paused"** state, not `noData`, not "down."
+   - The diagnoser **suppresses** network-fault/down inference on stale data (you can't diagnose from data
+     you didn't collect) and reports a distinct **"Monitoring paused"** state, not `noData`, not "down."
+   - P4 then integrated this staleness severity into the generic entity/attention path.
 
 ---
 
@@ -198,10 +199,12 @@ Being fixed on its own branch **before P4.** Two parts:
 
 ## 10. How to resume right now
 
-1. Finish the **hardening task** (§7) — its own branch before P4. Have the CLI brainstorm/plan it; review the
-   plan (watch hardest: the staleness must be **time-driven, not poll-driven**, or it silently won't fire).
-2. Then **P4 (Attention engine)** — the differentiator, and where the staleness severity/attention work lands.
-3. Then P5 (settings), then **P6 (system integration = the proof)**.
-4. Keep device integrations disabled until after P6 proves the multi-provider presentation.
+1. Choose the next milestone:
+   - **P5: generic settings renderer** — deletes remaining bespoke settings and finishes progressive-disclosure
+     configuration.
+   - **P6: `system` integration** — the multi-provider proof that CPU/mem/disk/network/battery render through the
+     same generic primitives as ping.
+2. Keep device integrations disabled until after P6 proves the multi-provider presentation.
+3. Keep using eyeball checkpoints for each milestone; P4 showed they catch real architecture gaps.
 
 Open the design docs in §3 for full detail on anything above — they're current and authoritative.
