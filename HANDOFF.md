@@ -107,7 +107,7 @@ aggregator/viewport, never the coordinator.
   (host = instance); TCP/UDP/ICMP probes; the shared `HistoryService`; `AlertEngine` upgrade; the macOS UI;
   tier-diagnosis (`NetworkPerspectiveDiagnosis`).
 - **`pingscope → ping` rename** (RESET migration) — merged.
-- **Presentation program: P1, P2, P3, P4 merged.**
+- **Presentation program: P1, P2, P3, P4, P6 merged.**
   - P1: generic card vocabulary + `SurfaceComposer` (retired old display models).
   - P2: pingscope renders entirely through generic primitives; bespoke Canvas UI deleted. (Recent-samples
     table deferred to P6.)
@@ -116,8 +116,12 @@ aggregator/viewport, never the coordinator.
 - **Hardening task complete** — merged earlier as `71b2f81` (poll-loop resilience + staleness-vs-down).
 - **P4 complete** — merged on master through `917ce10`: `EntityEnricher → AttentionEngine → dynamic lane[0]`;
   ping diagnosis is a generic entity; staleness/diagnosis severity flows through the same entity/attention path.
-- Current master: **408 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, all hosts
-  polling through slot-driven chrome and dynamic attention-driven bar readout.
+- **P6 complete** — merged on master through `b62ad1a`: generic `.table` entities, capability sections,
+  `SystemIntegration` (CPU/memory/disk/network/battery/processes), generic non-ping slot surface path, and
+  `system@local` enabled by default. The thesis proof is complete: two integrations (`ping` + `system`) render
+  through identical generic primitives with **zero bespoke UI**.
+- Current master: **454 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+  and system slots polling through slot-driven chrome and dynamic attention-driven bar readouts.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -130,15 +134,13 @@ aggregator/viewport, never the coordinator.
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
   are all in Core. Ping diagnosis is promoted into a generic diagnostic entity and rendered by generic surfaces.
-- **P5 — Generic progressive-disclosure settings** renderer (deletes remaining bespoke settings; the typed
-  per-field host editor that P3 left bespoke).
-- **P6 — Second integration: `system` (iStat-style)** — CPU/mem/disk/network/sensors/fans/battery. **This is
-  THE PROOF** of the "consistent whether 2 or 20" thesis: it must render through the SAME generic primitives
-  with ZERO bespoke UI (exercises gauges/rings/progress/process-table). Public-API metrics first; SMC
-  sensors/fans as a flagged, gracefully-degrading sub-step. Settle the `statTable` tabular-binding design here
-  (the deferred recent-samples table + process/disk lists are the real driver). **NOTE: "StarBar"
-  (starbar.app) is the *Starlink dish* app — a separate, later integration, NOT the system one; iStat is the
-  system-stats reference.**
+- **P6 — Second integration: `system` (iStat-style): complete.** CPU/memory/disk/network/battery/process tables
+  render through the same generic primitives as ping. Generic `.table` binding is settled, capability sections
+  route system cards, SMC sensors/fans gracefully degrade through generic unavailable cards, and the macOS bar
+  uses the generic non-ping slot surface path. **NOTE: "StarBar" (starbar.app) is the *Starlink dish* app — a
+  separate, later integration, NOT the system one; iStat is the system-stats reference.**
+- **P5 — Generic progressive-disclosure settings** renderer is next (deletes remaining bespoke settings; the
+  typed per-field host editor that P3 left bespoke).
 - **Later:** Starlink integration (reconcile with ping's existing Starlink probe); capability-surface UI;
   multi-engine topology (Phase 3); iOS/widgets/Live Activity; real packaging.
 
@@ -202,9 +204,7 @@ bug in the core value prop.** This was fixed before P4 and merged as `71b2f81`. 
 1. Choose the next milestone:
    - **P5: generic settings renderer** — deletes remaining bespoke settings and finishes progressive-disclosure
      configuration.
-   - **P6: `system` integration** — the multi-provider proof that CPU/mem/disk/network/battery render through the
-     same generic primitives as ping.
-2. Keep device integrations disabled until after P6 proves the multi-provider presentation.
-3. Keep using eyeball checkpoints for each milestone; P4 showed they catch real architecture gaps.
+2. Keep legacy device integrations disabled until they are rebuilt against the proven generic presentation shape.
+3. Keep using eyeball checkpoints for each milestone; P4 and P6 showed they catch real architecture gaps.
 
 Open the design docs in §3 for full detail on anything above — they're current and authoritative.
