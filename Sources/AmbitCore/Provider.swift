@@ -14,6 +14,7 @@ public enum ProviderIDs {
     public static let systemOverview: ProviderID = "system.overview"
     public static let systemStorage: ProviderID = "system.storage"
     public static let systemProcesses: ProviderID = "system.processes"
+    public static let systemNetwork: ProviderID = "system.network"
 }
 
 public enum ProviderCommandIDs {

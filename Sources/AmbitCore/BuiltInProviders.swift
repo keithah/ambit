@@ -39,6 +39,7 @@ public struct BuiltInProviderFactory: Sendable {
             SystemOverviewProvider(reader: systemMetricsReader),
             SystemStorageProvider(reader: systemMetricsReader),
             SystemProcessProvider(processRunner: systemProcessRunner),
+            SystemNetworkProvider(reader: systemMetricsReader),
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
@@ -64,7 +65,8 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.iperf3,
         ProviderIDs.systemOverview,
         ProviderIDs.systemStorage,
-        ProviderIDs.systemProcesses
+        ProviderIDs.systemProcesses,
+        ProviderIDs.systemNetwork
     ]
 
     /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3

@@ -123,6 +123,7 @@ public enum ProviderInstanceIDs {
     public static let systemOverview: ProviderInstanceID = "system@local/overview"
     public static let systemStorage: ProviderInstanceID = "system@local/storage"
     public static let systemProcesses: ProviderInstanceID = "system@local/processes"
+    public static let systemNetwork: ProviderInstanceID = "system@local/network"
 
     /// Maps a built-in provider *type* id ("router", "speedify", …) to its scoped instance
     /// id, so callers that still address built-ins by type id (the menubar, compatibility
@@ -141,6 +142,7 @@ public enum ProviderInstanceIDs {
         case ProviderIDs.systemOverview: return systemOverview
         case ProviderIDs.systemStorage: return systemStorage
         case ProviderIDs.systemProcesses: return systemProcesses
+        case ProviderIDs.systemNetwork: return systemNetwork
         default: return nil
         }
     }

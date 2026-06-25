@@ -85,7 +85,12 @@ final class SystemTableProviderTests: XCTestCase {
             origin: .builtIn
         ))
 
-        XCTAssertEqual(providers.map(\.id), [ProviderIDs.systemOverview, ProviderIDs.systemStorage, ProviderIDs.systemProcesses])
+        XCTAssertEqual(providers.map(\.id), [
+            ProviderIDs.systemOverview,
+            ProviderIDs.systemStorage,
+            ProviderIDs.systemProcesses,
+            ProviderIDs.systemNetwork
+        ])
     }
 
     func testOverviewProviderStillEmitsP64Metrics() async {

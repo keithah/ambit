@@ -19,7 +19,8 @@ public struct SystemIntegration: Integration {
         [
             SystemOverviewProvider(reader: reader),
             SystemStorageProvider(reader: reader),
-            SystemProcessProvider(processRunner: processRunner)
+            SystemProcessProvider(processRunner: processRunner),
+            SystemNetworkProvider(reader: reader)
         ]
     }
 }

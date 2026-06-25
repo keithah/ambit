@@ -84,7 +84,8 @@ final class EngineRegistryGatingTests: XCTestCase {
     private static let systemProviderIDs: Set<ProviderID> = [
         ProviderIDs.systemOverview,
         ProviderIDs.systemStorage,
-        ProviderIDs.systemProcesses
+        ProviderIDs.systemProcesses,
+        ProviderIDs.systemNetwork
     ]
 }
 
