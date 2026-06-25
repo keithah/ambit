@@ -28,6 +28,7 @@ public struct SystemOverviewProvider: Provider {
             descriptor("memory_used_percent", "Memory", .percent, capability: "system.memory", graphStyle: .progress),
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
+            descriptor("battery_charging", "Charging", .battery, kind: .binarySensor, capability: "power.battery"),
             descriptor("load_1m", "Load 1m", nil, capability: "system.cpu")
         ]
     }
@@ -45,6 +46,7 @@ public struct SystemOverviewProvider: Provider {
         _ key: String,
         _ name: String,
         _ deviceClass: DeviceClass?,
+        kind: EntityKind = .sensor,
         capability: ProviderCapability,
         unit: String? = nil,
         graphStyle: GraphStyle? = nil,
@@ -55,7 +57,7 @@ public struct SystemOverviewProvider: Provider {
             id: instanceID.entity(key),
             instanceID: instanceID,
             name: name,
-            kind: .sensor,
+            kind: kind,
             deviceClass: deviceClass,
             category: .primary,
             capability: capability,
@@ -87,6 +89,7 @@ public struct SystemOverviewProvider: Provider {
         ]
         if snapshot.battery.isPresent {
             metrics.append(Metric(id: "battery_percent", label: "Battery", value: .level(snapshot.battery.percent)))
+            metrics.append(Metric(id: "battery_charging", label: "Charging", value: .bool(snapshot.battery.isCharging)))
         }
         if let load = snapshot.cpu.loadAverages.first {
             metrics.append(Metric(id: "load_1m", label: "Load 1m", value: .level(load)))

@@ -24,6 +24,16 @@ final class EntityReadoutTests: XCTestCase {
         XCTAssertEqual(r.fraction!, 0.20, accuracy: 0.0001)
     }
 
+    func testBatteryBinarySensorFormatsChargingState() {
+        let d = descriptor(.battery, kind: .binarySensor)
+
+        let charging = EntityReadout.make(descriptor: d, state: EntityState(id: "i/p.e", value: .bool(true), availability: .online))
+        let onBattery = EntityReadout.make(descriptor: d, state: EntityState(id: "i/p.e", value: .bool(false), availability: .online))
+
+        XCTAssertEqual(charging.text, "Charging")
+        XCTAssertEqual(onBattery.text, "On battery")
+    }
+
     func testBoolBinarySensorTextAndTone() {
         let r = EntityReadout.make(descriptor: descriptor(.connectivity, kind: .binarySensor), state: EntityState(id: "i/p.e", value: .bool(true), availability: .online))
         XCTAssertEqual(r.text, "Yes")

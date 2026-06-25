@@ -32,6 +32,9 @@ public struct EntityReadout: Equatable, Sendable {
                                  fraction: fraction(n, descriptor: descriptor),
                                  tone: tone)
         case .bool(let b):
+            if descriptor.kind == .binarySensor, descriptor.deviceClass == .battery {
+                return EntityReadout(text: b ? "Charging" : "On battery", tone: tone)
+            }
             return EntityReadout(text: b ? "Yes" : "No", tone: tone)
         case .text(let s):
             return EntityReadout(text: s, tone: tone)

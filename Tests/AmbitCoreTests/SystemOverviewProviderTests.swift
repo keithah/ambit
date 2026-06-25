@@ -25,6 +25,9 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["battery_percent"]?.deviceClass, .battery)
         XCTAssertEqual(descriptors["battery_percent"]?.capability, "power.battery")
         XCTAssertEqual(descriptors["battery_percent"]?.graphStyle, .progress)
+        XCTAssertEqual(descriptors["battery_charging"]?.kind, .binarySensor)
+        XCTAssertEqual(descriptors["battery_charging"]?.capability, "power.battery")
+        XCTAssertEqual(descriptors["battery_charging"]?.defaultVisibility, .auto)
         XCTAssertEqual(descriptors["load_1m"]?.capability, "system.cpu")
     }
 
@@ -39,12 +42,28 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("memory_used_percent"), .percent(50))
         XCTAssertEqual(snapshot.metricValue("memory_used_bytes"), .level(8_000_000_000))
         XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(88))
+        XCTAssertEqual(snapshot.metricValue("battery_charging"), .bool(true))
         XCTAssertEqual(snapshot.metricValue("load_1m"), .level(1.2))
 
         let states = EntityProjection.states(snapshot: snapshot, descriptors: provider.entityDescriptors())
         XCTAssertEqual(states[ProviderInstanceIDs.systemOverview.appending("cpu_usage_percent")]?.value, .number(20))
         XCTAssertEqual(states[ProviderInstanceIDs.systemOverview.appending("memory_used_bytes")]?.value, .number(8_000_000_000))
         XCTAssertEqual(states[ProviderInstanceIDs.systemOverview.appending("battery_percent")]?.value, .number(88))
+        XCTAssertEqual(states[ProviderInstanceIDs.systemOverview.appending("battery_charging")]?.value, .bool(true))
+    }
+
+    func testSystemOverviewOmitsBatteryMetricsWhenBatteryNotPresent() async {
+        let snapshot = SystemMetricsSnapshot(
+            cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10),
+            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000),
+            battery: BatteryMetrics(percent: 0, isCharging: false, isPresent: false)
+        )
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: snapshot))
+
+        let result = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        XCTAssertNil(result.metricValue("battery_percent"))
+        XCTAssertNil(result.metricValue("battery_charging"))
     }
 
     func testSystemOverviewDescriptorsRouteThroughGenericSections() {
