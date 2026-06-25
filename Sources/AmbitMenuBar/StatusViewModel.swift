@@ -60,6 +60,7 @@ final class StatusViewModel: ObservableObject {
     private let integrationRegistry: any IntegrationRegistry
     private let addressDiscovery: any RouterAddressDiscovery
     private var alertEngine = AlertEngine()
+    private var attentionEngine = AttentionEngine()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
@@ -512,6 +513,7 @@ final class StatusViewModel: ObservableObject {
                 hostReadouts: hostReadouts,
                 allDescriptors: allDescriptors,
                 allStates: allStates,
+                firedAlertEvents: events,
                 now: now
             )
             newSurfaces[slot.id] = surface
@@ -528,6 +530,7 @@ final class StatusViewModel: ObservableObject {
         hostReadouts: [IntegrationInstanceID: LatencyReadout],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
         allStates: [EntityID: EntityState],
+        firedAlertEvents: [AlertEvent],
         now: Date
     ) async -> SlotSurface {
         // Flatten descriptors for SlotResolver.
@@ -544,15 +547,12 @@ final class StatusViewModel: ObservableObject {
         // Apply per-slot focus: filter to the focused instance if set.
         let focusedID = slotFocus[slot.id]
         let shownRecords = focusedID.map { id in resolvedRecords.filter { $0.id == id } } ?? resolvedRecords
-
-        // Compute glyph from the primary (or focused) host's readout.
-        let primaryRecord = shownRecords.first(where: { $0.id == fallbackPrimary }) ?? shownRecords.first
-        let glyph: MenuBarGlyph
-        if let primary = primaryRecord, let readout = hostReadouts[primary.id] {
-            glyph = MenuBarGlyph(latencyText: readout.text, tone: readout.tone)
-        } else {
-            glyph = MenuBarGlyph(latencyText: "--ms", tone: .neutral)
-        }
+        let shownInstanceIDs = Set(shownRecords.map(\.id))
+        let shownResolved = focusedID == nil
+            ? resolved
+            : resolved.filter { descriptor in
+                shownInstanceIDs.contains(descriptor.instanceID.integrationInstanceID)
+            }
 
         // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
         // for multi-host legend, matching today's behaviour).
@@ -575,6 +575,22 @@ final class StatusViewModel: ObservableObject {
                 states[latencyID] = state
             }
         }
+
+        let candidates = shownResolved.compactMap { descriptor -> AttentionCandidate? in
+            guard let state = allStates[descriptor.id] else { return nil }
+            return AttentionCandidate(descriptor: descriptor, state: state)
+        }
+        let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
+        let glyph = StatusSlotReadout.resolveGlyph(
+            mode: slot.barReadout,
+            candidates: candidates,
+            descriptors: descriptors,
+            states: states,
+            alertingIDs: alertingIDs,
+            config: configStore.load(),
+            now: now,
+            attentionEngine: &attentionEngine
+        )
 
         // Build plan: for ping slot prepend diagnosis banner.
         // P4: promote diagnosis to an attention-emitted entity rather than host-gluing it here.
@@ -604,6 +620,16 @@ final class StatusViewModel: ObservableObject {
             glyph: glyph,
             hostOptions: hostOptions
         )
+    }
+
+    private static func alertingEntityIDs(from events: [AlertEvent], candidates: [AttentionCandidate]) -> Set<EntityID> {
+        let candidateIDs = Set(candidates.map(\.descriptor.id))
+        let ids = events.flatMap { event -> [EntityID] in
+            if event.providerID == "ping.network" { return [] }
+            let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
+            return candidateIDs.contains(pingLatencyID) ? [pingLatencyID] : []
+        }
+        return Set(ids)
     }
 
     // MARK: Ping host management (Settings)
@@ -727,6 +753,67 @@ final class StatusViewModel: ObservableObject {
         refreshCommandPalette()
         executingCommandID = nil
         return response
+    }
+}
+
+struct StatusSlotReadout {
+    private static let surfaceID = SurfaceID(rawValue: "macos.bar")
+
+    static func resolveGlyph(
+        mode: BarReadoutMode,
+        candidates: [AttentionCandidate],
+        descriptors: [EntityID: EntityDescriptor],
+        states: [EntityID: EntityState],
+        alertingIDs: Set<EntityID>,
+        config: PresentationConfig,
+        now: Date,
+        attentionEngine: inout AttentionEngine
+    ) -> MenuBarGlyph {
+        switch mode {
+        case .fixed(let id):
+            if let descriptor = descriptors[id] {
+                return glyph(descriptor: descriptor, state: states[id])
+            }
+            return staticFallback(candidates: candidates, states: states)
+        case .dynamic:
+            let selections = attentionEngine.evaluate(
+                candidates: candidates,
+                surfaces: [surfaceID: SurfaceCapacity(lanes: 1, overflow: .countBadge)],
+                alertingIDs: alertingIDs,
+                config: config,
+                now: now
+            )
+            guard
+                let selectedID = selections[surfaceID]?.lanes.first?.id,
+                let descriptor = descriptors[selectedID] ?? candidates.first(where: { $0.descriptor.id == selectedID })?.descriptor
+            else {
+                return staticFallback(candidates: candidates, states: states)
+            }
+            return glyph(descriptor: descriptor, state: states[selectedID])
+        }
+    }
+
+    private static func staticFallback(candidates: [AttentionCandidate], states: [EntityID: EntityState]) -> MenuBarGlyph {
+        guard let fallback = (candidates.first { $0.descriptor.isPrimary } ?? candidates.first) else {
+            return MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+        }
+        return glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state)
+    }
+
+    private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
+        let readout = EntityReadout.make(descriptor: descriptor, state: state)
+        return MenuBarGlyph(latencyText: readout.text, tone: LatencyTone(readout.tone))
+    }
+}
+
+private extension LatencyTone {
+    init(_ tone: DisplayTone) {
+        switch tone {
+        case .neutral: self = .neutral
+        case .good: self = .good
+        case .warn: self = .warn
+        case .bad: self = .bad
+        }
     }
 }
 
