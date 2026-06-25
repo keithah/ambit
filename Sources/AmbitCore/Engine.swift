@@ -67,7 +67,8 @@ public actor Engine {
             EcoFlowHTTPClient(baseURL: baseURL)
         },
         activeMeasurementProcessRunner: (any ProcessRunner)? = nil,
-        systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader()
+        systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader(),
+        systemProcessRunner: any ProcessRunner = SystemProcessRunner()
     ) {
         let stream = AsyncStream<StatusSnapshot>.makeStream()
         self.snapshots = stream.stream
@@ -110,7 +111,8 @@ public actor Engine {
             starlinkStatusProvider: starlinkStatusProvider,
             ecoFlowClientFactory: ecoFlowClientFactory,
             activeMeasurementProcessRunner: activeMeasurementProcessRunner,
-            systemMetricsReader: systemMetricsReader
+            systemMetricsReader: systemMetricsReader,
+            systemProcessRunner: systemProcessRunner
         ) : nil
         self.builtInProviderFactory = builtInProviderFactory
         // pingscope is the reference integration — always available; its instances (hosts)

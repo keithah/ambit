@@ -12,6 +12,8 @@ public enum ProviderIDs {
     public static let ping: ProviderID = "ping"
     public static let iperf3: ProviderID = "iperf3"
     public static let systemOverview: ProviderID = "system.overview"
+    public static let systemStorage: ProviderID = "system.storage"
+    public static let systemProcesses: ProviderID = "system.processes"
 }
 
 public enum ProviderCommandIDs {

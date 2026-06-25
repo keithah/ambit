@@ -56,6 +56,47 @@ public struct SystemProcessRunner: ProcessRunner {
     }
 }
 
+public struct PSProcessRow: Equatable, Sendable {
+    public var pid: Int
+    public var name: String
+    public var cpuPercent: Double
+    public var memoryBytes: Double
+
+    public init(pid: Int, name: String, cpuPercent: Double, memoryBytes: Double) {
+        self.pid = pid
+        self.name = name
+        self.cpuPercent = cpuPercent
+        self.memoryBytes = memoryBytes
+    }
+
+    public var rowID: String { "\(pid):\(name)" }
+}
+
+public enum PSProcessParser {
+    public static func parse(_ output: String) -> [PSProcessRow] {
+        output
+            .split(whereSeparator: \.isNewline)
+            .dropFirst()
+            .compactMap(parseLine)
+    }
+
+    private static func parseLine(_ line: Substring) -> PSProcessRow? {
+        let parts = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
+        guard parts.count == 4,
+              let pid = Int(parts[0]),
+              let cpuPercent = Double(parts[1]),
+              let residentKilobytes = Double(parts[2])
+        else { return nil }
+
+        return PSProcessRow(
+            pid: pid,
+            name: String(parts[3]),
+            cpuPercent: cpuPercent,
+            memoryBytes: residentKilobytes * 1024
+        )
+    }
+}
+
 private final class ProcessRunState: @unchecked Sendable {
     private let lock = NSLock()
     private var didResume = false

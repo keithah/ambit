@@ -121,6 +121,8 @@ public enum ProviderInstanceIDs {
     public static let ping: ProviderInstanceID = "ping/ping"
     public static let iperf3: ProviderInstanceID = "iperf3/iperf3"
     public static let systemOverview: ProviderInstanceID = "system@local/overview"
+    public static let systemStorage: ProviderInstanceID = "system@local/storage"
+    public static let systemProcesses: ProviderInstanceID = "system@local/processes"
 
     /// Maps a built-in provider *type* id ("router", "speedify", …) to its scoped instance
     /// id, so callers that still address built-ins by type id (the menubar, compatibility
@@ -137,6 +139,8 @@ public enum ProviderInstanceIDs {
         case ProviderIDs.ping: return ping
         case ProviderIDs.iperf3: return iperf3
         case ProviderIDs.systemOverview: return systemOverview
+        case ProviderIDs.systemStorage: return systemStorage
+        case ProviderIDs.systemProcesses: return systemProcesses
         default: return nil
         }
     }

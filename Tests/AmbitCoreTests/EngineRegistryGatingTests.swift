@@ -16,7 +16,7 @@ final class EngineRegistryGatingTests: XCTestCase {
 
         let names = await engine.providerDisplayNames()
         let palette = await engine.commandPalette()
-        XCTAssertEqual(Set(names.keys), [ProviderIDs.systemOverview])
+        XCTAssertEqual(Set(names.keys), Self.systemProviderIDs)
         XCTAssertTrue(palette.isEmpty)
     }
 
@@ -49,7 +49,7 @@ final class EngineRegistryGatingTests: XCTestCase {
         )
 
         let names = await engine.providerDisplayNames()
-        XCTAssertEqual(Set(names.keys), [ProviderIDs.reachability, ProviderIDs.systemOverview])
+        XCTAssertEqual(Set(names.keys), Self.systemProviderIDs.union([ProviderIDs.reachability]))
     }
 
     func testBuiltInSeedIncludesSystemEnabledAndLegacyDisabledSetExcludesIt() {
@@ -80,6 +80,12 @@ final class EngineRegistryGatingTests: XCTestCase {
             memory: MemoryMetrics(usedBytes: 0, wiredBytes: 0, compressedBytes: 0, totalBytes: 1)
         )
     }
+
+    private static let systemProviderIDs: Set<ProviderID> = [
+        ProviderIDs.systemOverview,
+        ProviderIDs.systemStorage,
+        ProviderIDs.systemProcesses
+    ]
 }
 
 private struct FakeRegistrySystemMetricsReader: SystemMetricsReading {

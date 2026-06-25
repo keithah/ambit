@@ -8,6 +8,7 @@ public struct BuiltInProviderFactory: Sendable {
     private let ecoFlowClientFactory: EcoFlowClientFactory
     private let activeMeasurementProcessRunner: (any ProcessRunner)?
     private let systemMetricsReader: any SystemMetricsReading
+    private let systemProcessRunner: any ProcessRunner
 
     public init(
         routerClientFactory: @escaping RouterClientFactory,
@@ -20,7 +21,8 @@ public struct BuiltInProviderFactory: Sendable {
             EcoFlowHTTPClient(baseURL: baseURL)
         },
         activeMeasurementProcessRunner: (any ProcessRunner)? = nil,
-        systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader()
+        systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader(),
+        systemProcessRunner: any ProcessRunner = SystemProcessRunner()
     ) {
         self.routerClientFactory = routerClientFactory
         self.reachabilityProbe = reachabilityProbe
@@ -29,11 +31,14 @@ public struct BuiltInProviderFactory: Sendable {
         self.ecoFlowClientFactory = ecoFlowClientFactory
         self.activeMeasurementProcessRunner = activeMeasurementProcessRunner
         self.systemMetricsReader = systemMetricsReader
+        self.systemProcessRunner = systemProcessRunner
     }
 
     public func providers(settings: AppSettings) -> [any Provider] {
         var providers: [any Provider] = [
             SystemOverviewProvider(reader: systemMetricsReader),
+            SystemStorageProvider(reader: systemMetricsReader),
+            SystemProcessProvider(processRunner: systemProcessRunner),
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
@@ -57,14 +62,16 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.starlink,
         ProviderIDs.ecoflow,
         ProviderIDs.iperf3,
-        ProviderIDs.systemOverview
+        ProviderIDs.systemOverview,
+        ProviderIDs.systemStorage,
+        ProviderIDs.systemProcesses
     ]
 
     /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3
     /// exist only when a process runner is available (matching providers(settings:)).
     public func integrations() -> [any Integration] {
         var result: [any Integration] = [
-            SystemIntegration(reader: systemMetricsReader),
+            SystemIntegration(reader: systemMetricsReader, processRunner: systemProcessRunner),
             GLiNetIntegration(routerClientFactory: routerClientFactory),
             ReachabilityIntegration(probe: reachabilityProbe),
             SpeedifyIntegration(client: routerSpeedifyClient),
