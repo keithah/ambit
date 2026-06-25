@@ -136,6 +136,8 @@ public enum DeviceClass: String, Sendable, Codable {
     case percent
     case count
     case dataSize
+    case temperature
+    case fan
 }
 
 public enum EntityCategory: String, Sendable, Codable { case primary, diagnostic, config }

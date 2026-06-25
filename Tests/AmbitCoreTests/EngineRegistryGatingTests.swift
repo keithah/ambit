@@ -85,7 +85,9 @@ final class EngineRegistryGatingTests: XCTestCase {
         ProviderIDs.systemOverview,
         ProviderIDs.systemStorage,
         ProviderIDs.systemProcesses,
-        ProviderIDs.systemNetwork
+        ProviderIDs.systemNetwork,
+        ProviderIDs.systemSensors,
+        ProviderIDs.systemFans
     ]
 }
 

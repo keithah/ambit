@@ -74,6 +74,8 @@ public struct EntityReadout: Equatable, Sendable {
         case .duration: return "\(Int(n.rounded()))s"
         case .power: return "\(Int(n.rounded()))W"
         case .dataSize: return formatDataSize(bytes: n)
+        case .temperature: return "\(Int(n.rounded())) C"
+        case .fan: return "\(Int(n.rounded())) rpm"
         case .connectivity, .none:
             if let unit { return "\(trim(n)) \(unit)" }
             return trim(n)

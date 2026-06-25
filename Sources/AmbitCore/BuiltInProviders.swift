@@ -9,6 +9,7 @@ public struct BuiltInProviderFactory: Sendable {
     private let activeMeasurementProcessRunner: (any ProcessRunner)?
     private let systemMetricsReader: any SystemMetricsReading
     private let systemProcessRunner: any ProcessRunner
+    private let systemSensorReader: any SystemSensorReading
 
     public init(
         routerClientFactory: @escaping RouterClientFactory,
@@ -22,7 +23,8 @@ public struct BuiltInProviderFactory: Sendable {
         },
         activeMeasurementProcessRunner: (any ProcessRunner)? = nil,
         systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader(),
-        systemProcessRunner: any ProcessRunner = SystemProcessRunner()
+        systemProcessRunner: any ProcessRunner = SystemProcessRunner(),
+        systemSensorReader: any SystemSensorReading = NoOpSystemSensorReader()
     ) {
         self.routerClientFactory = routerClientFactory
         self.reachabilityProbe = reachabilityProbe
@@ -32,6 +34,7 @@ public struct BuiltInProviderFactory: Sendable {
         self.activeMeasurementProcessRunner = activeMeasurementProcessRunner
         self.systemMetricsReader = systemMetricsReader
         self.systemProcessRunner = systemProcessRunner
+        self.systemSensorReader = systemSensorReader
     }
 
     public func providers(settings: AppSettings) -> [any Provider] {
@@ -40,6 +43,8 @@ public struct BuiltInProviderFactory: Sendable {
             SystemStorageProvider(reader: systemMetricsReader),
             SystemProcessProvider(processRunner: systemProcessRunner),
             SystemNetworkProvider(reader: systemMetricsReader),
+            SystemSensorProvider(reader: systemSensorReader),
+            SystemFanProvider(reader: systemSensorReader),
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
@@ -66,14 +71,16 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.systemOverview,
         ProviderIDs.systemStorage,
         ProviderIDs.systemProcesses,
-        ProviderIDs.systemNetwork
+        ProviderIDs.systemNetwork,
+        ProviderIDs.systemSensors,
+        ProviderIDs.systemFans
     ]
 
     /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3
     /// exist only when a process runner is available (matching providers(settings:)).
     public func integrations() -> [any Integration] {
         var result: [any Integration] = [
-            SystemIntegration(reader: systemMetricsReader, processRunner: systemProcessRunner),
+            SystemIntegration(reader: systemMetricsReader, processRunner: systemProcessRunner, sensorReader: systemSensorReader),
             GLiNetIntegration(routerClientFactory: routerClientFactory),
             ReachabilityIntegration(probe: reachabilityProbe),
             SpeedifyIntegration(client: routerSpeedifyClient),
