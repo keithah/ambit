@@ -28,7 +28,7 @@ public struct SystemFanProvider: Provider {
                 capability: "system.fans",
                 access: .read,
                 metricID: "fans",
-                defaultVisibility: .auto
+                defaultVisibility: reader.isAvailable ? .auto : .never
             )
         ]
     }

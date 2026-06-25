@@ -14,6 +14,8 @@ final class SystemSensorProviderTests: XCTestCase {
         XCTAssertFalse(NoOpSystemSensorReader().isAvailable)
         XCTAssertEqual(sensorProvider.entityDescriptors().first?.capability, "system.sensors")
         XCTAssertEqual(fanProvider.entityDescriptors().first?.capability, "system.fans")
+        XCTAssertEqual(sensorProvider.entityDescriptors().first?.defaultVisibility, .never)
+        XCTAssertEqual(fanProvider.entityDescriptors().first?.defaultVisibility, .never)
         XCTAssertTrue(sensorStates.values.allSatisfy { $0.availability == .unavailable })
         XCTAssertTrue(fanStates.values.allSatisfy { $0.availability == .unavailable })
         XCTAssertNil(sensorSnapshot.error)
@@ -39,6 +41,8 @@ final class SystemSensorProviderTests: XCTestCase {
 
         XCTAssertEqual(sensorSnapshot.metricValue("temperature.cpu_proximity"), .level(57.5))
         XCTAssertEqual(sensorSnapshot.metricValue("temperature.gpu_die"), .level(62))
+        XCTAssertEqual(sensorProvider.entityDescriptors().map(\.defaultVisibility), [.auto, .auto])
+        XCTAssertEqual(fanProvider.entityDescriptors().first?.defaultVisibility, .auto)
         guard case .table(let fanTable) = fanSnapshot.metricValue("fans") else {
             return XCTFail("Expected fans table")
         }

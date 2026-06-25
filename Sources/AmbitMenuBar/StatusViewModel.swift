@@ -585,6 +585,17 @@ final class StatusViewModel: ObservableObject {
             isPingSlot = false
         }
 
+        if !isPingSlot {
+            return StatusSlotSurfaceBuilder.genericSurface(
+                slot: slot,
+                descriptors: shownResolved,
+                states: allStates,
+                config: configStore.load(),
+                now: now,
+                attentionEngine: &attentionEngine
+            )
+        }
+
         // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
         // for multi-host legend, matching today's behaviour).
         var descriptors: [EntityID: EntityDescriptor] = [:]
@@ -856,6 +867,41 @@ struct StatusSlotReadout {
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
         let readout = EntityReadout.make(descriptor: descriptor, state: state)
         return MenuBarGlyph(latencyText: readout.text, tone: LatencyTone(readout.tone))
+    }
+}
+
+enum StatusSlotSurfaceBuilder {
+    static func genericSurface(
+        slot: Slot,
+        descriptors resolved: [EntityDescriptor],
+        states allStates: [EntityID: EntityState],
+        config: PresentationConfig,
+        now: Date,
+        attentionEngine: inout AttentionEngine
+    ) -> SlotSurface {
+        let descriptors = Dictionary(uniqueKeysWithValues: resolved.map { ($0.id, $0) })
+        let states = allStates.filter { descriptors.keys.contains($0.key) }
+        let candidates = resolved.compactMap { descriptor -> AttentionCandidate? in
+            guard let state = states[descriptor.id] else { return nil }
+            return AttentionCandidate(descriptor: descriptor, state: state)
+        }
+        let glyph = StatusSlotReadout.resolveGlyph(
+            mode: slot.barReadout,
+            candidates: candidates,
+            descriptors: descriptors,
+            states: states,
+            alertingIDs: [],
+            config: config,
+            now: now,
+            attentionEngine: &attentionEngine
+        )
+
+        return SlotSurface(
+            plan: SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
+            data: SurfaceData(descriptors: descriptors, states: states),
+            glyph: glyph,
+            hostOptions: []
+        )
     }
 }
 

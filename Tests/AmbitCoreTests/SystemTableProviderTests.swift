@@ -61,6 +61,23 @@ final class SystemTableProviderTests: XCTestCase {
         XCTAssertEqual(memoryTable.rows[0].cells["memory"], .number(4_194_304_000, unit: "B"))
     }
 
+    func testSystemProcessRunnerDrainsLargeStdoutBeforeTermination() async throws {
+        let runner = SystemProcessRunner()
+        let script = """
+        i=0
+        while [ $i -lt 10000 ]; do
+          echo '1234567890123456789012345678901234567890'
+          i=$((i + 1))
+        done
+        """
+
+        let result = try await runner.run(executable: "/bin/sh", arguments: ["-c", script], timeout: 5)
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertGreaterThan(result.stdout.count, 300_000)
+        XCTAssertTrue(result.stderr.isEmpty)
+    }
+
     func testSystemTablesRouteThroughGenericSections() {
         let descriptors = SystemStorageProvider(reader: FakeSystemTableReader(snapshot: Self.snapshot())).entityDescriptors()
             + SystemProcessProvider(processRunner: FakeProcessRunner(output: ""), limit: 2).entityDescriptors()

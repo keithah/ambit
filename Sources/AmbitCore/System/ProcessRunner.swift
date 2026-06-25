@@ -27,14 +27,38 @@ public struct SystemProcessRunner: ProcessRunner {
             process.arguments = arguments
             let stdout = Pipe()
             let stderr = Pipe()
+            let stdoutBuffer = ProcessOutputBuffer()
+            let stderrBuffer = ProcessOutputBuffer()
             process.standardOutput = stdout
             process.standardError = stderr
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    stdoutBuffer.append(data)
+                }
+            }
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    stderrBuffer.append(data)
+                }
+            }
 
             process.terminationHandler = { process in
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                let remainingStdout = stdout.fileHandleForReading.availableData
+                let remainingStderr = stderr.fileHandleForReading.availableData
+                if !remainingStdout.isEmpty {
+                    stdoutBuffer.append(remainingStdout)
+                }
+                if !remainingStderr.isEmpty {
+                    stderrBuffer.append(remainingStderr)
+                }
                 let result = ProcessResult(
                     exitCode: process.terminationStatus,
-                    stdout: String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "",
-                    stderr: String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    stdout: stdoutBuffer.string(),
+                    stderr: stderrBuffer.string()
                 )
                 state.resume(.success(result))
             }
@@ -94,6 +118,24 @@ public enum PSProcessParser {
             cpuPercent: cpuPercent,
             memoryBytes: residentKilobytes * 1024
         )
+    }
+}
+
+private final class ProcessOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    func string() -> String {
+        lock.lock()
+        let snapshot = data
+        lock.unlock()
+        return String(data: snapshot, encoding: .utf8) ?? ""
     }
 }
 

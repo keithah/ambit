@@ -223,6 +223,48 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(selection.alerted.map(\.id), [DiagnosisEntity.entityID])
     }
 
+    func testGenericSlotSurfaceUsesResolvedDescriptorsAndStatesForReadoutAndDetail() {
+        var engine = AttentionEngine()
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            category: .primary,
+            capability: "system.cpu",
+            stateClass: .measurement,
+            graphStyle: .gauge,
+            isPrimary: true
+        )
+        let disk = EntityDescriptor(
+            id: "system@local/storage.volumes",
+            instanceID: ProviderInstanceIDs.systemStorage,
+            name: "Volumes",
+            kind: .table,
+            capability: "system.disk"
+        )
+        let states: [EntityID: EntityState] = [
+            cpu.id: EntityState(id: cpu.id, value: .number(34), availability: .online, severity: .normal),
+            disk.id: EntityState(id: disk.id, value: .table(TableValue(columns: [], rows: [])), availability: .online, severity: .normal)
+        ]
+
+        let surface = StatusSlotSurfaceBuilder.genericSurface(
+            slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
+            descriptors: [cpu, disk],
+            states: states,
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(surface.glyph.latencyText, "34%")
+        XCTAssertEqual(surface.glyph.tone, .good)
+        XCTAssertEqual(surface.plan.cards.map(\.title), ["CPU", "Disk"])
+        XCTAssertEqual(surface.data.descriptors[cpu.id], cpu)
+        XCTAssertEqual(surface.data.states[cpu.id], states[cpu.id])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),

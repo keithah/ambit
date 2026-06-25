@@ -36,7 +36,7 @@ public struct SystemSensorProvider: Provider {
                 unit: "C",
                 stateClass: .measurement,
                 metricID: metricID(for: name),
-                defaultVisibility: .auto
+                defaultVisibility: reader.isAvailable ? .auto : .never
             )
         }
     }
