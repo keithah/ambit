@@ -144,4 +144,14 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertNil(byID["i/p.p"]?.graphRange)
         XCTAssertEqual(byID["i/p.s"]?.graphRange, .m5)
     }
+
+    func testTableEntityProducesStatTableCard() {
+        let table = sensor("volumes", nil, kind: .table)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [table], states: [:])
+
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .statTable)
+        XCTAssertEqual(card?.entities, [table.id])
+    }
 }

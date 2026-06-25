@@ -78,6 +78,36 @@ final class EntityProjectionTests: XCTestCase {
         XCTAssertEqual(states[EntityID(rawValue: "demo.health")]?.availability, .online)
     }
 
+    func testStatesOverlayTableMetricValues() {
+        let table = TableValue(
+            columns: [
+                TableColumn(id: "name", title: "Name", alignment: .leading, valueStyle: .text),
+                TableColumn(id: "cpu", title: "CPU", alignment: .trailing, valueStyle: .number)
+            ],
+            rows: [
+                TableRow(id: "123:WindowServer", cells: [
+                    "name": .text("WindowServer"),
+                    "cpu": .number(18.4, unit: "%")
+                ])
+            ]
+        )
+        let descriptor = EntityDescriptor(
+            id: "demo.processes",
+            instanceID: "demo",
+            name: "Top Processes",
+            kind: .table,
+            metricID: "processes"
+        )
+        let snapshot = ProviderSnapshot(health: .ok, metrics: [
+            Metric(id: "processes", label: "Top Processes", value: .table(table))
+        ])
+
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: [descriptor])
+
+        XCTAssertEqual(states["demo.processes"]?.value, .table(table))
+        XCTAssertEqual(states["demo.processes"]?.availability, .online)
+    }
+
     func testOfflineDescriptorsPersistAndStatesAreUnavailable() {
         let provider = DemoProvider(commands: [
             CommandDescriptor(id: "demo.run", label: "Run")

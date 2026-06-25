@@ -105,6 +105,7 @@ public enum SurfaceComposer {
 
     private static func cardKind(for d: EntityDescriptor, state: EntityState?, config: PresentationConfig) -> CardKind {
         if isControl(d.kind) { return .control }
+        if d.kind == .table { return .statTable }
         if d.category == .diagnostic, d.kind == .text, (state?.severity ?? .normal) >= .elevated {
             return .statusBanner
         }
@@ -126,7 +127,7 @@ public enum SurfaceComposer {
     private static func isControl(_ kind: EntityKind) -> Bool {
         switch kind {
         case .toggle, .select, .number, .button: return true
-        case .sensor, .binarySensor, .text: return false
+        case .sensor, .binarySensor, .text, .table: return false
         }
     }
 }

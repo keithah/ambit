@@ -121,6 +121,7 @@ public enum EntityKind: String, Sendable, Codable {
     case number
     case button
     case text
+    case table
 }
 
 /// Device classification used for grouping/rendering. Seeded from the classes the built-in
@@ -144,6 +145,64 @@ public enum EntityValue: Equatable, Sendable, Codable {
     case number(Double)
     case bool(Bool)
     case text(String)
+    case table(TableValue)
+}
+
+public struct TableValue: Equatable, Sendable, Codable {
+    public var columns: [TableColumn]
+    public var rows: [TableRow]
+
+    public init(columns: [TableColumn], rows: [TableRow]) {
+        self.columns = columns
+        self.rows = rows
+    }
+}
+
+public struct TableColumn: Equatable, Sendable, Codable {
+    public var id: String
+    public var title: String
+    public var alignment: TableAlignment
+    public var valueStyle: TableValueStyle
+
+    public init(
+        id: String,
+        title: String,
+        alignment: TableAlignment = .leading,
+        valueStyle: TableValueStyle = .text
+    ) {
+        self.id = id
+        self.title = title
+        self.alignment = alignment
+        self.valueStyle = valueStyle
+    }
+}
+
+public struct TableRow: Equatable, Identifiable, Sendable, Codable {
+    public var id: String
+    public var cells: [String: TableCellValue]
+
+    public init(id: String, cells: [String: TableCellValue]) {
+        self.id = id
+        self.cells = cells
+    }
+}
+
+public enum TableCellValue: Equatable, Sendable, Codable {
+    case text(String)
+    case number(Double, unit: String?)
+    case badge(String, Severity)
+}
+
+public enum TableAlignment: String, Equatable, Sendable, Codable {
+    case leading
+    case center
+    case trailing
+}
+
+public enum TableValueStyle: String, Equatable, Sendable, Codable {
+    case text
+    case number
+    case badge
 }
 
 public struct EntityOption: Equatable, Sendable, Codable {
@@ -364,6 +423,8 @@ public enum EntityProjection {
             return .bool(flag)
         case .text(let text):
             return .text(text)
+        case .table(let table):
+            return .table(table)
         }
     }
 
@@ -375,7 +436,7 @@ public enum EntityProjection {
             return .latency
         case .percent:
             return .percent
-        case .level, .bool, .text:
+        case .level, .bool, .text, .table:
             return nil
         }
     }
@@ -388,7 +449,7 @@ public enum EntityProjection {
             return "ms"
         case .percent:
             return "%"
-        case .level, .bool, .text:
+        case .level, .bool, .text, .table:
             return nil
         }
     }

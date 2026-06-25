@@ -69,4 +69,22 @@ final class EntityReadoutTests: XCTestCase {
         let r = EntityReadout.make(descriptor: descriptor(.latency), state: EntityState(id: "i/p.e", value: .number(10), availability: .online, severity: .normal))
         XCTAssertEqual(r.tone, .good)
     }
+
+    func testTableReadoutSummarizesRows() {
+        let table = TableValue(
+            columns: [TableColumn(id: "mount", title: "Mount", alignment: .leading, valueStyle: .text)],
+            rows: [
+                TableRow(id: "/", cells: ["mount": .text("/")]),
+                TableRow(id: "/Volumes/Data", cells: ["mount": .text("/Volumes/Data")])
+            ]
+        )
+        let r = EntityReadout.make(
+            descriptor: descriptor(nil, kind: .table),
+            state: EntityState(id: "i/p.e", value: .table(table), availability: .online)
+        )
+
+        XCTAssertEqual(r.text, "2 rows")
+        XCTAssertEqual(r.tone, .good)
+        XCTAssertNil(r.fraction)
+    }
 }

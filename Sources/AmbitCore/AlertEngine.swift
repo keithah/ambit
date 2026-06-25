@@ -358,7 +358,7 @@ public extension MetricValue {
             return value
         case .bool(let value):
             return value ? 1 : 0
-        case .text:
+        case .text, .table:
             return nil
         }
     }

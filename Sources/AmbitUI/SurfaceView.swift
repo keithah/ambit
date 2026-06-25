@@ -76,8 +76,15 @@ public struct CardView: View {
                 ControlCard(descriptor: descriptor, state: data.states[id])
             }
         case .statTable:
-            StatTableCard(title: spec.title,
-                          rows: spec.entities.map { StatTableCard.Row(id: $0.rawValue, label: data.title($0), value: data.readout($0).text) })
+            if
+                let id = primaryID,
+                case .table(let table)? = data.states[id]?.value
+            {
+                StatTableCard(title: spec.title, table: table)
+            } else {
+                StatTableCard(title: spec.title,
+                              rows: spec.entities.map { StatTableCard.Row(id: $0.rawValue, label: data.title($0), value: data.readout($0).text) })
+            }
         case .statusBanner:
             if let id = primaryID {
                 let r = data.readout(id)

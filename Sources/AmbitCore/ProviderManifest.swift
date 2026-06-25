@@ -724,6 +724,8 @@ private extension MetricValue {
             return .bool(value)
         case .text(let value):
             return .string(value)
+        case .table(let table):
+            return .string(table.rows.count == 1 ? "1 row" : "\(table.rows.count) rows")
         }
     }
 }

@@ -205,6 +205,7 @@ public enum MetricValue: Equatable, Sendable {
     case level(Double)
     case bool(Bool)
     case text(String)
+    case table(TableValue)
 }
 
 public struct CommandDescriptor: Equatable, Identifiable, Sendable {

@@ -35,6 +35,9 @@ public struct EntityReadout: Equatable, Sendable {
             return EntityReadout(text: b ? "Yes" : "No", tone: tone)
         case .text(let s):
             return EntityReadout(text: s, tone: tone)
+        case .table(let table):
+            let label = table.rows.count == 1 ? "1 row" : "\(table.rows.count) rows"
+            return EntityReadout(text: label, tone: tone)
         }
     }
 

@@ -60,7 +60,7 @@ public struct ControlCard: View {
                 .fixedSize()
             case .button:
                 Button(descriptor.name, action: onButton)
-            case .sensor, .binarySensor, .text:
+            case .sensor, .binarySensor, .text, .table:
                 EmptyView()
             }
         }

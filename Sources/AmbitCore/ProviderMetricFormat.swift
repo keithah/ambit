@@ -22,6 +22,8 @@ public enum ProviderMetricFormat {
             return value ? "Yes" : "No"
         case .text(let value):
             return value
+        case .table(let table):
+            return table.rows.count == 1 ? "1 row" : "\(table.rows.count) rows"
         }
     }
 
