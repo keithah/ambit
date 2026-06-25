@@ -69,6 +69,7 @@ public enum BuiltInIntegrationSeed {
             IntegrationInstanceRecord(id: instance, integrationID: integration, displayName: name, enabled: enabled, origin: .builtIn)
         }
         var seed: [IntegrationInstanceRecord] = [
+            record(IntegrationIDs.system, IntegrationInstanceIDs.systemLocal, "System"),
             record(IntegrationIDs.glinet, IntegrationInstanceIDs.glinet, "GL.iNet"),
             record(IntegrationIDs.reachability, IntegrationInstanceIDs.reachability, "Internet"),
             record(IntegrationIDs.speedify, IntegrationInstanceIDs.speedify, "Speedify"),

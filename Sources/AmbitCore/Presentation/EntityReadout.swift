@@ -70,6 +70,7 @@ public struct EntityReadout: Equatable, Sendable {
         case .count: return "\(Int(n.rounded()))"
         case .duration: return "\(Int(n.rounded()))s"
         case .power: return "\(Int(n.rounded()))W"
+        case .dataSize: return formatDataSize(bytes: n)
         case .connectivity, .none:
             if let unit { return "\(trim(n)) \(unit)" }
             return trim(n)
@@ -99,5 +100,13 @@ public struct EntityReadout: Equatable, Sendable {
         let mbps = bps / 1_000_000
         if mbps >= 1 { return String(format: "%.1f Mbps", mbps) }
         return String(format: "%.0f Kbps", bps / 1_000)
+    }
+
+    private static func formatDataSize(bytes: Double) -> String {
+        let gb = bytes / 1_000_000_000
+        if gb >= 1 { return String(format: "%.1f GB", gb) }
+        let mb = bytes / 1_000_000
+        if mb >= 1 { return String(format: "%.1f MB", mb) }
+        return "\(Int(bytes.rounded())) B"
     }
 }

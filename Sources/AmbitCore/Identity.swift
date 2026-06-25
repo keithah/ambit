@@ -92,6 +92,7 @@ public enum IntegrationIDs {
     public static let reachability: IntegrationID = "reachability"
     public static let ping: IntegrationID = "ping"
     public static let iperf3: IntegrationID = "iperf3"
+    public static let system: IntegrationID = "system"
 }
 
 /// Phase 1 default install ids for the built-in integrations (one install each, no target
@@ -104,6 +105,7 @@ public enum IntegrationInstanceIDs {
     public static let reachability: IntegrationInstanceID = "reachability"
     public static let ping: IntegrationInstanceID = "ping"
     public static let iperf3: IntegrationInstanceID = "iperf3"
+    public static let systemLocal: IntegrationInstanceID = "system@local"
 }
 
 /// The scoped instance ids for the eight built-in providers. gl.inet stands up two
@@ -118,6 +120,7 @@ public enum ProviderInstanceIDs {
     public static let reachability: ProviderInstanceID = "reachability/reachability"
     public static let ping: ProviderInstanceID = "ping/ping"
     public static let iperf3: ProviderInstanceID = "iperf3/iperf3"
+    public static let systemOverview: ProviderInstanceID = "system@local/overview"
 
     /// Maps a built-in provider *type* id ("router", "speedify", …) to its scoped instance
     /// id, so callers that still address built-ins by type id (the menubar, compatibility
@@ -133,6 +136,7 @@ public enum ProviderInstanceIDs {
         case ProviderIDs.reachability: return reachability
         case ProviderIDs.ping: return ping
         case ProviderIDs.iperf3: return iperf3
+        case ProviderIDs.systemOverview: return systemOverview
         default: return nil
         }
     }

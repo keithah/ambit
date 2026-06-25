@@ -7,6 +7,7 @@ public struct BuiltInProviderFactory: Sendable {
     private let starlinkStatusProvider: StarlinkStatusProvider
     private let ecoFlowClientFactory: EcoFlowClientFactory
     private let activeMeasurementProcessRunner: (any ProcessRunner)?
+    private let systemMetricsReader: any SystemMetricsReading
 
     public init(
         routerClientFactory: @escaping RouterClientFactory,
@@ -18,7 +19,8 @@ public struct BuiltInProviderFactory: Sendable {
         ecoFlowClientFactory: @escaping EcoFlowClientFactory = { baseURL in
             EcoFlowHTTPClient(baseURL: baseURL)
         },
-        activeMeasurementProcessRunner: (any ProcessRunner)? = nil
+        activeMeasurementProcessRunner: (any ProcessRunner)? = nil,
+        systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader()
     ) {
         self.routerClientFactory = routerClientFactory
         self.reachabilityProbe = reachabilityProbe
@@ -26,10 +28,12 @@ public struct BuiltInProviderFactory: Sendable {
         self.starlinkStatusProvider = starlinkStatusProvider
         self.ecoFlowClientFactory = ecoFlowClientFactory
         self.activeMeasurementProcessRunner = activeMeasurementProcessRunner
+        self.systemMetricsReader = systemMetricsReader
     }
 
     public func providers(settings: AppSettings) -> [any Provider] {
         var providers: [any Provider] = [
+            SystemOverviewProvider(reader: systemMetricsReader),
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
@@ -52,13 +56,15 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.speedify,
         ProviderIDs.starlink,
         ProviderIDs.ecoflow,
-        ProviderIDs.iperf3
+        ProviderIDs.iperf3,
+        ProviderIDs.systemOverview
     ]
 
     /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3
     /// exist only when a process runner is available (matching providers(settings:)).
     public func integrations() -> [any Integration] {
         var result: [any Integration] = [
+            SystemIntegration(reader: systemMetricsReader),
             GLiNetIntegration(routerClientFactory: routerClientFactory),
             ReachabilityIntegration(probe: reachabilityProbe),
             SpeedifyIntegration(client: routerSpeedifyClient),

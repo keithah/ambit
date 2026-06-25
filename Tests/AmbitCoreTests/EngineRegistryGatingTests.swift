@@ -2,9 +2,9 @@ import XCTest
 @testable import AmbitCore
 
 final class EngineRegistryGatingTests: XCTestCase {
-    func testDisabledBuiltInIntegrationsAreNeverRegistered() async {
-        // Built-in instance records exist but every built-in integration type is disabled —
-        // the M0 "only pingscope active" state. None should be assembled (so none polled).
+    func testLegacyDisabledBuiltInIntegrationsAreNeverRegistered() async {
+        // Legacy built-in instance records exist but their integration types are disabled.
+        // The always-on local system integration remains enabled by default.
         let registry = InMemoryIntegrationRegistry(
             records: BuiltInIntegrationSeed.records(ecoflowEnabled: true, includeActiveMeasurement: false),
             disabledIntegrations: BuiltInIntegrationSeed.integrationIDs
@@ -16,7 +16,7 @@ final class EngineRegistryGatingTests: XCTestCase {
 
         let names = await engine.providerDisplayNames()
         let palette = await engine.commandPalette()
-        XCTAssertTrue(names.isEmpty, "disabled built-ins must not be registered")
+        XCTAssertEqual(Set(names.keys), [ProviderIDs.systemOverview])
         XCTAssertTrue(palette.isEmpty)
     }
 
@@ -49,6 +49,40 @@ final class EngineRegistryGatingTests: XCTestCase {
         )
 
         let names = await engine.providerDisplayNames()
-        XCTAssertEqual(Set(names.keys), [ProviderIDs.reachability])
+        XCTAssertEqual(Set(names.keys), [ProviderIDs.reachability, ProviderIDs.systemOverview])
     }
+
+    func testBuiltInSeedIncludesSystemEnabledAndLegacyDisabledSetExcludesIt() {
+        let records = BuiltInIntegrationSeed.records(ecoflowEnabled: false, includeActiveMeasurement: false)
+
+        let system = records.first { $0.id == IntegrationInstanceIDs.systemLocal }
+        XCTAssertEqual(system?.integrationID, IntegrationIDs.system)
+        XCTAssertEqual(system?.enabled, true)
+        XCTAssertFalse(BuiltInIntegrationSeed.integrationIDs.contains(IntegrationIDs.system))
+        XCTAssertTrue(BuiltInIntegrationSeed.integrationIDs.contains(IntegrationIDs.glinet))
+        XCTAssertTrue(BuiltInIntegrationSeed.integrationIDs.contains(IntegrationIDs.speedify))
+        XCTAssertTrue(BuiltInIntegrationSeed.integrationIDs.contains(IntegrationIDs.ecoflow))
+        XCTAssertTrue(BuiltInIntegrationSeed.integrationIDs.contains(IntegrationIDs.starlink))
+    }
+
+    func testBuiltInRegistryIncludesSystemIntegration() {
+        let factory = BuiltInProviderFactory(
+            routerClientFactory: { _, _, _ in fatalError("router client not used") },
+            systemMetricsReader: FakeRegistrySystemMetricsReader(snapshot: Self.systemSnapshot())
+        )
+
+        XCTAssertTrue(factory.integrations().map { $0.id }.contains(IntegrationIDs.system))
+    }
+
+    private static func systemSnapshot() -> SystemMetricsSnapshot {
+        SystemMetricsSnapshot(
+            cpu: CPUMetrics(userPercent: 0, systemPercent: 0, idlePercent: 100, coreCount: 1),
+            memory: MemoryMetrics(usedBytes: 0, wiredBytes: 0, compressedBytes: 0, totalBytes: 1)
+        )
+    }
+}
+
+private struct FakeRegistrySystemMetricsReader: SystemMetricsReading {
+    var snapshot: SystemMetricsSnapshot
+    func snapshot() async throws -> SystemMetricsSnapshot { snapshot }
 }

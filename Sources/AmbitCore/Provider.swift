@@ -11,6 +11,7 @@ public enum ProviderIDs {
     public static let ecoflow: ProviderID = "ecoflow"
     public static let ping: ProviderID = "ping"
     public static let iperf3: ProviderID = "iperf3"
+    public static let systemOverview: ProviderID = "system.overview"
 }
 
 public enum ProviderCommandIDs {

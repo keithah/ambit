@@ -58,7 +58,7 @@ public enum SurfaceComposer {
         switch d.deviceClass {
         case .connectivity, .throughput, .latency: return .network
         case .battery, .power: return .power
-        case .percent, .count, .duration: return .other
+        case .percent, .count, .duration, .dataSize: return .other
         case .none:
             switch d.kind {
             case .binarySensor, .text: return .state

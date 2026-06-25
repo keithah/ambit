@@ -135,6 +135,7 @@ public enum DeviceClass: String, Sendable, Codable {
     case duration
     case percent
     case count
+    case dataSize
 }
 
 public enum EntityCategory: String, Sendable, Codable { case primary, diagnostic, config }
