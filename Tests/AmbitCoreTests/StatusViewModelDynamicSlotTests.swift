@@ -308,6 +308,67 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(model.slots, config.slots)
     }
 
+    @MainActor
+    func testSetEntityVisibilityPersistsAndResetRemovesOverride() {
+        let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let descriptor = EntityDescriptor(
+            id: id,
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            defaultVisibility: .auto
+        )
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [descriptor.instanceID: [descriptor]],
+            states: [:],
+            config: .empty
+        )
+
+        viewModel.setEntityVisibility(id, .always)
+
+        XCTAssertEqual(store.config.entityOverrides[id]?.visibility, .always)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].effectiveVisibility, .always)
+
+        viewModel.setEntityVisibility(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id])
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].effectiveVisibility, .auto)
+    }
+
+    @MainActor
+    func testSetEntityPinnedPersistsAndResetRemovesOverride() {
+        let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setEntityPinned(id, true)
+
+        XCTAssertEqual(store.config.entityOverrides[id]?.pinned, true)
+
+        viewModel.setEntityPinned(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id])
+    }
+
+    @MainActor
+    func testSetEntityEnabledPersistsAndResetRemovesOverride() {
+        let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setEntityEnabled(id, false)
+
+        XCTAssertEqual(store.config.entityOverrides[id]?.enabled, false)
+
+        viewModel.setEntityEnabled(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),
@@ -336,4 +397,45 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             tierEvidence: []
         )
     }
+
+    @MainActor
+    private func makeViewModel(configStore: MemoryPresentationConfigStore) -> StatusViewModel {
+        StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            addressDiscovery: StaticRouterAddressDiscovery(),
+            configStore: configStore
+        )
+    }
+}
+
+private final class MemoryPresentationConfigStore: PresentationConfigStore, @unchecked Sendable {
+    var config: PresentationConfig
+
+    init(config: PresentationConfig = .empty) {
+        self.config = config
+    }
+
+    func load() -> PresentationConfig {
+        config
+    }
+
+    func save(_ config: PresentationConfig) {
+        self.config = config
+    }
+}
+
+private struct MemorySettingsStore: SettingsStore {
+    func load() throws -> AppSettings { AppSettings() }
+    func save(_ settings: AppSettings) throws {}
+}
+
+private final class MemoryInstalledProviderStore: InstalledProviderStore, @unchecked Sendable {
+    func load() throws -> [InstalledProviderRecord] { [] }
+    func save(_ records: [InstalledProviderRecord]) throws {}
+}
+
+private struct StaticRouterAddressDiscovery: RouterAddressDiscovery {
+    func defaultGatewayHost() async -> String? { nil }
 }

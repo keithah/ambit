@@ -143,6 +143,7 @@ private struct IntegrationSettingsDetail: View {
 }
 
 private struct EntitySettingsRowView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
     let row: EntitySettingsRow
 
     private var readout: EntityReadout {
@@ -169,9 +170,89 @@ private struct EntitySettingsRowView: View {
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                controls
             }
         }
         .padding(.vertical, 10)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("Visibility", selection: visibilitySelection) {
+                ForEach(EntityVisibilityChoice.allCases) { choice in
+                    Text(choice.title(defaultVisibility: row.descriptor.defaultVisibility)).tag(choice)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 145)
+
+            Toggle("Pin", isOn: pinned)
+                .toggleStyle(.checkbox)
+
+            Toggle("Show", isOn: enabled)
+                .toggleStyle(.checkbox)
+        }
+        .font(.system(size: 11))
+    }
+
+    private var visibilitySelection: Binding<EntityVisibilityChoice> {
+        Binding {
+            EntityVisibilityChoice(visibility: row.override.visibility)
+        } set: { choice in
+            viewModel.setEntityVisibility(row.id, choice.visibility)
+        }
+    }
+
+    private var pinned: Binding<Bool> {
+        Binding {
+            row.override.pinned ?? false
+        } set: { isPinned in
+            viewModel.setEntityPinned(row.id, isPinned ? true : nil)
+        }
+    }
+
+    private var enabled: Binding<Bool> {
+        Binding {
+            row.override.enabled ?? true
+        } set: { isEnabled in
+            viewModel.setEntityEnabled(row.id, isEnabled ? nil : false)
+        }
+    }
+}
+
+private enum EntityVisibilityChoice: Hashable, CaseIterable, Identifiable {
+    case defaultValue
+    case always
+    case auto
+    case never
+
+    var id: Self { self }
+
+    init(visibility: GlanceVisibility?) {
+        switch visibility {
+        case .always: self = .always
+        case .auto: self = .auto
+        case .never: self = .never
+        case nil: self = .defaultValue
+        }
+    }
+
+    var visibility: GlanceVisibility? {
+        switch self {
+        case .defaultValue: return nil
+        case .always: return .always
+        case .auto: return .auto
+        case .never: return .never
+        }
+    }
+
+    func title(defaultVisibility: GlanceVisibility) -> String {
+        switch self {
+        case .defaultValue: return "Default (\(defaultVisibility.rawValue.capitalized))"
+        case .always: return "Always"
+        case .auto: return "Auto"
+        case .never: return "Never"
+        }
     }
 }
 

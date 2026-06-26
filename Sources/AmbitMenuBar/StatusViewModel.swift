@@ -570,6 +570,74 @@ final class StatusViewModel: ObservableObject {
         )
     }
 
+    func setEntityVisibility(_ id: EntityID, _ visibility: GlanceVisibility?) {
+        mutateEntityOverride(id) { override in
+            override.visibility = visibility
+        } reset: {
+            visibility == nil
+        }
+    }
+
+    func setEntityPinned(_ id: EntityID, _ pinned: Bool?) {
+        mutateEntityOverride(id) { override in
+            override.pinned = pinned
+        } reset: {
+            pinned == nil
+        }
+    }
+
+    func setEntityEnabled(_ id: EntityID, _ enabled: Bool?) {
+        mutateEntityOverride(id) { override in
+            override.enabled = enabled
+        } reset: {
+            enabled == nil
+        }
+    }
+
+    private func mutateEntityOverride(
+        _ id: EntityID,
+        mutate: (inout EntityPresentationOverride) -> Void,
+        reset: () -> Bool
+    ) {
+        var config = configStore.load()
+        if reset() {
+            config.entityOverrides.removeValue(forKey: id)
+        } else {
+            var override = config.entityOverrides[id] ?? EntityPresentationOverride()
+            mutate(&override)
+            config.entityOverrides[id] = override
+        }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    private func rebuildPresentationSettings(config: PresentationConfig) {
+        let registryRecords = presentationSettings.integrations.map { group in
+            IntegrationInstanceRecord(
+                id: group.id,
+                integrationID: group.integrationID,
+                displayName: group.displayName,
+                enabled: group.enabled
+            )
+        }
+        var descriptors: [ProviderInstanceID: [EntityDescriptor]] = [:]
+        var states: [EntityID: EntityState] = [:]
+        for group in presentationSettings.integrations {
+            for row in group.entities {
+                descriptors[row.descriptor.instanceID, default: []].append(row.descriptor)
+                if let state = row.state {
+                    states[row.descriptor.id] = state
+                }
+            }
+        }
+        presentationSettings = Self.presentationSettingsModel(
+            registryRecords: registryRecords,
+            descriptors: descriptors,
+            states: states,
+            config: config
+        )
+    }
+
     private func buildSlotSurface(
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
