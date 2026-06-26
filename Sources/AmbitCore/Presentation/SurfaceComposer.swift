@@ -96,12 +96,18 @@ public enum SurfaceComposer {
         var combinedIndexByKey: [String: Int] = [:]
         let segmentedGroups = segmentedRingGroups(in: ordered, states: states, config: config)
         let segmentedIDs = Set(segmentedGroups.flatMap { $0.map(\.id) })
+        let coreGroups = coreGridGroups(in: ordered, excluding: segmentedIDs)
+        let coreIDs = Set(coreGroups.flatMap { $0.map(\.id) })
         for group in segmentedGroups {
             result.append(segmentedRingCard(for: group))
             result.append(breakdownLegendCard(for: group))
         }
+        for group in coreGroups {
+            result.append(coreGridCard(for: group))
+        }
         for d in ordered {
             if segmentedIDs.contains(d.id) { continue }
+            if coreIDs.contains(d.id) { continue }
             guard cardKind(for: d, state: states[d.id], config: config) == .historyGraph, d.stateClass == .measurement else {
                 result.append(card(for: d, state: states[d.id], config: config))
                 continue
@@ -156,6 +162,39 @@ public enum SurfaceComposer {
             kind: .breakdownLegend,
             entities: group.map(\.id),
             role: .secondary
+        )
+    }
+
+    private static func coreGridGroups(in ordered: [EntityDescriptor], excluding excludedIDs: Set<EntityID>) -> [[EntityDescriptor]] {
+        let candidates = ordered.filter { descriptor in
+            guard !excludedIDs.contains(descriptor.id) else { return false }
+            guard descriptor.kind == .sensor else { return false }
+            guard descriptor.compositionRole == .channel else { return false }
+            guard descriptor.deviceClass == .percent else { return false } // A5a replaces this with the generic axis model.
+            guard descriptor.stateClass == .measurement || descriptor.stateClass == nil else { return false }
+            return descriptor.capability != nil
+        }
+        let grouped = Dictionary(grouping: candidates) { descriptor in
+            segmentedRingGroupKey(for: descriptor)
+        }
+        return grouped.values
+            .map { $0.sorted(by: ordering) }
+            .filter { $0.count >= 3 }
+            .sorted { lhs, rhs in
+                guard let a = ordered.firstIndex(where: { $0.id == lhs[0].id }),
+                      let b = ordered.firstIndex(where: { $0.id == rhs[0].id }) else { return false }
+                return a < b
+            }
+    }
+
+    private static func coreGridCard(for group: [EntityDescriptor]) -> CardSpec {
+        let role: CardRole = group.contains(where: \.isPrimary) ? .primary : .secondary
+        return CardSpec(
+            id: "group:\(segmentedRingGroupKey(for: group[0])):cores",
+            kind: .coreGrid,
+            entities: group.map(\.id),
+            graphStyle: .gauge,
+            role: role
         )
     }
 

@@ -146,7 +146,7 @@ public enum DeviceClass: String, Sendable, Codable {
 public enum EntityCategory: String, Sendable, Codable { case primary, diagnostic, config }
 public enum EntityAccess: String, Sendable, Codable { case read, write, readWrite }
 public enum StateClass: String, Sendable, Codable { case measurement, total, totalIncreasing }
-public enum EntityCompositionRole: String, Sendable, Codable { case segment, remainder, total }
+public enum EntityCompositionRole: String, Sendable, Codable { case segment, remainder, total, channel }
 
 public enum EntityValue: Equatable, Sendable, Codable {
     case number(Double)

@@ -104,6 +104,12 @@ Binding rule:
 - `CardSpec.entities = [EntityID]`
 - Values are rendered through `EntityReadout`.
 - Ordering is descriptor `priority` first, then existing stable order.
+- For now, `breakdownLegend` is emitted only as the paired complement of a `segmentedRing`
+  group. It inherits the ring's gating: three or more siblings, `.progress` graph style,
+  matching capability/device class/unit, and all required members online with numeric values.
+- Known limitation: standalone breakdown legends are deferred. That path should cover component
+  sets that need a dense legend without a ring, including two-part wholes below the ring's
+  three-sibling floor.
 
 ### `coreGrid`
 
@@ -122,6 +128,9 @@ Binding rule:
 - `CardSpec.entities = [EntityID]`
 - All entities must share capability, device class, and unit.
 - Percent metrics are bounded to `0...100`; non-percent grid metrics use the generic axis model.
+- Unlike `segmentedRing`, a partially unavailable grid still renders. Each core/channel cell is
+  an independent measurement, so unavailable members display as unavailable cells instead of
+  suppressing the whole grid.
 
 ### `cardRow`
 

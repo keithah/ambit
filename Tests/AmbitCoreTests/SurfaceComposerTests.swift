@@ -264,6 +264,60 @@ final class SurfaceComposerTests: XCTestCase {
         ])
     }
 
+    func testHomogeneousCoreMetricsProduceCoreGrid() {
+        let descriptors = [
+            sensor("Core 1", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 4, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 2", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 3, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 3", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 2, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 4", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 1, capability: "system.cpu", compositionRole: .channel, unit: "%")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(42), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertEqual(cpu?.children.first?.kind, .coreGrid)
+        XCTAssertEqual(cpu?.children.first?.id, "group:system.cpu:percent:%:cores")
+        XCTAssertEqual(cpu?.children.first?.entities.map(\.rawValue), [
+            "i/p.Core 1", "i/p.Core 2", "i/p.Core 3", "i/p.Core 4"
+        ])
+    }
+
+    func testNonPercentChannelsStayIndependentUntilGenericAxisModelLands() {
+        let descriptors = [
+            sensor("Fan 1", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel),
+            sensor("Fan 2", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel),
+            sensor("Fan 3", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let kinds = plan.cards.flatMap(\.children).map(\.kind)
+        XCTAssertEqual(kinds, [.gauge, .gauge, .gauge])
+    }
+
+    func testCoreGridRendersEvenWhenSomeMembersUnavailable() {
+        let descriptors = [
+            sensor("Core 1", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 2", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 3", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%")
+        ]
+        let states: [EntityID: EntityState] = [
+            descriptors[0].id: EntityState(id: descriptors[0].id, value: .number(25), availability: .online),
+            descriptors[1].id: EntityState(id: descriptors[1].id, value: nil, availability: .unavailable),
+            descriptors[2].id: EntityState(id: descriptors[2].id, value: .number(75), availability: .online)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .coreGrid)
+        XCTAssertEqual(card?.entities.count, 3)
+    }
+
     func testControlsAndConfigExclusionSurviveCapabilitySections() {
         let control = EntityDescriptor(
             id: "i/p.toggle",

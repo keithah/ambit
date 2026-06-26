@@ -11,6 +11,7 @@ public enum CardKind: String, Equatable, Sendable, Codable {
     case dualLineGraph
     case segmentedRing
     case breakdownLegend
+    case coreGrid
     case progress
     case statTable
     case control
