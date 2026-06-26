@@ -24,6 +24,12 @@ public struct SurfaceData {
 
     public func title(_ id: EntityID) -> String { descriptors[id]?.name ?? id.rawValue }
     public func samples(_ id: EntityID) -> [Sample] { series[id] ?? [] }
+    public func graphLines(_ ids: [EntityID]) -> [GraphLine] {
+        ids.enumerated().map { index, id in
+            GraphLine(id: title(id), color: Theme.lineColor(index), samples: samples(id))
+        }
+    }
+
     public func graphAxis(_ ids: [EntityID]) -> GraphAxis? {
         guard let descriptor = ids.first.flatMap({ descriptors[$0] }) else { return nil }
         var allSamples = ids.flatMap { samples($0) }
@@ -78,9 +84,7 @@ public struct CardView: View {
         case .historyGraph:
             if !spec.entities.isEmpty {
                 let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
-                let lines = spec.entities.enumerated().map { index, id in
-                    GraphLine(id: data.title(id), color: Theme.lineColor(index), samples: data.samples(id))
-                }
+                let lines = data.graphLines(spec.entities)
                 let summary = spec.entities.count == 1
                     ? GraphSummary.summary(samples: data.samples(spec.entities[0]), deviceClass: descriptor?.deviceClass, unit: descriptor?.unit)
                     : []
@@ -95,9 +99,7 @@ public struct CardView: View {
         case .dualLineGraph:
             let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
             DualLineGraphCard(title: spec.title ?? "",
-                              lines: spec.entities.enumerated().map { index, id in
-                                  GraphLine(id: data.title(id), color: Theme.lineColor(index), samples: data.samples(id))
-                              },
+                              lines: data.graphLines(spec.entities),
                               axis: data.graphAxis(spec.entities),
                               deviceClass: descriptor?.deviceClass,
                               unit: descriptor?.unit)

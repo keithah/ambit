@@ -101,6 +101,8 @@ public enum SurfaceComposer {
         let segmentedIDs = Set(segmentedGroups.flatMap { $0.map(\.id) })
         let coreGroups = coreGridGroups(in: ordered, excluding: segmentedIDs)
         let coreIDs = Set(coreGroups.flatMap { $0.map(\.id) })
+        let dualLineGroups = dualLineGraphGroups(in: ordered, excluding: segmentedIDs.union(coreIDs), states: states, config: config)
+        let dualLineIDs = Set(dualLineGroups.flatMap { $0.map(\.id) })
         for group in segmentedGroups {
             result.append(segmentedRingCard(for: group))
             result.append(breakdownLegendCard(for: group))
@@ -108,9 +110,13 @@ public enum SurfaceComposer {
         for group in coreGroups {
             result.append(coreGridCard(for: group))
         }
+        for group in dualLineGroups {
+            result.append(dualLineGraphCard(for: group, config: config))
+        }
         for d in ordered {
             if segmentedIDs.contains(d.id) { continue }
             if coreIDs.contains(d.id) { continue }
+            if dualLineIDs.contains(d.id) { continue }
             guard cardKind(for: d, state: states[d.id], config: config) == .historyGraph, d.stateClass == .measurement else {
                 result.append(card(for: d, state: states[d.id], config: config))
                 continue
@@ -224,6 +230,48 @@ public enum SurfaceComposer {
         )
     }
 
+    private static func dualLineGraphGroups(
+        in ordered: [EntityDescriptor],
+        excluding excludedIDs: Set<EntityID>,
+        states: [EntityID: EntityState],
+        config: PresentationConfig
+    ) -> [[EntityDescriptor]] {
+        let candidates = ordered.filter { descriptor in
+            guard !excludedIDs.contains(descriptor.id) else { return false }
+            guard cardKind(for: descriptor, state: states[descriptor.id], config: config) == .historyGraph else { return false }
+            guard descriptor.stateClass == .measurement || descriptor.stateClass == nil else { return false }
+            return descriptor.capability != nil && descriptor.deviceClass != nil
+        }
+        let grouped = Dictionary(grouping: candidates) { descriptor in
+            segmentedRingGroupKey(for: descriptor)
+        }
+        return grouped.values
+            .compactMap { group -> [EntityDescriptor]? in
+                guard group.count == 2 else { return nil }
+                let sorted = group.sorted(by: dualLineOrdering)
+                guard dualLineRolePair(for: sorted) != nil else { return nil }
+                return sorted
+            }
+            .sorted { lhs, rhs in
+                guard let a = ordered.firstIndex(where: { $0.id == lhs[0].id }),
+                      let b = ordered.firstIndex(where: { $0.id == rhs[0].id }) else { return false }
+                return a < b
+            }
+    }
+
+    private static func dualLineGraphCard(for group: [EntityDescriptor], config: PresentationConfig) -> CardSpec {
+        let role = dualLineRolePair(for: group) ?? "pair"
+        let range = config.entityOverrides[group[0].id]?.graphRange ?? group[0].defaultGraphRange ?? .m5
+        return CardSpec(
+            id: "group:\(segmentedRingGroupKey(for: group[0])):\(role)",
+            kind: .dualLineGraph,
+            entities: group.map(\.id),
+            graphStyle: .sparkline,
+            graphRange: range,
+            role: group.contains(where: \.isPrimary) ? .primary : .secondary
+        )
+    }
+
     private static func coreGridGroups(in ordered: [EntityDescriptor], excluding excludedIDs: Set<EntityID>) -> [[EntityDescriptor]] {
         let candidates = ordered.filter { descriptor in
             guard !excludedIDs.contains(descriptor.id) else { return false }
@@ -263,6 +311,43 @@ public enum SurfaceComposer {
             descriptor.deviceClass?.rawValue ?? "none",
             descriptor.unit ?? "none"
         ].joined(separator: ":")
+    }
+
+    private static func dualLineRolePair(for group: [EntityDescriptor]) -> String? {
+        let roles = Set(group.compactMap(dualLineRole))
+        if roles == Set(["user", "system"]) { return "user-system" }
+        if roles == Set(["in", "out"]) { return "in-out" }
+        return nil
+    }
+
+    private static func dualLineOrdering(_ a: EntityDescriptor, _ b: EntityDescriptor) -> Bool {
+        let ra = dualLineRank(dualLineRole(for: a))
+        let rb = dualLineRank(dualLineRole(for: b))
+        if ra != rb { return ra < rb }
+        return ordering(a, b)
+    }
+
+    private static func dualLineRank(_ role: String?) -> Int {
+        switch role {
+        case "user", "in": return 0
+        case "system", "out": return 1
+        default: return 2
+        }
+    }
+
+    private static func dualLineRole(for descriptor: EntityDescriptor) -> String? {
+        let tokens = Set(tokenizeForPairing([descriptor.name, descriptor.metricID ?? "", descriptor.id.rawValue]))
+        if tokens.contains("user") { return "user" }
+        if tokens.contains("system") { return "system" }
+        if !tokens.isDisjoint(with: ["in", "input", "download", "rx"]) { return "in" }
+        if !tokens.isDisjoint(with: ["out", "output", "upload", "tx"]) { return "out" }
+        return nil
+    }
+
+    private static func tokenizeForPairing(_ values: [String]) -> [String] {
+        values.flatMap { value in
+            value.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        }
     }
 
     private static func numericOnlineValue(for descriptor: EntityDescriptor, states: [EntityID: EntityState]) -> Double? {

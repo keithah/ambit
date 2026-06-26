@@ -9,6 +9,11 @@ public struct DualLineGraphCard: View {
     let axis: GraphAxis?
     let deviceClass: DeviceClass?
     let unit: String?
+    var hasDrawableSeries: Bool {
+        lines.contains { line in
+            line.samples.filter { $0.value != nil }.count > 1
+        }
+    }
 
     public init(title: String, lines: [GraphLine], axis: GraphAxis? = nil, deviceClass: DeviceClass? = nil, unit: String? = nil) {
         self.title = title

@@ -844,11 +844,16 @@ final class StatusViewModel: ObservableObject {
         }
 
         if !isPingSlot {
+            let config = configStore.load()
+            let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config)
+            let series = await historySeries(for: plan, now: now)
             return StatusSlotSurfaceBuilder.genericSurface(
                 slot: slot,
                 descriptors: shownResolved,
                 states: allStates,
-                config: configStore.load(),
+                series: series,
+                plan: plan,
+                config: config,
                 now: now,
                 attentionEngine: &attentionEngine
             )
@@ -952,6 +957,29 @@ final class StatusViewModel: ObservableObject {
             await refreshAlertRules()
             await engine.refresh()
             await refreshPing()
+        }
+    }
+
+    private func historySeries(for plan: SurfacePlan, now: Date) async -> [EntityID: [Sample]] {
+        var result: [EntityID: [Sample]] = [:]
+        for card in Self.graphCards(in: plan.cards) {
+            let range = card.graphRange ?? .m5
+            for id in card.entities {
+                result[id] = await engine.historySamples(id, since: now.addingTimeInterval(-range.seconds))
+            }
+        }
+        return result
+    }
+
+    nonisolated private static func graphCards(in cards: [CardSpec]) -> [CardSpec] {
+        cards.flatMap { card -> [CardSpec] in
+            let children = graphCards(in: card.children)
+            switch card.kind {
+            case .historyGraph, .dualLineGraph:
+                return [card] + children
+            default:
+                return children
+            }
         }
     }
 
@@ -1198,6 +1226,8 @@ enum StatusSlotSurfaceBuilder {
         slot: Slot,
         descriptors resolved: [EntityDescriptor],
         states allStates: [EntityID: EntityState],
+        series: [EntityID: [Sample]] = [:],
+        plan: SurfacePlan? = nil,
         config: PresentationConfig,
         now: Date,
         attentionEngine: inout AttentionEngine
@@ -1220,8 +1250,8 @@ enum StatusSlotSurfaceBuilder {
         )
 
         return SlotSurface(
-            plan: SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
-            data: SurfaceData(descriptors: descriptors, states: states),
+            plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
+            data: SurfaceData(descriptors: descriptors, states: states, series: series),
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
             hostOptions: []

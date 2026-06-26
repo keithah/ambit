@@ -100,6 +100,21 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertNil(network?.children.first?.title)
     }
 
+    func testComplementaryMeasurementPairProducesDualLineGraph() {
+        let descriptors = [
+            sensor("User", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertEqual(cpu?.children.first?.kind, .dualLineGraph)
+        XCTAssertEqual(cpu?.children.first?.id, "group:system.cpu:percent:none:user-system")
+        XCTAssertEqual(cpu?.children.first?.entities.map(\.rawValue), ["i/p.User", "i/p.System"])
+    }
+
     func testSingleMeasurementSeriesStaysSingleLineWithName() {
         let plan = SurfaceComposer.detailPlan(descriptors: [sensor("lat", .latency, stateClass: .measurement)], states: [:])
         let card = plan.cards.first?.children.first

@@ -22,6 +22,11 @@ public struct HistoryGraphCard: View {
     let deviceClass: DeviceClass?
     let unit: String?
     let summary: [GraphSummaryItem]
+    var hasDrawableSeries: Bool {
+        lines.contains { line in
+            line.samples.filter { $0.value != nil }.count > 1
+        }
+    }
 
     public init(
         title: String,
@@ -63,7 +68,7 @@ public struct HistoryGraphCard: View {
                     grid.addLine(to: CGPoint(x: size.width, y: y))
                     context.stroke(grid, with: .color(.white.opacity(0.07)), lineWidth: 1)
                 }
-                guard let axisMax, axisMax > 0 else { return }
+                guard hasDrawableSeries, let axisMax, axisMax > 0 else { return }
                 for line in lines where line.samples.count > 1 {
                     let pts = GraphGeometry.points(samples: line.samples, in: size, axisMax: axisMax)
                     var path = Path()
@@ -74,6 +79,13 @@ public struct HistoryGraphCard: View {
                 }
             }
             .frame(height: 130)
+            .overlay {
+                if !hasDrawableSeries {
+                    Text("No Data")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
             if showLegend {
                 HStack(spacing: 12) {
                     ForEach(lines) { line in
