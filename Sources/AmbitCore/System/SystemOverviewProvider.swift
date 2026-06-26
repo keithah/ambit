@@ -28,6 +28,10 @@ public struct SystemOverviewProvider: Provider {
             descriptor("cpu_system_percent", "System", .percent, capability: "system.cpu"),
             descriptor("memory_used_percent", "Memory", .percent, capability: "system.memory", graphStyle: .progress),
             descriptor("memory_pressure_percent", "Memory Pressure", .percent, capability: "system.memory", graphStyle: .gauge),
+            descriptor("memory_app_active_bytes", "App/Active", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 30, compositionRole: .segment),
+            descriptor("memory_wired_bytes", "Wired", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 20, compositionRole: .segment),
+            descriptor("memory_compressed_bytes", "Compressed", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 10, compositionRole: .segment),
+            descriptor("memory_free_bytes", "Free", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 0, compositionRole: .remainder),
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
             descriptor("battery_charging", "Charging", .battery, kind: .binarySensor, capability: "power.battery"),
@@ -55,6 +59,7 @@ public struct SystemOverviewProvider: Provider {
         graphStyle: GraphStyle? = nil,
         isPrimary: Bool = false,
         priority: Int? = nil,
+        compositionRole: EntityCompositionRole? = nil,
         displayThreshold: DisplayThreshold? = nil
     ) -> EntityDescriptor {
         EntityDescriptor(
@@ -73,7 +78,8 @@ public struct SystemOverviewProvider: Provider {
             displayThreshold: displayThreshold,
             graphStyle: graphStyle,
             isPrimary: isPrimary,
-            priority: priority
+            priority: priority,
+            compositionRole: compositionRole
         )
     }
 
@@ -94,6 +100,14 @@ public struct SystemOverviewProvider: Provider {
         ]
         if let pressurePercent = snapshot.memory.pressurePercent {
             metrics.append(Metric(id: "memory_pressure_percent", label: "Memory Pressure", value: .percent(pressurePercent)))
+        }
+        if let appActiveBytes = snapshot.memory.appActiveBytes {
+            metrics.append(Metric(id: "memory_app_active_bytes", label: "App/Active", value: .level(Double(appActiveBytes))))
+        }
+        metrics.append(Metric(id: "memory_wired_bytes", label: "Wired", value: .level(Double(snapshot.memory.wiredBytes))))
+        metrics.append(Metric(id: "memory_compressed_bytes", label: "Compressed", value: .level(Double(snapshot.memory.compressedBytes))))
+        if let freeBytes = snapshot.memory.freeBytes {
+            metrics.append(Metric(id: "memory_free_bytes", label: "Free", value: .level(Double(freeBytes))))
         }
         if snapshot.battery.isPresent {
             metrics.append(Metric(id: "battery_percent", label: "Battery", value: .level(snapshot.battery.percent)))

@@ -24,6 +24,13 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["memory_pressure_percent"]?.deviceClass, .percent)
         XCTAssertEqual(descriptors["memory_pressure_percent"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["memory_pressure_percent"]?.graphStyle, .gauge)
+        XCTAssertEqual(descriptors["memory_app_active_bytes"]?.deviceClass, .dataSize)
+        XCTAssertEqual(descriptors["memory_app_active_bytes"]?.capability, "system.memory")
+        XCTAssertEqual(descriptors["memory_app_active_bytes"]?.graphStyle, .progress)
+        XCTAssertEqual(descriptors["memory_app_active_bytes"]?.compositionRole, .segment)
+        XCTAssertEqual(descriptors["memory_wired_bytes"]?.compositionRole, .segment)
+        XCTAssertEqual(descriptors["memory_compressed_bytes"]?.compositionRole, .segment)
+        XCTAssertEqual(descriptors["memory_free_bytes"]?.compositionRole, .remainder)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.deviceClass, .dataSize)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["battery_percent"]?.deviceClass, .battery)
@@ -49,6 +56,10 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("cpu_system_percent"), .percent(7.5))
         XCTAssertEqual(snapshot.metricValue("memory_used_percent"), .percent(50))
         XCTAssertEqual(snapshot.metricValue("memory_pressure_percent"), .percent(31.25))
+        XCTAssertEqual(snapshot.metricValue("memory_app_active_bytes"), .level(4_000_000_000))
+        XCTAssertEqual(snapshot.metricValue("memory_wired_bytes"), .level(2_000_000_000))
+        XCTAssertEqual(snapshot.metricValue("memory_compressed_bytes"), .level(1_000_000_000))
+        XCTAssertEqual(snapshot.metricValue("memory_free_bytes"), .level(8_000_000_000))
         XCTAssertEqual(snapshot.metricValue("memory_used_bytes"), .level(8_000_000_000))
         XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(88))
         XCTAssertEqual(snapshot.metricValue("battery_charging"), .bool(true))
@@ -85,6 +96,26 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(plan.cards.map(\.title), ["CPU", "Memory", "Power"])
     }
 
+    func testMemoryBreakdownDescriptorsComposeIntoRingAndLegend() async {
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()))
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let descriptors = provider.entityDescriptors()
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: descriptors)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let memory = plan.cards.first { $0.title == "Memory" }
+        XCTAssertTrue(memory?.children.contains { $0.kind == .segmentedRing } ?? false)
+        XCTAssertTrue(memory?.children.contains { $0.kind == .breakdownLegend } ?? false)
+        XCTAssertEqual(memory?.children.filter { $0.kind == .segmentedRing }.first?.id, "group:system.memory:dataSize:B:segments")
+        XCTAssertEqual(memory?.children.filter { $0.kind == .breakdownLegend }.first?.entities.map(\.rawValue), [
+            "system@local/overview.memory_app_active_bytes",
+            "system@local/overview.memory_wired_bytes",
+            "system@local/overview.memory_compressed_bytes",
+            "system@local/overview.memory_free_bytes"
+        ])
+    }
+
     private func byKey(_ descriptors: [EntityDescriptor]) -> [String: EntityDescriptor] {
         Dictionary(uniqueKeysWithValues: descriptors.map { (String($0.id.rawValue.split(separator: ".").last ?? ""), $0) })
     }
@@ -92,7 +123,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     private static func snapshot() -> SystemMetricsSnapshot {
         SystemMetricsSnapshot(
             cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10, loadAverages: [1.2, 1.4, 1.6]),
-            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25),
+            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25, appActiveBytes: 4_000_000_000, freeBytes: 8_000_000_000),
             battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
             uptimeSeconds: 12_345
         )

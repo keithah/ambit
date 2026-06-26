@@ -56,19 +56,25 @@ public struct MemoryMetrics: Equatable, Sendable, Codable {
     public var compressedBytes: UInt64
     public var totalBytes: UInt64
     public var pressurePercent: Double?
+    public var appActiveBytes: UInt64?
+    public var freeBytes: UInt64?
 
     public init(
         usedBytes: UInt64,
         wiredBytes: UInt64,
         compressedBytes: UInt64,
         totalBytes: UInt64,
-        pressurePercent: Double? = nil
+        pressurePercent: Double? = nil,
+        appActiveBytes: UInt64? = nil,
+        freeBytes: UInt64? = nil
     ) {
         self.usedBytes = usedBytes
         self.wiredBytes = wiredBytes
         self.compressedBytes = compressedBytes
         self.totalBytes = totalBytes
         self.pressurePercent = pressurePercent
+        self.appActiveBytes = appActiveBytes
+        self.freeBytes = freeBytes
     }
 }
 
