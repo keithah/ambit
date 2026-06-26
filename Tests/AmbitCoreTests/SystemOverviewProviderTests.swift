@@ -31,6 +31,9 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["battery_charging"]?.defaultVisibility, .auto)
         XCTAssertEqual(descriptors["load_1m"]?.capability, "system.cpu")
         XCTAssertEqual(descriptors["load_1m"]?.deviceClass, .count)
+        XCTAssertEqual(descriptors["uptime_seconds"]?.deviceClass, .duration)
+        XCTAssertEqual(descriptors["uptime_seconds"]?.capability, "system.cpu")
+        XCTAssertEqual(descriptors["uptime_seconds"]?.unit, "s")
     }
 
     func testSystemOverviewProviderMapsSnapshotToMetricsAndStates() async {
@@ -46,6 +49,7 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(88))
         XCTAssertEqual(snapshot.metricValue("battery_charging"), .bool(true))
         XCTAssertEqual(snapshot.metricValue("load_1m"), .level(1.2))
+        XCTAssertEqual(snapshot.metricValue("uptime_seconds"), .level(12_345))
 
         let states = EntityProjection.states(snapshot: snapshot, descriptors: provider.entityDescriptors())
         XCTAssertEqual(states[ProviderInstanceIDs.systemOverview.appending("cpu_usage_percent")]?.value, .number(20))
@@ -85,7 +89,8 @@ final class SystemOverviewProviderTests: XCTestCase {
         SystemMetricsSnapshot(
             cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10, loadAverages: [1.2, 1.4, 1.6]),
             memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000),
-            battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true)
+            battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
+            uptimeSeconds: 12_345
         )
     }
 }

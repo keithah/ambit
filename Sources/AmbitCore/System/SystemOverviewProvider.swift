@@ -30,7 +30,8 @@ public struct SystemOverviewProvider: Provider {
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
             descriptor("battery_charging", "Charging", .battery, kind: .binarySensor, capability: "power.battery"),
-            descriptor("load_1m", "Load 1m", .count, capability: "system.cpu")
+            descriptor("load_1m", "Load 1m", .count, capability: "system.cpu"),
+            descriptor("uptime_seconds", "Uptime", .duration, capability: "system.cpu", unit: "s")
         ]
     }
 
@@ -96,6 +97,9 @@ public struct SystemOverviewProvider: Provider {
         }
         if let load = snapshot.cpu.loadAverages.first {
             metrics.append(Metric(id: "load_1m", label: "Load 1m", value: .level(load)))
+        }
+        if let uptimeSeconds = snapshot.uptimeSeconds {
+            metrics.append(Metric(id: "uptime_seconds", label: "Uptime", value: .level(uptimeSeconds)))
         }
         return metrics
     }

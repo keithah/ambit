@@ -48,6 +48,12 @@ final class SystemMetricsReaderTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapshot.battery.percent, 0)
         XCTAssertLessThanOrEqual(snapshot.battery.percent, 100)
     }
+
+    func testDarwinReaderReturnsNonNegativeUptime() async throws {
+        let snapshot = try await DarwinSystemMetricsReader().snapshot()
+
+        XCTAssertGreaterThanOrEqual(snapshot.uptimeSeconds ?? -1, 0)
+    }
     #endif
 
     private static func snapshot() -> SystemMetricsSnapshot {
@@ -82,7 +88,8 @@ final class SystemMetricsReaderTests: XCTestCase {
                 )
             ],
             battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
-            processes: []
+            processes: [],
+            uptimeSeconds: 12_345
         )
     }
 }

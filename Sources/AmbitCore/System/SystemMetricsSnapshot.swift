@@ -7,6 +7,7 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
     public var networkCounters: [NetworkCounterMetrics]
     public var battery: BatteryMetrics
     public var processes: [ProcessMetrics]
+    public var uptimeSeconds: TimeInterval?
 
     public init(
         cpu: CPUMetrics,
@@ -14,7 +15,8 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
         diskVolumes: [DiskVolumeMetrics] = [],
         networkCounters: [NetworkCounterMetrics] = [],
         battery: BatteryMetrics = BatteryMetrics(percent: 0, isCharging: false, isPresent: false),
-        processes: [ProcessMetrics] = []
+        processes: [ProcessMetrics] = [],
+        uptimeSeconds: TimeInterval? = nil
     ) {
         self.cpu = cpu
         self.memory = memory
@@ -22,6 +24,7 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
         self.networkCounters = networkCounters
         self.battery = battery
         self.processes = processes
+        self.uptimeSeconds = uptimeSeconds
     }
 }
 

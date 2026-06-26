@@ -18,7 +18,8 @@ public struct DarwinSystemMetricsReader: SystemMetricsReading {
             diskVolumes: Self.diskVolumes(),
             networkCounters: Self.networkCounters(),
             battery: Self.batteryMetrics(),
-            processes: []
+            processes: [],
+            uptimeSeconds: Self.uptimeSeconds()
         )
     }
 }
@@ -145,6 +146,17 @@ private extension DarwinSystemMetricsReader {
         }
         return byName.values.sorted { $0.interfaceName < $1.interfaceName }
     }
+
+    static func uptimeSeconds() -> TimeInterval? {
+        var bootTime = timeval()
+        var size = MemoryLayout<timeval>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, u_int(mib.count), &bootTime, &size, nil, 0) == 0 else {
+            return nil
+        }
+        let bootTimestamp = TimeInterval(bootTime.tv_sec) + TimeInterval(bootTime.tv_usec) / 1_000_000
+        return max(0, Date().timeIntervalSince1970 - bootTimestamp)
+    }
 }
 #else
 private extension DarwinSystemMetricsReader {
@@ -158,6 +170,7 @@ private extension DarwinSystemMetricsReader {
 
     static func diskVolumes() -> [DiskVolumeMetrics] { [] }
     static func networkCounters() -> [NetworkCounterMetrics] { [] }
+    static func uptimeSeconds() -> TimeInterval? { nil }
 }
 #endif
 
