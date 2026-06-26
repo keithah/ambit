@@ -41,10 +41,12 @@ public struct StatTableCard: View {
         public struct Cell: Equatable {
             public var text: String
             public var tone: DisplayTone
+            public var isSingleLine: Bool
 
-            public init(text: String, tone: DisplayTone = .neutral) {
+            public init(text: String, tone: DisplayTone = .neutral, isSingleLine: Bool = true) {
                 self.text = text
                 self.tone = tone
+                self.isSingleLine = isSingleLine
             }
         }
 
@@ -146,6 +148,8 @@ public struct StatTableCard: View {
                     Text(cell.text)
                         .font(.system(size: 12.5, design: .monospaced))
                         .foregroundStyle(cell.tone.color)
+                        .lineLimit(cell.isSingleLine ? 1 : nil)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: alignment.swiftUIAlignment)
                 }
             }
@@ -158,8 +162,12 @@ public struct StatTableCard: View {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
             HStack {
                 Text(row.label).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 Text(row.value).font(.system(size: 13, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))

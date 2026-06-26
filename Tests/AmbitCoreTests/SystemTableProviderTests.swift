@@ -37,11 +37,24 @@ final class SystemTableProviderTests: XCTestCase {
         XCTAssertEqual(rows[0].memoryBytes, 1_073_741_824)
     }
 
+    func testProcessParserUsesExecutableBasenameForDisplayName() {
+        let output = """
+        PID %CPU RSS COMM
+        321 12.0 2048 /Applications/Ambit.app/Contents/MacOS/Ambit
+        654 2.5 1024 /usr/libexec/trustd
+        """
+
+        let rows = PSProcessParser.parse(output)
+
+        XCTAssertEqual(rows.map(\.name), ["Ambit", "trustd"])
+        XCTAssertEqual(rows.map(\.rowID), ["321:Ambit", "654:trustd"])
+    }
+
     func testProcessProviderBuildsTopCPUAndMemoryTablesFromFakeRunner() async {
         let runner = FakeProcessRunner(output: """
         PID %CPU RSS COMM
         100 5.0 1048576 LowCPU
-        200 42.5 2048 HotCPU
+        200 42.5 2048 /Applications/Ambit.app/Contents/MacOS/HotCPU
         300 1.0 4096000 BigMemory
         """)
         let provider = SystemProcessProvider(processRunner: runner, limit: 2)
@@ -56,6 +69,7 @@ final class SystemTableProviderTests: XCTestCase {
         }
         XCTAssertEqual(cpuTable.columns.map(\.id), ["pid", "name", "cpu", "memory"])
         XCTAssertEqual(cpuTable.rows.map(\.id), ["200:HotCPU", "100:LowCPU"])
+        XCTAssertEqual(cpuTable.rows[0].cells["name"], .text("HotCPU"))
         XCTAssertEqual(cpuTable.rows[0].cells["cpu"], .number(42.5, unit: "%"))
         XCTAssertEqual(memoryTable.rows.map(\.id), ["300:BigMemory", "100:LowCPU"])
         XCTAssertEqual(memoryTable.rows[0].cells["memory"], .number(4_194_304_000, unit: "B"))

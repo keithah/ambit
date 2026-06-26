@@ -56,4 +56,20 @@ final class StatTableCardTests: XCTestCase {
         XCTAssertEqual(model.rows.first?.cells.map(\.text), ["Item 1", "99"])
         XCTAssertEqual(model.rows.last?.cells.map(\.text), ["Item 5", "95"])
     }
+
+    func testTextCellsAreMarkedSingleLineToProtectTableHeight() {
+        let table = TableValue(
+            columns: [TableColumn(id: "name", title: "Name")],
+            rows: [
+                TableRow(id: "long", cells: [
+                    "name": .text("/Applications/Ambit.app/Contents/MacOS/Ambit")
+                ])
+            ]
+        )
+
+        let model = StatTableCard.Model(table: table)
+
+        XCTAssertEqual(model.rows[0].cells[0].text, "/Applications/Ambit.app/Contents/MacOS/Ambit")
+        XCTAssertTrue(model.rows[0].cells[0].isSingleLine)
+    }
 }
