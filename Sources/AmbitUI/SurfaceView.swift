@@ -53,6 +53,7 @@ public struct CardView: View {
     }
 
     private var primaryID: EntityID? { spec.entities.first }
+    var resolvedTitle: String? { spec.title }
 
     public var body: some View {
         switch spec.kind {
@@ -70,9 +71,9 @@ public struct CardView: View {
                 }
             }
         case .statusRow:
-            if let id = primaryID { StatusRowCard(title: data.title(id), readout: data.readout(id)) }
+            if let id = primaryID { StatusRowCard(title: resolvedTitle, readout: data.readout(id)) }
         case .gauge:
-            if let id = primaryID { GaugeCard(title: data.title(id), readout: data.readout(id)) }
+            if let id = primaryID { GaugeCard(title: resolvedTitle, readout: data.readout(id)) }
         case .segmentedRing:
             SegmentedRingCard(title: spec.title, model: SegmentedRingCard.Model(entityIDs: spec.entities, data: data))
         case .breakdownLegend:
@@ -80,7 +81,7 @@ public struct CardView: View {
         case .coreGrid:
             CoreGridCard(title: spec.title, model: CoreGridCard.Model(entityIDs: spec.entities, data: data))
         case .progress:
-            if let id = primaryID { ProgressCard(title: data.title(id), readout: data.readout(id)) }
+            if let id = primaryID { ProgressCard(title: resolvedTitle, readout: data.readout(id)) }
         case .historyGraph:
             if !spec.entities.isEmpty {
                 let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
@@ -120,7 +121,7 @@ public struct CardView: View {
         case .statusBanner:
             if let id = primaryID {
                 let r = data.readout(id)
-                StatusBannerCard(title: data.title(id), detail: r.text, tone: r.tone)
+                StatusBannerCard(title: resolvedTitle, detail: r.text, tone: r.tone)
             }
         case .instanceSelector:
             EmptyView()  // bound by the host (needs selection state + action); wired in P3 chrome.
