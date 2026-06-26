@@ -44,7 +44,10 @@ public enum SurfaceComposer {
         for section in Section.allCases {
             guard let group = bySection[section], !group.isEmpty else { continue }
             let ordered = group.sorted(by: ordering)
-            let children = groupRows(in: buildCards(for: ordered, states: states, config: config), section: section)
+            let children = deduplicatingEponymousTitle(
+                in: groupRows(in: buildCards(for: ordered, states: states, config: config), section: section),
+                section: section
+            )
             let role: CardRole = ordered.contains(where: \.isPrimary) ? .primary : .secondary
             cards.append(CardSpec(id: "section.\(section.title)", kind: .section,
                                   title: section.title, children: children, role: role))
@@ -156,6 +159,20 @@ public enum SurfaceComposer {
         }
         flushBuffer()
         return result
+    }
+
+    private static func deduplicatingEponymousTitle(in cards: [CardSpec], section: Section) -> [CardSpec] {
+        guard cards.count == 1,
+              let title = cards[0].title,
+              normalizedTitle(title) == normalizedTitle(section.title)
+        else { return cards }
+        var card = cards[0]
+        card.title = nil
+        return [card]
+    }
+
+    private static func normalizedTitle(_ title: String) -> String {
+        title.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     private static func isRowEligible(_ card: CardSpec) -> Bool {

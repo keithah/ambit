@@ -107,6 +107,16 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(card?.title, "lat")
     }
 
+    func testSingleEponymousChildOmitsRepeatedSectionTitle() {
+        let plan = SurfaceComposer.detailPlan(descriptors: [
+            sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu")
+        ], states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertNil(cpu?.children.first?.title)
+    }
+
     func testDisabledOverrideDropsEntity() {
         var config = PresentationConfig.empty
         config.entityOverrides["i/p.latency"] = EntityPresentationOverride(enabled: false)
