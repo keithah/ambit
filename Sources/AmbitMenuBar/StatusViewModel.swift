@@ -44,7 +44,6 @@ final class StatusViewModel: ObservableObject {
     @Published var pingRange: TimeRange = .fiveMinutes {
         didSet { UserDefaults.standard.set(pingRange.rawValue, forKey: "pingRange") }
     }
-    @Published var pingHostRows: [PingHostRow] = []
     @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
     /// Per-slot surface values (plan + data + glyph + hostOptions), keyed by SlotID.
     @Published var slotSurfaces: [SlotID: SlotSurface] = [:]
@@ -60,13 +59,6 @@ final class StatusViewModel: ObservableObject {
     private let pingDiagnoser = NetworkPerspectiveDiagnoser()
     private let pingTierClassifier = NetworkTierClassifier()
     private var pingAlertMonitor = PingAlertMonitor()
-
-    @Published var diagnosisSensitivity: DiagnosisSensitivity = .balanced {
-        didSet {
-            pingAlertMonitor.sensitivity = diagnosisSensitivity
-            UserDefaults.standard.set(diagnosisSensitivity.rawValue, forKey: "pingDiagnosisSensitivity")
-        }
-    }
 
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
@@ -109,11 +101,6 @@ final class StatusViewModel: ObservableObject {
         Self.migrateRetiredPingscopeRecords(integrationRegistry)
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
         Self.dedupePingHostsByAddress(integrationRegistry)
-        if let raw = UserDefaults.standard.string(forKey: "pingDiagnosisSensitivity"),
-           let sensitivity = DiagnosisSensitivity(rawValue: raw) {
-            diagnosisSensitivity = sensitivity
-            pingAlertMonitor.sensitivity = sensitivity
-        }
         if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
             pingRange = range
         }
@@ -501,21 +488,14 @@ final class StatusViewModel: ObservableObject {
         Task { await refreshPing() }
     }
 
-    /// Rebuild per-host rows + diagnosis/alerts (settings), then build per-slot surfaces.
+    /// Rebuild diagnosis/alerts, then build per-slot surfaces.
     func refreshPing() async {
         let now = Date()
         let allRegistryRecords = (try? integrationRegistry.instances()) ?? []
         let allRecords = allRegistryRecords.filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
-        let primaryID = (try? integrationRegistry.primaryInstanceID()) ?? nil
         let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
-        let fallbackPrimary = primaryID ?? activeRecords.first?.id
-
-        // All hosts (enabled + disabled) for the Settings list.
-        pingHostRows = allRecords.compactMap { record in
-            guard let config = PingHostConfig(configObject: record.config) else { return nil }
-            return PingHostRow(instanceID: record.id, config: config, enabled: record.enabled, isPrimary: record.id == fallbackPrimary)
-        }
+        pingAlertMonitor.sensitivity = Self.diagnosisSensitivity(from: activeRecords)
 
         // Active hosts: per-host readout for diagnosis + alert inputs.
         var diagnosisHosts: [DiagnosisHost] = []
@@ -701,6 +681,20 @@ final class StatusViewModel: ObservableObject {
             registryRecords: records,
             config: configStore.load()
         )
+        reloadProvidersAndRefresh()
+    }
+
+    func deleteIntegrationInstance(_ id: IntegrationInstanceID) throws {
+        try integrationRegistry.remove(id)
+        if (try? integrationRegistry.primaryInstanceID()) == id {
+            try? integrationRegistry.setPrimaryInstanceID(nil)
+        }
+        let records = (try? integrationRegistry.instances()) ?? []
+        rebuildPresentationSettings(
+            registryRecords: records,
+            config: configStore.load()
+        )
+        reloadProvidersAndRefresh()
     }
 
     private func mutateEntityOverride(
@@ -885,47 +879,15 @@ final class StatusViewModel: ObservableObject {
         return state
     }
 
-    // MARK: Ping host management (Settings)
-
-    func addOrUpdatePingHost(_ host: PingHostConfig, replacing oldID: IntegrationInstanceID? = nil) {
-        if let oldID, oldID != host.integrationInstanceID { try? integrationRegistry.remove(oldID) }
-        try? integrationRegistry.upsert(.ping(host))
-        reloadPingProviders()
+    nonisolated private static func diagnosisSensitivity(from records: [IntegrationInstanceRecord]) -> DiagnosisSensitivity {
+        let values = records.compactMap { $0.config["diagnosisSensitivity"]?.stringValue }
+        if values.contains("aggressive") { return .sensitive }
+        if values.contains("standard") { return .balanced }
+        if values.contains("conservative") { return .conservative }
+        return .balanced
     }
 
-    func deletePingHost(_ id: IntegrationInstanceID) {
-        try? integrationRegistry.remove(id)
-        if (try? integrationRegistry.primaryInstanceID()) == id { try? integrationRegistry.setPrimaryInstanceID(nil) }
-        reloadPingProviders()
-    }
-
-    func setPrimaryPingHost(_ id: IntegrationInstanceID) {
-        try? integrationRegistry.setPrimaryInstanceID(id)
-        reloadPingProviders()
-    }
-
-    func setPingHostEnabled(_ id: IntegrationInstanceID, enabled: Bool) {
-        try? integrationRegistry.setInstanceEnabled(enabled, instanceID: id)
-        reloadPingProviders()
-    }
-
-    func clearHistory() {
-        Task { await engine.clearHistory(); await refreshPing() }
-    }
-
-    func resetPingHostsToDefaults() {
-        let others = ((try? integrationRegistry.instances()) ?? []).filter { $0.integrationID != IntegrationIDs.ping }
-        let defaults = [
-            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
-            PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
-        ].map { IntegrationInstanceRecord.ping($0) }
-        try? integrationRegistry.save(others + defaults)
-        try? integrationRegistry.setPrimaryInstanceID(nil)
-        reloadPingProviders()
-        Task { await seedGatewayHostIfNeeded() }
-    }
-
-    private func reloadPingProviders() {
+    private func reloadProvidersAndRefresh() {
         Task {
             await engine.reloadProviders()
             await refreshAlertRules()

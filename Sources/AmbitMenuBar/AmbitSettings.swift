@@ -163,7 +163,7 @@ struct IntegrationConfigFormModel: Equatable, Sendable {
         schema.fields.compactMap(validate)
     }
 
-    func draft(integrationID: IntegrationID, replacing id: IntegrationInstanceID) -> IntegrationInstanceDraft {
+    func draft(integrationID: IntegrationID, replacing id: IntegrationInstanceID?) -> IntegrationInstanceDraft {
         IntegrationInstanceDraft(integrationID: integrationID, replacing: id, values: values)
     }
 
@@ -249,15 +249,32 @@ private struct IntegrationConfigForm: View {
                     .foregroundStyle(.red)
             }
 
-            Button("Save") {
-                do {
-                    try viewModel.saveIntegrationInstanceDraft(model.draft(integrationID: group.integrationID, replacing: group.id))
-                    saveError = nil
-                } catch {
-                    saveError = error.localizedDescription
+            HStack(spacing: 10) {
+                Button("Save") {
+                    save(replacing: group.id)
+                }
+                Button("Add") {
+                    save(replacing: nil)
+                }
+                Button("Delete", role: .destructive) {
+                    do {
+                        try viewModel.deleteIntegrationInstance(group.id)
+                        saveError = nil
+                    } catch {
+                        saveError = error.localizedDescription
+                    }
                 }
             }
             .disabled(!model.validationErrors.isEmpty)
+        }
+    }
+
+    private func save(replacing id: IntegrationInstanceID?) {
+        do {
+            try viewModel.saveIntegrationInstanceDraft(model.draft(integrationID: group.integrationID, replacing: id))
+            saveError = nil
+        } catch {
+            saveError = error.localizedDescription
         }
     }
 
