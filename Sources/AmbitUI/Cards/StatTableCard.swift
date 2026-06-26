@@ -50,15 +50,16 @@ public struct StatTableCard: View {
 
         public var columns: [Column]
         public var rows: [RenderedRow]
+        public static let defaultRowLimit = 5
 
         public init(columns: [Column], rows: [RenderedRow]) {
             self.columns = columns
             self.rows = rows
         }
 
-        public init(table: TableValue) {
+        public init(table: TableValue, rowLimit: Int = defaultRowLimit) {
             self.columns = table.columns.map { Column(id: $0.id, title: $0.title, alignment: $0.alignment) }
-            self.rows = table.rows.map { row in
+            self.rows = table.rows.prefix(max(0, rowLimit)).map { row in
                 RenderedRow(
                     id: row.id,
                     cells: table.columns.map { column in
