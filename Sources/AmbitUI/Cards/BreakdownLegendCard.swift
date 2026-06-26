@@ -56,6 +56,6 @@ public struct BreakdownLegendCard: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

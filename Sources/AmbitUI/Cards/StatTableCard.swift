@@ -123,8 +123,7 @@ public struct StatTableCard: View {
                 legacyBody
             }
         }
-        .background(Color(white: 0.085), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08)))
+        .cardChrome()
     }
 
     @ViewBuilder
@@ -150,7 +149,7 @@ public struct StatTableCard: View {
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(index.isMultiple(of: 2) ? Color.clear : Color(white: 0.11))
+            .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))
         }
     }
 
@@ -162,7 +161,7 @@ public struct StatTableCard: View {
                 Text(row.value).font(.system(size: 13, design: .monospaced))
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(index.isMultiple(of: 2) ? Color.clear : Color(white: 0.11))
+            .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))
         }
     }
 }

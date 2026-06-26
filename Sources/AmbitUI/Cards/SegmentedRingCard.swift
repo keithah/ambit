@@ -109,15 +109,15 @@ public struct SegmentedRingCard: View {
             if let title, !title.isEmpty {
                 Text(title).font(.system(size: 13, weight: .semibold))
             }
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .center, spacing: 13) {
                 ZStack {
                     ring
                     if let center = model.centerReadout {
                         Text(center)
-                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
                     }
                 }
-                .frame(width: 78, height: 78)
+                .frame(width: 84, height: 84)
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array(model.segments.enumerated()), id: \.element.id) { index, segment in
                         HStack(spacing: 7) {
@@ -130,13 +130,13 @@ public struct SegmentedRingCard: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 
     private var ring: some View {
         Canvas { context, size in
             let rect = CGRect(origin: .zero, size: size).insetBy(dx: 6, dy: 6)
-            let lineWidth: CGFloat = 8
+            let lineWidth: CGFloat = 9
             var track = Path()
             track.addArc(
                 center: CGPoint(x: rect.midX, y: rect.midY),

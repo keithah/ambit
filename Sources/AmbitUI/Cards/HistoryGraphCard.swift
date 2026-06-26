@@ -52,13 +52,13 @@ public struct HistoryGraphCard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 if !title.isEmpty {
                     Text(title).font(.system(size: 13, weight: .semibold))
                 }
                 Spacer()
-                Text(axisMax.map { EntityReadout.format($0, deviceClass: deviceClass, unit: unit) } ?? "—").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text(axisMax.map { EntityReadout.format($0, deviceClass: deviceClass, unit: unit) } ?? "—").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
             }
             Canvas { context, size in
                 for fraction in [0.0, 0.5, 1.0] {
@@ -75,10 +75,10 @@ public struct HistoryGraphCard: View {
                     for (index, point) in pts.enumerated() {
                         if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
                     }
-                    context.stroke(path, with: .color(line.color), lineWidth: 1.5)
+                    context.stroke(path, with: .color(line.color), lineWidth: 1.8)
                 }
             }
-            .frame(height: 130)
+            .frame(height: 112)
             .overlay {
                 if !hasDrawableSeries {
                     Text("No Data")
@@ -97,13 +97,13 @@ public struct HistoryGraphCard: View {
                 }
             }
             if !summary.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(stride(from: 0, to: summary.count, by: 3)), id: \.self) { start in
-                        HStack(spacing: 18) {
+                        HStack(spacing: 14) {
                             ForEach(summary[start..<min(start + 3, summary.count)], id: \.label) { item in
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.label).font(.system(size: 11)).foregroundStyle(.secondary)
-                                    Text(item.value).font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                    Text(item.label).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    Text(item.value).font(.system(size: 13.5, weight: .semibold, design: .monospaced))
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -113,6 +113,6 @@ public struct HistoryGraphCard: View {
                 .padding(.top, 2)
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

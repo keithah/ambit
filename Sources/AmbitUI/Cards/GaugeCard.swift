@@ -22,6 +22,7 @@ public struct GaugeCard: View {
                 Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .cardChrome()
     }
 }

@@ -29,6 +29,8 @@ public extension DisplayTone {
 
 /// Deterministic per-line colors for multi-series graphs (harvested from pingscope's palette).
 public enum Theme {
+    public static let cardFill = Color(red: 0.082, green: 0.084, blue: 0.092)
+    public static let cardStroke = Color.white.opacity(0.075)
     public static let linePalette: [Color] = [
         Color(red: 0.23, green: 0.51, blue: 0.96),  // blue
         Color(red: 0.20, green: 0.78, blue: 0.35),  // green

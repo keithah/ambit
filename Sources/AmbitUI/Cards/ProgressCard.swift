@@ -21,6 +21,6 @@ public struct ProgressCard: View {
             ProgressView(value: readout.fraction ?? 0)
                 .tint(readout.tone.color)
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

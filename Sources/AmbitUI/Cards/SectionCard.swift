@@ -9,13 +9,14 @@ public struct SectionCard<Content: View>: View {
         self.content = content()
     }
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let title {
                 Text(title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
             }
             content
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
     }
 }

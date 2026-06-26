@@ -6,16 +6,16 @@ import AmbitCore
 public struct ControlCard: View {
     let descriptor: EntityDescriptor
     let state: EntityState?
-    let onToggle: (Bool) -> Void
-    let onSelect: (String) -> Void
-    let onButton: () -> Void
-    let onNumber: (Double) -> Void
+    let onToggle: @Sendable (Bool) -> Void
+    let onSelect: @Sendable (String) -> Void
+    let onButton: @Sendable () -> Void
+    let onNumber: @Sendable (Double) -> Void
 
     public init(descriptor: EntityDescriptor, state: EntityState?,
-                onToggle: @escaping (Bool) -> Void = { _ in },
-                onSelect: @escaping (String) -> Void = { _ in },
-                onButton: @escaping () -> Void = {},
-                onNumber: @escaping (Double) -> Void = { _ in }) {
+                onToggle: @escaping @Sendable (Bool) -> Void = { _ in },
+                onSelect: @escaping @Sendable (String) -> Void = { _ in },
+                onButton: @escaping @Sendable () -> Void = {},
+                onNumber: @escaping @Sendable (Double) -> Void = { _ in }) {
         self.descriptor = descriptor
         self.state = state
         self.onToggle = onToggle
@@ -64,6 +64,6 @@ public struct ControlCard: View {
                 EmptyView()
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

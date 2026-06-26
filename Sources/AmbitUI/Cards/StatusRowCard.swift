@@ -19,6 +19,6 @@ public struct StatusRowCard: View {
             Text(readout.text).font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(readout.tone == .neutral ? Color.primary : readout.tone.color)
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

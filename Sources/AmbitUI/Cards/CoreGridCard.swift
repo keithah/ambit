@@ -58,22 +58,22 @@ public struct CoreGridCard: View {
             if let title, !title.isEmpty {
                 Text(title).font(.system(size: 13, weight: .semibold))
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 38), spacing: 7)], spacing: 8) {
                 ForEach(model.cells) { cell in
                     VStack(spacing: 4) {
                         ZStack(alignment: .bottom) {
-                            RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08))
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.08))
+                            RoundedRectangle(cornerRadius: 5)
                                 .fill(cell.tone.color.opacity(cell.isUnavailable ? 0.18 : 0.85))
-                                .frame(height: 32 * CGFloat(cell.fraction ?? 0))
+                                .frame(height: 30 * CGFloat(cell.fraction ?? 0))
                         }
-                        .frame(height: 32)
+                        .frame(height: 30)
                         Text(cell.label).font(.system(size: 9.5)).foregroundStyle(.secondary).lineLimit(1)
                         Text(cell.readout).font(.system(size: 9.5, design: .monospaced)).lineLimit(1)
                     }
                 }
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }
