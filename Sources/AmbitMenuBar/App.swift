@@ -62,7 +62,7 @@ private final class MenuBarAppModel: ObservableObject {
         let viewModel = StatusViewModel()
         self.viewModel = viewModel
 
-        // Create one StatusBarController per slot. Today there is exactly one (Ping).
+        // Create one StatusBarController per persisted/backfilled slot.
         let controllers = viewModel.slots.map { slot in
             StatusBarController(slotID: slot.id, viewModel: viewModel)
         }

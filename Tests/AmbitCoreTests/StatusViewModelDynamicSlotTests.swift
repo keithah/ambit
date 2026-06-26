@@ -324,6 +324,105 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testFirstRunSlotSeedIncludesPingAndEnabledSystemSlot() {
+        let registry = InMemoryIntegrationRegistry(records: [
+            IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System", origin: .builtIn),
+            .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        ])
+        let store = MemoryPresentationConfigStore()
+
+        let viewModel = makeViewModel(configStore: store, integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots, [
+            Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic),
+            Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal), barReadout: .dynamic)
+        ])
+        XCTAssertEqual(store.config.slots, viewModel.slots)
+    }
+
+    @MainActor
+    func testPingOnlyPersistedSlotsBackfillEnabledSystemSlot() {
+        var config = PresentationConfig.empty
+        config.slots = [
+            Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)
+        ]
+        let store = MemoryPresentationConfigStore(config: config)
+        let registry = InMemoryIntegrationRegistry(records: [
+            IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System", origin: .builtIn),
+            .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        ])
+
+        let viewModel = makeViewModel(configStore: store, integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots, [
+            Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic),
+            Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal), barReadout: .dynamic)
+        ])
+        XCTAssertEqual(store.config.slots, viewModel.slots)
+    }
+
+    @MainActor
+    func testSlotBackfillDoesNotDuplicateExistingSystemSlot() {
+        var config = PresentationConfig.empty
+        config.slots = [
+            Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic),
+            Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal), barReadout: .dynamic)
+        ]
+        let store = MemoryPresentationConfigStore(config: config)
+        let registry = InMemoryIntegrationRegistry(records: [
+            IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System", origin: .builtIn),
+            .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        ])
+
+        let viewModel = makeViewModel(configStore: store, integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots, config.slots)
+        XCTAssertEqual(viewModel.slots.filter { $0.id == "system@local" }.count, 1)
+    }
+
+    @MainActor
+    func testSlotBackfillSkipsDisabledSystemIntegrationType() {
+        let registry = InMemoryIntegrationRegistry(
+            records: [
+                IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System", origin: .builtIn),
+                .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+            ],
+            disabledIntegrations: [IntegrationIDs.system]
+        )
+
+        let viewModel = makeViewModel(integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots.map(\.id), ["ping"])
+    }
+
+    @MainActor
+    func testSlotBackfillSkipsDisabledSystemInstance() {
+        let registry = InMemoryIntegrationRegistry(records: [
+            IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System", enabled: false, origin: .builtIn),
+            .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        ])
+
+        let viewModel = makeViewModel(integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots.map(\.id), ["ping"])
+    }
+
+    @MainActor
+    func testSlotBackfillDoesNotCreateSlotsForDisabledLegacyBuiltIns() {
+        let builtIns = BuiltInIntegrationSeed.records(ecoflowEnabled: false, includeActiveMeasurement: true)
+        let registry = InMemoryIntegrationRegistry(
+            records: builtIns + [
+                .ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+            ],
+            disabledIntegrations: BuiltInIntegrationSeed.integrationIDs
+        )
+
+        let viewModel = makeViewModel(integrationRegistry: registry)
+
+        XCTAssertEqual(viewModel.slots.map(\.id), ["ping", "system@local"])
+    }
+
+    @MainActor
     func testStatusViewModelSeedsPresentationSettingsBeforeFirstSnapshot() {
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
         let viewModel = makeViewModel(integrationRegistry: InMemoryIntegrationRegistry(records: [.ping(host)]))

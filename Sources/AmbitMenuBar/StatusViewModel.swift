@@ -22,6 +22,21 @@ private extension EntityPresentationOverride {
     }
 }
 
+private extension Slot {
+    func coversIntegrationRecord(_ record: IntegrationInstanceRecord) -> Bool {
+        switch selection {
+        case .integration(let instanceID):
+            return instanceID == record.id
+        case .integrations(let instanceIDs):
+            return instanceIDs.contains(record.id)
+        case .integrationType(let integrationID):
+            return integrationID == record.integrationID
+        case .capability, .entities:
+            return id.rawValue == record.id.rawValue
+        }
+    }
+}
+
 @MainActor
 final class StatusViewModel: ObservableObject {
     @Published var snapshot = StatusSnapshot()
@@ -95,12 +110,12 @@ final class StatusViewModel: ObservableObject {
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
         self.configStore = configStore
-        self.slots = Self.loadOrSeedSlots(configStore)
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.migrateRetiredPingscopeRecords(integrationRegistry)
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
         Self.dedupePingHostsByAddress(integrationRegistry)
+        self.slots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
         if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
             pingRange = range
         }
@@ -125,16 +140,46 @@ final class StatusViewModel: ObservableObject {
         staleTickTask?.cancel()
     }
 
-    /// Load persisted slots; seed one dedicated Ping slot on first run (parity with today's
-    /// single menu item). `.integrationType` resolves to the live ping hosts, so the slot needs
-    /// no membership maintenance as hosts come and go.
-    private static func loadOrSeedSlots(_ store: any PresentationConfigStore) -> [Slot] {
+    /// Load persisted slots, then backfill enabled built-in integration slots. `.integrationType`
+    /// keeps ping host membership dynamic; single-instance built-ins use `.integration`.
+    ///
+    /// This intentionally runs at launch before AppKit status items are created. If a user deletes
+    /// an auto slot, there is not yet a durable "suppressed auto slot" marker, so an enabled built-in
+    /// integration with no covering slot is re-added on next launch.
+    private static func loadOrSeedSlots(
+        _ store: any PresentationConfigStore,
+        registry: any IntegrationRegistry
+    ) -> [Slot] {
         var config = store.load()
+        let autoRecords = autoSlotRecords(registry: registry)
+        var changed = false
         if config.slots.isEmpty {
-            config.slots = [Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)]
+            config.slots = [pingSlot()]
+            changed = true
+        }
+        for record in autoRecords where !config.slots.contains(where: { $0.coversIntegrationRecord(record) }) {
+            config.slots.append(autoSlot(for: record))
+            changed = true
+        }
+        if changed {
             store.save(config)
         }
         return config.slots
+    }
+
+    private static func pingSlot() -> Slot {
+        Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)
+    }
+
+    private static func autoSlotRecords(registry: any IntegrationRegistry) -> [IntegrationInstanceRecord] {
+        ((try? registry.activeInstances()) ?? [])
+            .filter { record in
+                record.origin == .builtIn && record.integrationID != IntegrationIDs.ping
+            }
+    }
+
+    private static func autoSlot(for record: IntegrationInstanceRecord) -> Slot {
+        Slot(id: SlotID(rawValue: record.id.rawValue), title: record.displayName, selection: .integration(record.id), barReadout: .dynamic)
     }
 
     /// First-run seed: the built-in integrations are listed (so they remain toggleable) but
