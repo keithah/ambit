@@ -168,13 +168,15 @@ public enum SurfaceComposer {
     }
 
     private static func deduplicatingEponymousTitle(in cards: [CardSpec], section: Section) -> [CardSpec] {
-        guard cards.count == 1,
-              let title = cards[0].title,
-              normalizedTitle(title) == normalizedTitle(section.title)
-        else { return cards }
-        var card = cards[0]
-        card.title = nil
-        return [card]
+        let sectionTitle = normalizedTitle(section.title)
+        return cards.map { original in
+            guard let title = original.title, normalizedTitle(title) == sectionTitle else {
+                return original
+            }
+            var card = original
+            card.title = nil
+            return card
+        }
     }
 
     private static func normalizedTitle(_ title: String) -> String {

@@ -132,6 +132,23 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertNil(cpu?.children.first?.title)
     }
 
+    func testEponymousChildTitleIsOmittedInMultiChildSection() {
+        let descriptors = [
+            sensor("User", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu"),
+            sensor("Top CPU", nil, kind: .table, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.title, "CPU")
+        XCTAssertEqual(cpu?.children.map(\.kind), [.dualLineGraph, .gauge, .statTable])
+        XCTAssertNil(cpu?.children[1].title)
+        XCTAssertEqual(cpu?.children[2].title, "Top CPU")
+    }
+
     func testDisabledOverrideDropsEntity() {
         var config = PresentationConfig.empty
         config.entityOverrides["i/p.latency"] = EntityPresentationOverride(enabled: false)
