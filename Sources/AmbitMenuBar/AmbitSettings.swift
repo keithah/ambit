@@ -344,6 +344,7 @@ private struct IntegrationConfigForm: View {
 
 private struct EntitySettingsRowView: View {
     @EnvironmentObject private var viewModel: StatusViewModel
+    @State private var advancedExpanded = false
     let row: EntitySettingsRow
 
     private var readout: EntityReadout {
@@ -351,26 +352,36 @@ private struct EntitySettingsRowView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.descriptor.name)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(row.descriptor.id.rawValue)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.descriptor.name)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(row.descriptor.id.rawValue)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 16)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(readout.text)
+                        .font(.system(size: 14, weight: .semibold))
+                    HStack(spacing: 8) {
+                        Text(row.effectiveVisibility.rawValue.capitalized)
+                        Text(row.state?.availability.rawValue.capitalized ?? "No Data")
+                    }
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    controls
+                }
             }
-            Spacer(minLength: 16)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(readout.text)
-                    .font(.system(size: 14, weight: .semibold))
-                HStack(spacing: 8) {
-                    Text(row.effectiveVisibility.rawValue.capitalized)
-                    Text(row.state?.availability.rawValue.capitalized ?? "No Data")
+
+            if hasAdvancedControls {
+                DisclosureGroup("Advanced", isExpanded: $advancedExpanded) {
+                    advancedControls
+                        .padding(.top, 6)
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                controls
             }
         }
         .padding(.vertical, 10)
@@ -416,6 +427,279 @@ private struct EntitySettingsRowView: View {
             row.override.enabled ?? true
         } set: { isEnabled in
             viewModel.setEntityEnabled(row.id, isEnabled ? nil : false)
+        }
+    }
+
+    private var hasAdvancedControls: Bool {
+        supportsThreshold || supportsGraphStyle || supportsGraphRange || supportsAlertPolicy
+    }
+
+    private var supportsThreshold: Bool {
+        row.descriptor.kind == .sensor || row.descriptor.kind == .number
+    }
+
+    private var supportsGraphStyle: Bool {
+        row.descriptor.kind == .sensor || row.descriptor.kind == .number
+    }
+
+    private var supportsGraphRange: Bool {
+        supportsGraphStyle && graphRanges(for: effectiveGraphStyle).isEmpty == false
+    }
+
+    private var supportsAlertPolicy: Bool {
+        row.descriptor.kind == .sensor || row.descriptor.kind == .binarySensor || row.descriptor.kind == .number
+    }
+
+    private var effectiveGraphStyle: GraphStyle? {
+        row.override.graphStyle ?? row.descriptor.graphStyle
+    }
+
+    private var effectiveThreshold: DisplayThreshold {
+        row.override.displayThreshold ?? row.descriptor.displayThreshold ?? DisplayThreshold(comparison: .greaterThan, value: 0, consecutive: 1)
+    }
+
+    private var effectiveAlertPolicy: AlertPolicy {
+        row.override.alertPolicy ?? .preset(.balanced)
+    }
+
+    private var advancedControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if supportsThreshold {
+                thresholdControls
+            }
+            if supportsGraphStyle {
+                graphControls
+            }
+            if supportsAlertPolicy {
+                alertPolicyControls
+            }
+        }
+    }
+
+    private var thresholdControls: some View {
+        HStack(spacing: 8) {
+            Text("Threshold")
+                .frame(width: 90, alignment: .leading)
+            Picker("Comparison", selection: thresholdComparison) {
+                ForEach(AlertComparisonChoice.allCases) { choice in
+                    Text(choice.label).tag(choice.comparison)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 76)
+            TextField("Value", text: thresholdValue)
+                .frame(width: 86)
+            Stepper("Sustained \(effectiveThreshold.consecutive)", value: thresholdConsecutive, in: 1...100)
+                .frame(width: 150)
+            Button("Reset") {
+                viewModel.setEntityDisplayThreshold(row.id, nil)
+            }
+        }
+    }
+
+    private var graphControls: some View {
+        HStack(spacing: 8) {
+            Text("Graph")
+                .frame(width: 90, alignment: .leading)
+            Picker("Style", selection: graphStyleSelection) {
+                Text("Default").tag(GraphStyle?.none)
+                ForEach(GraphStyleChoice.allCases) { choice in
+                    Text(choice.label).tag(Optional(choice.style))
+                }
+            }
+            .labelsHidden()
+            .frame(width: 130)
+
+            if supportsGraphRange {
+                Picker("Range", selection: graphRangeSelection) {
+                    Text("Default").tag(GraphRange?.none)
+                    ForEach(graphRanges(for: effectiveGraphStyle), id: \.self) { range in
+                        Text(range.label).tag(Optional(range))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 100)
+            }
+        }
+    }
+
+    private var alertPolicyControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Alerts")
+                    .frame(width: 90, alignment: .leading)
+                Toggle("Enabled", isOn: alertPolicyEnabled)
+                    .toggleStyle(.checkbox)
+                Picker("Preset", selection: alertPolicyPreset) {
+                    ForEach(AlertPreset.allCases, id: \.self) { preset in
+                        Text(preset.rawValue.capitalized).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+                Button("Reset") {
+                    viewModel.setEntityAlertPolicy(row.id, nil)
+                }
+            }
+            HStack(spacing: 8) {
+                Spacer().frame(width: 90)
+                TextField("Cooldown", text: alertPolicyCooldown)
+                    .frame(width: 86)
+                Toggle("Notify on recovery", isOn: alertPolicyNotifyOnRecovery)
+                    .toggleStyle(.checkbox)
+            }
+        }
+    }
+
+    private var thresholdComparison: Binding<AlertComparison> {
+        Binding {
+            effectiveThreshold.comparison
+        } set: { comparison in
+            var threshold = effectiveThreshold
+            threshold.comparison = comparison
+            viewModel.setEntityDisplayThreshold(row.id, threshold)
+        }
+    }
+
+    private var thresholdValue: Binding<String> {
+        Binding {
+            effectiveThreshold.value.formatted()
+        } set: { value in
+            guard let number = Double(value) else { return }
+            var threshold = effectiveThreshold
+            threshold.value = number
+            viewModel.setEntityDisplayThreshold(row.id, threshold)
+        }
+    }
+
+    private var thresholdConsecutive: Binding<Int> {
+        Binding {
+            effectiveThreshold.consecutive
+        } set: { consecutive in
+            var threshold = effectiveThreshold
+            threshold.consecutive = consecutive
+            viewModel.setEntityDisplayThreshold(row.id, threshold)
+        }
+    }
+
+    private var graphStyleSelection: Binding<GraphStyle?> {
+        Binding {
+            row.override.graphStyle
+        } set: { style in
+            viewModel.setEntityGraphStyle(row.id, style)
+        }
+    }
+
+    private var graphRangeSelection: Binding<GraphRange?> {
+        Binding {
+            row.override.graphRange
+        } set: { range in
+            viewModel.setEntityGraphRange(row.id, range)
+        }
+    }
+
+    private var alertPolicyPreset: Binding<AlertPreset> {
+        Binding {
+            effectiveAlertPolicy.preset
+        } set: { preset in
+            viewModel.setEntityAlertPolicy(row.id, .preset(preset))
+        }
+    }
+
+    private var alertPolicyEnabled: Binding<Bool> {
+        Binding {
+            effectiveAlertPolicy.enabled
+        } set: { enabled in
+            var policy = effectiveAlertPolicy
+            policy.enabled = enabled
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private var alertPolicyCooldown: Binding<String> {
+        Binding {
+            effectiveAlertPolicy.cooldown.formatted()
+        } set: { value in
+            guard let number = Double(value) else { return }
+            var policy = effectiveAlertPolicy
+            policy.cooldown = number
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private var alertPolicyNotifyOnRecovery: Binding<Bool> {
+        Binding {
+            effectiveAlertPolicy.notifyOnRecovery
+        } set: { notify in
+            var policy = effectiveAlertPolicy
+            policy.notifyOnRecovery = notify
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private func graphRanges(for style: GraphStyle?) -> [GraphRange] {
+        switch style {
+        case .sparkline, nil:
+            return GraphRange.allCases
+        case .gauge, .progress, .some(.none):
+            return []
+        }
+    }
+}
+
+private enum AlertComparisonChoice: CaseIterable, Identifiable {
+    case greaterThan
+    case lessThan
+    case equal
+    case notEqual
+
+    var id: Self { self }
+
+    var comparison: AlertComparison {
+        switch self {
+        case .greaterThan: return .greaterThan
+        case .lessThan: return .lessThan
+        case .equal: return .equal
+        case .notEqual: return .notEqual
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .greaterThan: return ">"
+        case .lessThan: return "<"
+        case .equal: return "=="
+        case .notEqual: return "!="
+        }
+    }
+}
+
+private enum GraphStyleChoice: CaseIterable, Identifiable {
+    case sparkline
+    case gauge
+    case progress
+    case none
+
+    var id: Self { self }
+
+    var style: GraphStyle {
+        switch self {
+        case .sparkline: return .sparkline
+        case .gauge: return .gauge
+        case .progress: return .progress
+        case .none: return .none
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .sparkline: return "Sparkline"
+        case .gauge: return "Gauge"
+        case .progress: return "Progress"
+        case .none: return "None"
         }
     }
 }

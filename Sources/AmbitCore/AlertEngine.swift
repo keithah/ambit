@@ -236,6 +236,7 @@ public enum AlertComparison: String, Codable, Equatable, Sendable {
     case lessThan
     case lessThanOrEqual
     case equal
+    case notEqual
 
     func matches(_ value: Double, threshold: Double) -> Bool {
         switch self {
@@ -244,6 +245,7 @@ public enum AlertComparison: String, Codable, Equatable, Sendable {
         case .lessThan: return value < threshold
         case .lessThanOrEqual: return value <= threshold
         case .equal: return value == threshold
+        case .notEqual: return value != threshold
         }
     }
 }

@@ -393,6 +393,80 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testAdvancedEntityOverridesPersistAndResetCleanly() {
+        let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [
+                ProviderInstanceIDs.systemOverview: [
+                    EntityDescriptor(
+                        id: id,
+                        instanceID: ProviderInstanceIDs.systemOverview,
+                        name: "CPU",
+                        kind: .sensor,
+                        deviceClass: .percent,
+                        defaultVisibility: .auto
+                    )
+                ]
+            ],
+            states: [:],
+            config: .empty
+        )
+
+        let threshold = DisplayThreshold(comparison: .greaterThan, value: 85, consecutive: 3)
+        let policy = AlertPolicy(preset: .verbose, enabled: true, cooldown: 60, notifyOnRecovery: false)
+
+        viewModel.setEntityDisplayThreshold(id, threshold)
+        viewModel.setEntityGraphRange(id, .m10)
+        viewModel.setEntityGraphStyle(id, .gauge)
+        viewModel.setEntityAlertPolicy(id, policy)
+
+        XCTAssertEqual(store.config.entityOverrides[id]?.displayThreshold, threshold)
+        XCTAssertEqual(store.config.entityOverrides[id]?.graphRange, .m10)
+        XCTAssertEqual(store.config.entityOverrides[id]?.graphStyle, .gauge)
+        XCTAssertEqual(store.config.entityOverrides[id]?.alertPolicy, policy)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].override.displayThreshold, threshold)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].override.graphRange, .m10)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].override.graphStyle, .gauge)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].override.alertPolicy, policy)
+
+        viewModel.setEntityDisplayThreshold(id, nil)
+        XCTAssertNil(store.config.entityOverrides[id]?.displayThreshold)
+        XCTAssertNotNil(store.config.entityOverrides[id])
+
+        viewModel.setEntityGraphRange(id, nil)
+        viewModel.setEntityGraphStyle(id, nil)
+        viewModel.setEntityAlertPolicy(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id])
+        XCTAssertNil(viewModel.presentationSettings.integrations[0].entities[0].override.displayThreshold)
+        XCTAssertNil(viewModel.presentationSettings.integrations[0].entities[0].override.graphRange)
+        XCTAssertNil(viewModel.presentationSettings.integrations[0].entities[0].override.graphStyle)
+        XCTAssertNil(viewModel.presentationSettings.integrations[0].entities[0].override.alertPolicy)
+    }
+
+    @MainActor
+    func testResettingOneOverrideFieldKeepsOtherFieldsUntilAllAreDefault() {
+        let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setEntityPinned(id, true)
+        viewModel.setEntityGraphRange(id, .h1)
+
+        viewModel.setEntityGraphRange(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id]?.graphRange)
+        XCTAssertEqual(store.config.entityOverrides[id]?.pinned, true)
+
+        viewModel.setEntityPinned(id, nil)
+
+        XCTAssertNil(store.config.entityOverrides[id])
+    }
+
+    @MainActor
     func testSaveIntegrationInstanceDraftRoundTripsThroughRegistry() throws {
         let host = PingHostConfig(displayName: "Old", address: "1.1.1.1", method: .tcp, port: 443)
         let registry = InMemoryIntegrationRegistry(records: [.ping(host)])

@@ -9,6 +9,19 @@ enum IntegrationInstanceDraftError: Error, Equatable {
     case invalidValues
 }
 
+private extension EntityPresentationOverride {
+    var isEmpty: Bool {
+        visibility == nil &&
+            pinned == nil &&
+            displayThreshold == nil &&
+            alertPolicy == nil &&
+            graphStyle == nil &&
+            graphRange == nil &&
+            enabled == nil &&
+            interval == nil
+    }
+}
+
 @MainActor
 final class StatusViewModel: ObservableObject {
     @Published var snapshot = StatusSnapshot()
@@ -588,24 +601,42 @@ final class StatusViewModel: ObservableObject {
     func setEntityVisibility(_ id: EntityID, _ visibility: GlanceVisibility?) {
         mutateEntityOverride(id) { override in
             override.visibility = visibility
-        } reset: {
-            visibility == nil
         }
     }
 
     func setEntityPinned(_ id: EntityID, _ pinned: Bool?) {
         mutateEntityOverride(id) { override in
             override.pinned = pinned
-        } reset: {
-            pinned == nil
         }
     }
 
     func setEntityEnabled(_ id: EntityID, _ enabled: Bool?) {
         mutateEntityOverride(id) { override in
             override.enabled = enabled
-        } reset: {
-            enabled == nil
+        }
+    }
+
+    func setEntityDisplayThreshold(_ id: EntityID, _ threshold: DisplayThreshold?) {
+        mutateEntityOverride(id) { override in
+            override.displayThreshold = threshold
+        }
+    }
+
+    func setEntityGraphRange(_ id: EntityID, _ range: GraphRange?) {
+        mutateEntityOverride(id) { override in
+            override.graphRange = range
+        }
+    }
+
+    func setEntityGraphStyle(_ id: EntityID, _ style: GraphStyle?) {
+        mutateEntityOverride(id) { override in
+            override.graphStyle = style
+        }
+    }
+
+    func setEntityAlertPolicy(_ id: EntityID, _ policy: AlertPolicy?) {
+        mutateEntityOverride(id) { override in
+            override.alertPolicy = policy
         }
     }
 
@@ -674,15 +705,14 @@ final class StatusViewModel: ObservableObject {
 
     private func mutateEntityOverride(
         _ id: EntityID,
-        mutate: (inout EntityPresentationOverride) -> Void,
-        reset: () -> Bool
+        mutate: (inout EntityPresentationOverride) -> Void
     ) {
         var config = configStore.load()
-        if reset() {
+        var override = config.entityOverrides[id] ?? EntityPresentationOverride()
+        mutate(&override)
+        if override.isEmpty {
             config.entityOverrides.removeValue(forKey: id)
         } else {
-            var override = config.entityOverrides[id] ?? EntityPresentationOverride()
-            mutate(&override)
             config.entityOverrides[id] = override
         }
         configStore.save(config)
