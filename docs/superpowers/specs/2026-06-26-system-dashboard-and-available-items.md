@@ -217,18 +217,25 @@ Rules:
 AmbitUI cards receive the resolved axis or resolve it from descriptor + `SurfaceData`; they do
 not special-case system load or network throughput.
 
+Axis resolution is necessary but not sufficient for load. The `overview.load_1m` descriptor
+must not be modeled as `DeviceClass.percent`; it should use a non-percent class such as
+`.count` or a new generic `.level` so sectioning, formatting, summaries, and graph axes agree.
+Tests must assert that load descriptors do not carry percent semantics.
+
 ## Primary Readout Selection
 
-The dynamic attention engine is correct for exceptional states, but a healthy slot also needs a
-stable headline metric. Today the system slot can surface network throughput because throughput
-is a changing measurement and attention has no generic "resting primary" preference strong
-enough to beat it.
+The dynamic attention engine is correct for exceptional states, but a healthy slot must use a
+stable resting headline metric. The current throughput-as-primary bug happens when a healthy
+slot lets attention's lane churn pick a changing measurement, such as network throughput, over
+the descriptor-declared primary entity.
 
 The generic rule:
 
 1. If the slot readout mode is `.fixed`, use that entity.
-2. If an entity is alerted, pinned, or currently surfaced by attention, use the attention result.
-3. For healthy/resting slots, prefer visible descriptors in this order:
+2. If any candidate is genuinely active, use the attention result. "Active" means severity above
+   `.normal`, pinned, alerted, currently debounced/surfaced, or transition-boosted.
+3. If no candidate is active, ignore attention lane churn and resolve the resting primary from
+   visible descriptors in this order:
    - `isPrimary == true`
    - higher `priority`
    - enabled and not `GlanceVisibility.never`
@@ -240,6 +247,14 @@ The generic rule:
 For `system@local`, this should naturally choose CPU because the CPU usage descriptor is primary
 and high priority. Future router or power integrations get the same behavior by marking their
 headline descriptor primary.
+
+The menu-bar glyph (`StatusSlotReadout.resolveGlyph`) and popover header readout
+(`SlotPopover.focusReadout`) must consume the same resolved primary-selection result. They should
+not run parallel selection algorithms that can diverge.
+
+Test expectation: in a healthy slot where CPU is `isPrimary` and network throughput is changing
+but normal severity, both the menu-bar glyph and popover header choose CPU. Throughput wins only
+when it becomes elevated, pinned, alerted, surfaced by debounce, or boosted.
 
 ## Data Source Gaps And Honesty
 
@@ -316,6 +331,10 @@ Examples:
 - `section:<sectionName>` for section containers when needed by settings previews.
 
 The exact stored ID can remain a string as long as it is deterministic and covered by tests.
+Inferred group IDs key on capability plus semantic role, not current membership. For example,
+`group:system.cpu:user-system` should remain stable if a later provider adds another CPU-related
+descriptor, and `group:system.cpu:cores` should survive the core count changing. This prevents a
+saved order from being orphaned when group membership naturally evolves.
 
 ### Slot Customization
 
@@ -333,6 +352,13 @@ the explicit ordered list. `hiddenItems` lets the UI remember intentionally remo
 without deleting the underlying entity override. If a referenced item disappears because an
 integration is disabled or a provider no longer exposes it, the composer skips it; if it returns,
 the stable ID can place it back in the user's order.
+
+Composer states are exact:
+
+- `shownItems == nil && hiddenItems.isEmpty`: pure auto layout.
+- `shownItems == nil && !hiddenItems.isEmpty`: auto layout minus hidden item IDs.
+- `shownItems != nil`: explicit ordered mode. Include only `shownItems` in order; ignore
+  `hiddenItems` for rendering until the user returns the slot to auto mode.
 
 Entity-level overrides remain the source of truth for generic visibility, pinned state, alert
 policy, thresholds, graph style, and enabled/show. Slot customization answers a narrower
@@ -379,6 +405,8 @@ Commit this spec and review it before implementation.
 - Add composer rules for proportional sibling metrics.
 - Add AmbitCore tests for plan generation.
 - Add AmbitUI rendering and small model tests where practical.
+- If memory breakdown reader work has not landed yet, validate the card with representative
+  fake descriptors/states and defer live visual validation to Phase B.
 
 ### Phase A2: `breakdownLegend`
 
@@ -391,6 +419,8 @@ Commit this spec and review it before implementation.
 - Add `CardKind.coreGrid`.
 - Add generic grouping for homogeneous per-core/channel descriptors.
 - Add tests for percent grid and non-percent fallback behavior.
+- If per-core reader work has not landed yet, validate the card with representative fake
+  descriptors/states and defer live visual validation to Phase B.
 
 ### Phase A4: `cardRow`
 
@@ -398,7 +428,7 @@ Commit this spec and review it before implementation.
 - Teach composer to group small gauges/progress cards conservatively.
 - Add tests that row grouping preserves child card identity and section order.
 
-### Phase A5: Generic Data And Rendering Fixes
+### Phase A5a: Generic Model And Rendering Fixes
 
 - Add `GraphAxis` / axis resolver and wire graph cards to it.
 - Fix resting primary readout selection so primary/priority wins when the slot is healthy.
@@ -406,6 +436,9 @@ Commit this spec and review it before implementation.
 - De-duplicate eponymous card labels.
 - Fix `dualLineGraph` series binding.
 - Filter inactive virtual network interfaces from default tables.
+
+### Phase A5b: Public Reader Additions
+
 - Add public readers for uptime, memory pressure, memory breakdown, and per-core CPU.
 
 ### Phase B: AmbitUI Dashboard Polish
@@ -429,6 +462,9 @@ Commit this spec and review it before implementation.
   needed for composition.
 - Axis resolver tests cover percent, battery, load/level, throughput, latency, empty samples,
   and descriptor ranges.
+- Descriptor tests assert load is modeled as a non-percent device class.
+- Slot readout tests assert that healthy normal-severity throughput does not beat a primary CPU
+  descriptor, and that the menu-bar glyph and popover header consume the same resolved primary.
 - Provider tests use fake readers for uptime, memory pressure, per-core CPU, and sensor/fan
   unavailable behavior.
 - AmbitUI tests cover view-model transforms where possible; final visual quality is validated
