@@ -44,7 +44,7 @@ public enum SurfaceComposer {
         for section in Section.allCases {
             guard let group = bySection[section], !group.isEmpty else { continue }
             let ordered = group.sorted(by: ordering)
-            let children = buildCards(for: ordered, states: states, config: config)
+            let children = groupRows(in: buildCards(for: ordered, states: states, config: config), section: section)
             let role: CardRole = ordered.contains(where: \.isPrimary) ? .primary : .secondary
             cards.append(CardSpec(id: "section.\(section.title)", kind: .section,
                                   title: section.title, children: children, role: role))
@@ -122,6 +122,48 @@ public enum SurfaceComposer {
             }
         }
         return result
+    }
+
+    private static func groupRows(in cards: [CardSpec], section: Section) -> [CardSpec] {
+        var result: [CardSpec] = []
+        var buffer: [CardSpec] = []
+        var rowIndex = 0
+
+        func flushBuffer() {
+            while buffer.count >= 2 {
+                let rowChildren = Array(buffer.prefix(min(3, buffer.count)))
+                buffer.removeFirst(rowChildren.count)
+                result.append(CardSpec(
+                    id: "row:\(section.title):\(rowIndex)",
+                    kind: .cardRow,
+                    children: rowChildren,
+                    role: rowChildren.contains(where: { $0.role == .primary }) ? .primary : .secondary
+                ))
+                rowIndex += 1
+            }
+            if buffer.count == 1 {
+                result.append(buffer.removeFirst())
+            }
+        }
+
+        for card in cards {
+            if isRowEligible(card) {
+                buffer.append(card)
+            } else {
+                flushBuffer()
+                result.append(card)
+            }
+        }
+        flushBuffer()
+        return result
+    }
+
+    private static func isRowEligible(_ card: CardSpec) -> Bool {
+        switch card.kind {
+        case .gauge, .progress: return true
+        case .statusRow, .historyGraph, .dualLineGraph, .segmentedRing, .breakdownLegend, .coreGrid, .statTable, .control, .instanceSelector, .section, .statusBanner, .cardRow:
+            return false
+        }
     }
 
     private static func segmentedRingGroups(in ordered: [EntityDescriptor], states: [EntityID: EntityState], config: PresentationConfig) -> [[EntityDescriptor]] {

@@ -149,6 +149,14 @@ Binding rule:
 - `CardSpec.children = [CardSpec]`
 - Child cards remain normal card specs and are independently testable.
 - `CardSpec.entities` is empty for the row container.
+- Phase A4 rows are within-section only. Cross-section pairings, such as CPU pressure beside
+  memory, are deferred until a later generic pairing hint exists.
+- Row-eligible leaf cards are small/bounded cards: `gauge` and `progress`. Full-width cards
+  (`historyGraph`, `dualLineGraph`, `statTable`, `coreGrid`, `segmentedRing`, and
+  `breakdownLegend`) are not row-grouped.
+- Rows contain two or three eligible siblings. One leftover eligible card stays full width.
+- Stable row IDs use `row:<section-title>:<index>`, where index is the zero-based row batch
+  within that section. Children retain their own stable card IDs for Phase C customization.
 
 `cardRow` is preferred over adding ad hoc grouping fields to leaf cards because the existing
 section model already uses container children. It also keeps layout decisions in the plan where

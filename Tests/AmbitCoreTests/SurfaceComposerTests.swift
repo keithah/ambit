@@ -239,7 +239,8 @@ final class SurfaceComposerTests: XCTestCase {
         let kinds = plan.cards.flatMap(\.children).map(\.kind)
         XCTAssertFalse(kinds.contains(.segmentedRing))
         XCTAssertFalse(kinds.contains(.breakdownLegend))
-        XCTAssertEqual(kinds, [.progress, .progress, .progress])
+        XCTAssertEqual(kinds, [.cardRow])
+        XCTAssertEqual(plan.cards.flatMap(\.children).first?.children.map(\.kind), [.progress, .progress, .progress])
     }
 
     func testSegmentedRingIDIncludesGroupingDiscriminators() {
@@ -296,7 +297,8 @@ final class SurfaceComposerTests: XCTestCase {
         let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
 
         let kinds = plan.cards.flatMap(\.children).map(\.kind)
-        XCTAssertEqual(kinds, [.gauge, .gauge, .gauge])
+        XCTAssertEqual(kinds, [.cardRow])
+        XCTAssertEqual(plan.cards.flatMap(\.children).first?.children.map(\.kind), [.gauge, .gauge, .gauge])
     }
 
     func testCoreGridRendersEvenWhenSomeMembersUnavailable() {
@@ -316,6 +318,64 @@ final class SurfaceComposerTests: XCTestCase {
         let card = plan.cards.flatMap(\.children).first
         XCTAssertEqual(card?.kind, .coreGrid)
         XCTAssertEqual(card?.entities.count, 3)
+    }
+
+    func testSmallBoundedSiblingsGroupIntoCardRowsWithinSection() {
+        let descriptors = [
+            sensor("CPU", .percent, graphStyle: .gauge, isPrimary: true, priority: 4, capability: "system.cpu"),
+            sensor("Pressure", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("Load", .percent, graphStyle: .progress, priority: 2, capability: "system.cpu"),
+            sensor("Memory", .percent, graphStyle: .gauge, priority: 1, capability: "system.memory")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.id, "row:CPU:0")
+        XCTAssertEqual(cpu?.children.first?.entities, [])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), [
+            "card.i/p.CPU", "card.i/p.Pressure", "card.i/p.Load"
+        ])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.kind), [.gauge, .gauge, .progress])
+
+        let memory = plan.cards.first { $0.title == "Memory" }
+        XCTAssertEqual(memory?.children.map(\.kind), [.gauge])
+    }
+
+    func testCardRowLeavesIneligibleCardsFullWidthAndPreservesOrder() {
+        let descriptors = [
+            sensor("Gauge 1", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("History", .latency, stateClass: .measurement, graphStyle: .sparkline, priority: 4, capability: "system.cpu"),
+            sensor("Gauge 2", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("Gauge 3", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 2, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.gauge, .historyGraph, .cardRow])
+        XCTAssertEqual(cpu?.children[0].entities, [descriptors[0].id])
+        XCTAssertEqual(cpu?.children[1].entities, [descriptors[1].id])
+        XCTAssertEqual(cpu?.children[2].children.map(\.id), [
+            "card.i/p.Gauge 2", "card.i/p.Gauge 3"
+        ])
+    }
+
+    func testCardRowCapsAtThreeAndLeavesSingleRemainderFullWidth() {
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("D", .percent, graphStyle: .gauge, priority: 2, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow, .gauge])
+        XCTAssertEqual(cpu?.children[0].children.count, 3)
+        XCTAssertEqual(cpu?.children[1].entities, [descriptors[3].id])
     }
 
     func testControlsAndConfigExclusionSurviveCapabilitySections() {

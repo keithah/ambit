@@ -46,6 +46,13 @@ public struct CardView: View {
                     CardView(spec: child, data: data)
                 }
             }
+        case .cardRow:
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(spec.children) { child in
+                    CardView(spec: child, data: data)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+            }
         case .statusRow:
             if let id = primaryID { StatusRowCard(title: data.title(id), readout: data.readout(id)) }
         case .gauge:
