@@ -353,8 +353,8 @@ does not replace descriptor defaults; it records user intent for one slot.
 ### Stable Surface Item Identity
 
 Cards derived from one or more descriptors need stable IDs so settings can persist inclusion and
-order. Existing `CardSpec.id` strings are already stable for simple cards (`card.<entityID>`) and
-sections. This milestone formalizes that into a `SurfaceItemID` convention:
+order. Existing `CardSpec.id` strings are already stable for simple cards (`card.<entityID>`).
+This milestone formalizes that into a `SurfaceItemID` convention:
 
 ```swift
 public struct SurfaceItemID: StringIdentifier {
@@ -366,7 +366,8 @@ Examples:
 
 - `entity:<entityID>` for a single-entity card.
 - `group:<capability>:<role>` for inferred groups such as CPU user/system or memory breakdown.
-- `section:<sectionName>` for section containers when needed by settings previews.
+- `section:<sectionName>` only for section-wide hiding in `hiddenItems`; sections are not valid
+  `shownItems` entries and are not reordered by the Available Items editor.
 
 The exact stored ID can remain a string as long as it is deterministic and covered by tests.
 Inferred group IDs key on capability plus semantic role, not current membership. For example,
@@ -395,8 +396,9 @@ Composer states are exact:
 
 - `shownItems == nil && hiddenItems.isEmpty`: pure auto layout.
 - `shownItems == nil && !hiddenItems.isEmpty`: auto layout minus hidden item IDs.
-- `shownItems != nil`: explicit ordered mode. Include only `shownItems` in order; ignore
-  `hiddenItems` for rendering until the user returns the slot to auto mode.
+- `shownItems != nil`: explicit ordered mode. Include only leaf `shownItems` (`entity:` and
+  `group:` IDs) in order. Leaf `hiddenItems` are ignored for rendering until the user returns
+  the slot to auto mode; section IDs in `hiddenItems` still hide the whole section.
 
 Entity-level overrides remain the source of truth for generic visibility, pinned state, alert
 policy, thresholds, graph style, and enabled/show. Slot customization answers a narrower
@@ -410,7 +412,7 @@ question: "which cards are on this slot surface, and in what order?"
    rules.
 2. Apply slot customization:
    - If there is no explicit customization, return the default plan.
-   - If `shownItems` exists, include only matching candidate cards in that order.
+   - If `shownItems` exists, include only matching leaf candidate cards in that order.
    - Missing candidate cards are skipped without deleting the stored preference.
    - Keep section grouping coherent after filtering and ordering.
 

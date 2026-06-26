@@ -496,6 +496,65 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(plan.cards.map(\.title), ["CPU"])
     }
 
+    func testSurfaceItemsExposeCanonicalIDsLabelsSectionsAndShownState() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("CPU", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 50, capability: "system.cpu"),
+            sensor("User", .percent, stateClass: .measurement, graphStyle: .sparkline, priority: 40, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, graphStyle: .sparkline, priority: 30, capability: "system.cpu"),
+            sensor("Core 1", .percent, graphStyle: .gauge, priority: 20, capability: "system.cpu", compositionRole: .channel),
+            sensor("Core 2", .percent, graphStyle: .gauge, priority: 19, capability: "system.cpu", compositionRole: .channel),
+            sensor("Core 3", .percent, graphStyle: .gauge, priority: 18, capability: "system.cpu", compositionRole: .channel),
+            sensor("App/Active", .dataSize, graphStyle: .progress, priority: 30, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Wired", .dataSize, graphStyle: .progress, priority: 20, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Compressed", .dataSize, graphStyle: .progress, priority: 10, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Free", .dataSize, graphStyle: .progress, priority: 0, capability: "system.memory", compositionRole: .remainder, unit: "B")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(1), availability: .online))
+        })
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:breakdown")]
+        )
+
+        let items = SurfaceComposer.surfaceItems(descriptors: descriptors, states: states, config: config, slotID: slotID)
+
+        XCTAssertEqual(items.map(\.id.rawValue), [
+            "group:system.cpu:percent:none:cores",
+            "group:system.cpu:percent:none:user-system",
+            "entity:i/p.CPU",
+            "group:system.memory:dataSize:B:segments",
+            "group:system.memory:dataSize:B:breakdown"
+        ])
+        XCTAssertEqual(items.map(\.label), ["CPU Cores", "CPU User/System", "CPU", "Memory breakdown", "Memory breakdown details"])
+        XCTAssertEqual(items.map(\.section), ["CPU", "CPU", "CPU", "Memory", "Memory"])
+        XCTAssertEqual(items.map(\.isShown), [true, true, true, true, false])
+        XCTAssertEqual(items.map(\.isHidden), [false, false, false, false, true])
+    }
+
+    func testSurfaceItemsMatchRenderedLeafIDs() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            shownItems: [SurfaceItemID(rawValue: "entity:i/p.C"), SurfaceItemID(rawValue: "entity:i/p.A")]
+        )
+
+        let items = SurfaceComposer.surfaceItems(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+        let renderedIDs = plan.cards.flatMap(\.children).flatMap { card in
+            card.kind == .cardRow ? card.children.map(\.id) : [card.id]
+        }
+
+        XCTAssertEqual(items.filter(\.isShown).map(\.card.id), renderedIDs)
+        XCTAssertEqual(renderedIDs, ["card.i/p.C", "card.i/p.A"])
+    }
+
     func testControlsAndConfigExclusionSurviveCapabilitySections() {
         let control = EntityDescriptor(
             id: "i/p.toggle",

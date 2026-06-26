@@ -5,6 +5,30 @@ import Foundation
 // UI-free and pure, so AmbitCheck and tests assert layout without SwiftUI.
 
 public enum SurfaceComposer {
+    public struct SurfaceItem: Equatable, Sendable {
+        public var id: SurfaceItemID
+        public var label: String
+        public var section: String
+        public var card: CardSpec
+        public var isShown: Bool
+        public var isHidden: Bool
+
+        public init(
+            id: SurfaceItemID,
+            label: String,
+            section: String,
+            card: CardSpec,
+            isShown: Bool,
+            isHidden: Bool
+        ) {
+            self.id = id
+            self.label = label
+            self.section = section
+            self.card = card
+            self.isShown = isShown
+            self.isHidden = isHidden
+        }
+    }
 
     private enum Section: Int, CaseIterable {
         case cpu, memory, disk, network, power, sensors, fans, state, controls, other
@@ -48,12 +72,13 @@ public enum SurfaceComposer {
             if slotOverride(for: slotID, config: config)?.hiddenItems.contains(sectionItemID(for: section)) == true {
                 continue
             }
-            let leaves = customizedLeaves(
-                buildCards(for: ordered, states: states, config: config),
+            let leaves = sectionSurfaceItems(
                 section: section,
-                slotID: slotID,
-                config: config
-            )
+                ordered: ordered,
+                states: states,
+                config: config,
+                slotID: slotID
+            ).filter(\.isShown).map(\.card)
             guard !leaves.isEmpty else { continue }
             let children = deduplicatingEponymousTitle(
                 in: groupRows(in: leaves, section: section),
@@ -66,28 +91,83 @@ public enum SurfaceComposer {
         return SurfacePlan(cards: cards)
     }
 
+    public static func surfaceItems(
+        descriptors: [EntityDescriptor],
+        states: [EntityID: EntityState],
+        config: PresentationConfig = .empty,
+        slotID: SlotID? = nil
+    ) -> [SurfaceItem] {
+        let visible = descriptors.filter { descriptor in
+            if descriptor.category == .config { return false }
+            if config.entityOverrides[descriptor.id]?.enabled == false { return false }
+            return true
+        }
+
+        var bySection: [Section: [EntityDescriptor]] = [:]
+        for descriptor in visible {
+            bySection[section(for: descriptor), default: []].append(descriptor)
+        }
+
+        return Section.allCases.flatMap { section -> [SurfaceItem] in
+            guard let group = bySection[section], !group.isEmpty else { return [] }
+            let ordered = group.sorted(by: ordering)
+            return sectionSurfaceItems(
+                section: section,
+                ordered: ordered,
+                states: states,
+                config: config,
+                slotID: slotID
+            )
+        }
+    }
+
     private static func slotOverride(for slotID: SlotID?, config: PresentationConfig) -> SlotPresentationOverride? {
         guard let slotID else { return nil }
         return config.slotOverrides[slotID]
     }
 
-    private static func customizedLeaves(
-        _ leaves: [CardSpec],
+    private static func sectionSurfaceItems(
         section: Section,
-        slotID: SlotID?,
-        config: PresentationConfig
-    ) -> [CardSpec] {
-        guard let override = slotOverride(for: slotID, config: config) else { return leaves }
-        let byItemID = Dictionary(uniqueKeysWithValues: leaves.map { (surfaceItemID(for: $0), $0) })
-        if let shownItems = override.shownItems {
-            return shownItems.flatMap { itemID -> [CardSpec] in
-                if itemID == sectionItemID(for: section) { return leaves }
-                guard let card = byItemID[itemID] else { return [] }
-                return [card]
-            }
+        ordered: [EntityDescriptor],
+        states: [EntityID: EntityState],
+        config: PresentationConfig,
+        slotID: SlotID?
+    ) -> [SurfaceItem] {
+        let leaves = buildCards(for: ordered, states: states, config: config)
+        let override = slotOverride(for: slotID, config: config)
+        let sectionHidden = override?.hiddenItems.contains(sectionItemID(for: section)) == true
+        let items = leaves.map { card in
+            let itemID = surfaceItemID(for: card)
+            let hidden = sectionHidden || (override?.hiddenItems.contains(itemID) == true)
+            return SurfaceItem(
+                id: itemID,
+                label: surfaceItemLabel(for: card, section: section),
+                section: section.title,
+                card: card,
+                isShown: !hidden,
+                isHidden: hidden
+            )
         }
-        guard !override.hiddenItems.isEmpty else { return leaves }
-        return leaves.filter { !override.hiddenItems.contains(surfaceItemID(for: $0)) }
+
+        guard let shownItems = override?.shownItems else {
+            return items
+        }
+
+        let byItemID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        let shownIDs = Set(shownItems)
+        let configured = shownItems.compactMap { itemID -> SurfaceItem? in
+            guard var item = byItemID[itemID] else { return nil }
+            // Explicit shownItems is leaf-only and wins over leaf hiddenItems; section hides
+            // remain a coarse opt-out because sections are not persisted as ordered items.
+            item.isShown = !sectionHidden
+            return item
+        }
+        let available = items.filter { !shownIDs.contains($0.id) }.map { item -> SurfaceItem in
+            var item = item
+            item.isShown = false
+            return item
+        }
+        return configured + available
     }
 
     private static func sectionItemID(for section: Section) -> SurfaceItemID {
@@ -102,6 +182,27 @@ public enum SurfaceComposer {
             return SurfaceItemID(rawValue: "entity:\(entityID.rawValue)")
         }
         return SurfaceItemID(rawValue: card.id)
+    }
+
+    private static func surfaceItemLabel(for card: CardSpec, section: Section) -> String {
+        if let title = card.title, !title.isEmpty { return title }
+        switch card.kind {
+        case .segmentedRing:
+            return "\(section.title) breakdown"
+        case .breakdownLegend:
+            return "\(section.title) breakdown details"
+        case .coreGrid:
+            return "\(section.title) Cores"
+        case .dualLineGraph:
+            if card.id.hasSuffix(":user-system") { return "\(section.title) User/System" }
+            return "\(section.title) comparison"
+        default:
+            break
+        }
+        if card.entities.count == 1, let entity = card.entities.first {
+            return entity.rawValue.split(separator: ".").last.map(String.init) ?? card.id
+        }
+        return card.id
     }
 
     private static func section(for d: EntityDescriptor) -> Section {
