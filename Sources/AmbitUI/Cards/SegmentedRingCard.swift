@@ -23,33 +23,71 @@ public struct SegmentedRingCard: View {
         }
 
         public var segments: [Segment]
+        public var remainder: Segment?
+        public var total: Double?
+        public var centerReadout: String?
+        public var isIncomplete: Bool
 
-        public init(segments: [Segment]) {
+        public init(segments: [Segment], remainder: Segment? = nil, total: Double? = nil, centerReadout: String? = nil, isIncomplete: Bool = false) {
             self.segments = segments
+            self.remainder = remainder
+            self.total = total
+            self.centerReadout = centerReadout
+            self.isIncomplete = isIncomplete
         }
 
         public init(entityIDs: [EntityID], data: SurfaceData) {
-            let raw = entityIDs.compactMap { id -> (EntityID, EntityDescriptor, EntityState, Double)? in
+            let raw = entityIDs.map { id -> (EntityID, EntityDescriptor, EntityState, Double)? in
                 guard let descriptor = data.descriptors[id], let state = data.states[id] else { return nil }
                 guard state.availability == .online else { return nil }
                 guard case .number(let value)? = state.value, value.isFinite, value >= 0 else { return nil }
                 return (id, descriptor, state, value)
             }
-            let total = raw.reduce(0) { $0 + $1.3 }
-            guard total > 0 else {
+            guard raw.allSatisfy({ $0 != nil }) else {
                 self.segments = []
+                self.remainder = nil
+                self.total = nil
+                self.centerReadout = nil
+                self.isIncomplete = true
                 return
             }
-            self.segments = raw.map { id, descriptor, state, value in
-                Segment(
-                    id: id.rawValue,
-                    label: descriptor.name,
-                    value: value,
-                    fraction: value / total,
-                    readout: EntityReadout.make(descriptor: descriptor, state: state).text,
-                    tone: EntityReadout.make(descriptor: descriptor, state: state).tone
+            let members = raw.compactMap { $0 }
+            let explicitTotal = members.first { $0.1.compositionRole == .total }
+            let total = explicitTotal?.3 ?? members
+                .filter { $0.1.compositionRole != .total }
+                .reduce(0) { $0 + $1.3 }
+            guard total > 0 else {
+                self.segments = []
+                self.remainder = nil
+                self.total = nil
+                self.centerReadout = nil
+                self.isIncomplete = true
+                return
+            }
+            func segment(from member: (EntityID, EntityDescriptor, EntityState, Double)) -> Segment {
+                let readout = EntityReadout.make(descriptor: member.1, state: member.2)
+                return Segment(
+                    id: member.0.rawValue,
+                    label: member.1.name,
+                    value: member.3,
+                    fraction: Swift.min(Swift.max(member.3 / total, 0), 1),
+                    readout: readout.text,
+                    tone: readout.tone
                 )
             }
+            let colored = members.filter { member in
+                let role = member.1.compositionRole ?? .segment
+                return role == .segment
+            }
+            let remainder = members.first { $0.1.compositionRole == .remainder }.map(segment)
+            let center = members.first { $0.1.compositionRole == .total && $0.1.isPrimary }
+                ?? members.first { $0.1.isPrimary && ($0.1.compositionRole ?? .segment) != .remainder }
+                ?? colored.first
+            self.segments = colored.map(segment)
+            self.remainder = remainder
+            self.total = total
+            self.centerReadout = center.map { EntityReadout.make(descriptor: $0.1, state: $0.2).text }
+            self.isIncomplete = false
         }
     }
 
@@ -67,8 +105,14 @@ public struct SegmentedRingCard: View {
                 Text(title).font(.system(size: 13, weight: .semibold))
             }
             HStack(alignment: .center, spacing: 14) {
-                ring
-                    .frame(width: 78, height: 78)
+                ZStack {
+                    ring
+                    if let center = model.centerReadout {
+                        Text(center)
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    }
+                }
+                .frame(width: 78, height: 78)
                 VStack(alignment: .leading, spacing: 5) {
                     ForEach(Array(model.segments.enumerated()), id: \.element.id) { index, segment in
                         HStack(spacing: 7) {
@@ -88,6 +132,15 @@ public struct SegmentedRingCard: View {
         Canvas { context, size in
             let rect = CGRect(origin: .zero, size: size).insetBy(dx: 6, dy: 6)
             let lineWidth: CGFloat = 8
+            var track = Path()
+            track.addArc(
+                center: CGPoint(x: rect.midX, y: rect.midY),
+                radius: min(rect.width, rect.height) / 2,
+                startAngle: .degrees(-90),
+                endAngle: .degrees(270),
+                clockwise: false
+            )
+            context.stroke(track, with: .color(.white.opacity(model.remainder == nil ? 0.08 : 0.14)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
             var start = Angle(degrees: -90)
             for (index, segment) in model.segments.enumerated() where segment.fraction > 0 {
                 let end = start + Angle(degrees: 360 * segment.fraction)

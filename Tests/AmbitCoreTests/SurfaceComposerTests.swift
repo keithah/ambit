@@ -5,10 +5,13 @@ final class SurfaceComposerTests: XCTestCase {
     private func sensor(_ key: String, _ deviceClass: DeviceClass?, kind: EntityKind = .sensor,
                         stateClass: StateClass? = nil, graphStyle: GraphStyle? = nil,
                         isPrimary: Bool = false, priority: Int? = nil, category: EntityCategory = .primary,
-                        capability: ProviderCapability? = nil) -> EntityDescriptor {
+                        capability: ProviderCapability? = nil,
+                        compositionRole: EntityCompositionRole? = nil,
+                        unit: String? = nil) -> EntityDescriptor {
         EntityDescriptor(id: EntityID(rawValue: "i/p.\(key)"), instanceID: "i/p", name: key, kind: kind,
-                         deviceClass: deviceClass, category: category, capability: capability, stateClass: stateClass,
-                         graphStyle: graphStyle, isPrimary: isPrimary, priority: priority)
+                         deviceClass: deviceClass, category: category, capability: capability, unit: unit,
+                         stateClass: stateClass, graphStyle: graphStyle, isPrimary: isPrimary, priority: priority,
+                         compositionRole: compositionRole)
     }
 
     // Ported from ProviderMetricSectionTests: grouping by classification, deviceClass wins.
@@ -212,13 +215,13 @@ final class SurfaceComposerTests: XCTestCase {
         let memory = plan.cards.first { $0.title == "Memory" }
         XCTAssertEqual(memory?.children.count, 1)
         XCTAssertEqual(memory?.children.first?.kind, .segmentedRing)
-        XCTAssertEqual(memory?.children.first?.id, "group:system.memory:segments")
+        XCTAssertEqual(memory?.children.first?.id, "group:system.memory:dataSize:none:segments")
         XCTAssertEqual(memory?.children.first?.entities.map(\.rawValue), [
             "i/p.App", "i/p.Wired", "i/p.Compressed", "i/p.Free"
         ])
     }
 
-    func testSegmentedRingRequiresAvailableNumericSegments() {
+    func testSegmentedRingRequiresAllWholeMembersAvailable() {
         let descriptors = [
             sensor("App", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
             sensor("Wired", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
@@ -235,6 +238,28 @@ final class SurfaceComposerTests: XCTestCase {
         let kinds = plan.cards.flatMap(\.children).map(\.kind)
         XCTAssertFalse(kinds.contains(.segmentedRing))
         XCTAssertEqual(kinds, [.progress, .progress, .progress])
+    }
+
+    func testSegmentedRingIDIncludesGroupingDiscriminators() {
+        let descriptors = [
+            sensor("MemoryApp", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("MemoryWired", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("MemoryFree", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("PressureApp", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%"),
+            sensor("PressureWired", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%"),
+            sensor("PressureFree", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(1), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let ids = plan.cards.flatMap(\.children).filter { $0.kind == .segmentedRing }.map(\.id)
+        XCTAssertEqual(ids, [
+            "group:system.memory:dataSize:bytes:segments",
+            "group:system.memory:percent:%:segments"
+        ])
     }
 
     func testControlsAndConfigExclusionSurviveCapabilitySections() {

@@ -69,8 +69,22 @@ Binding rule:
 - `CardSpec.entities = [EntityID]` for segment entities.
 - Segment labels come from descriptor names.
 - Segment values come from numeric `EntityState.value`.
-- Segment total comes from either the sum of segment values or a sibling total descriptor when
-  the composer can identify one from the same capability/device class and unit.
+- `.progress` graph style is the descriptor opt-in that lets sibling component metrics group
+  into a segmented ring.
+- The composer only creates a ring for three or more sibling component metrics. Two-part wholes
+  stay as normal progress cards until a stronger generic layout primitive asks for pairing.
+- Whole semantics are descriptor-driven by a generic composition role, not provider names:
+  `.segment`, `.remainder`, or `.total`.
+- Total comes from either the sum of `.segment` values or an explicit `.total` sibling from the
+  same capability/device class/unit group.
+- A `.remainder` sibling represents known unused/free/remaining capacity. It participates in
+  total calculation but renders as the unfilled track rather than a colored slice.
+- The optional center readout comes from an explicit `.total` or `isPrimary` entity when present;
+  otherwise it uses the largest/first segment's readout. This keeps the ring useful without
+  making "memory" a special case.
+- Honesty rule: if a ring group represents a whole and any member needed for that whole is
+  unavailable or non-numeric, the composer must not render a normalized partial full circle. It
+  falls back to per-metric progress cards or an incomplete/unavailable presentation.
 
 ### `breakdownLegend`
 

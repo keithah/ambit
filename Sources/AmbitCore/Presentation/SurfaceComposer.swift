@@ -122,19 +122,15 @@ public enum SurfaceComposer {
             guard descriptor.kind == .sensor else { return false }
             guard effectiveGraphStyle(descriptor, config: config) == .progress else { return false }
             guard descriptor.stateClass == .measurement || descriptor.stateClass == nil else { return false }
-            guard numericOnlineValue(for: descriptor, states: states) != nil else { return false }
             return descriptor.capability != nil && descriptor.deviceClass != nil
         }
         let grouped = Dictionary(grouping: candidates) { descriptor in
-            [
-                descriptor.capability?.rawValue ?? "",
-                descriptor.deviceClass?.rawValue ?? "",
-                descriptor.unit ?? ""
-            ].joined(separator: "|")
+            segmentedRingGroupKey(for: descriptor)
         }
         return grouped.values
             .map { $0.sorted(by: ordering) }
             .filter { $0.count >= 3 }
+            .filter { group in group.allSatisfy { numericOnlineValue(for: $0, states: states) != nil } }
             .sorted { lhs, rhs in
                 guard let a = ordered.firstIndex(where: { $0.id == lhs[0].id }),
                       let b = ordered.firstIndex(where: { $0.id == rhs[0].id }) else { return false }
@@ -143,15 +139,22 @@ public enum SurfaceComposer {
     }
 
     private static func segmentedRingCard(for group: [EntityDescriptor]) -> CardSpec {
-        let capability = group[0].capability?.rawValue ?? "unknown"
         let role: CardRole = group.contains(where: \.isPrimary) ? .primary : .secondary
         return CardSpec(
-            id: "group:\(capability):segments",
+            id: "group:\(segmentedRingGroupKey(for: group[0])):segments",
             kind: .segmentedRing,
             entities: group.map(\.id),
             graphStyle: .progress,
             role: role
         )
+    }
+
+    private static func segmentedRingGroupKey(for descriptor: EntityDescriptor) -> String {
+        [
+            descriptor.capability?.rawValue ?? "unknown",
+            descriptor.deviceClass?.rawValue ?? "none",
+            descriptor.unit ?? "none"
+        ].joined(separator: ":")
     }
 
     private static func numericOnlineValue(for descriptor: EntityDescriptor, states: [EntityID: EntityState]) -> Double? {
