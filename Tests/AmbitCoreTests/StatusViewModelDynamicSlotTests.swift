@@ -265,6 +265,124 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.data.states[cpu.id], states[cpu.id])
     }
 
+    func testHealthyGenericSlotUsesRestingPrimaryOverNormalThroughputForGlyphAndSurfaceSelection() {
+        var engine = AttentionEngine()
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        let states: [EntityID: EntityState] = [
+            cpu.id: state(cpu.id, value: 34, severity: .normal),
+            throughput.id: state(throughput.id, value: 77_000, severity: .normal)
+        ]
+
+        let surface = StatusSlotSurfaceBuilder.genericSurface(
+            slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
+            descriptors: [throughput, cpu],
+            states: states,
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, cpu.id)
+        XCTAssertEqual(surface.glyph.latencyText, "34%")
+    }
+
+    func testActiveThroughputOverridesRestingPrimary() {
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        let candidates = [
+            AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+            AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .elevated))
+        ]
+        var engine = AttentionEngine()
+
+        let elevated = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: candidates,
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: candidates[0].state, throughput.id: candidates[1].state],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(elevated.primaryEntityID, throughput.id)
+
+        var pinnedConfig = PresentationConfig.empty
+        pinnedConfig.entityOverrides[throughput.id] = EntityPresentationOverride(pinned: true)
+        engine = AttentionEngine()
+        let pinned = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [],
+            config: pinnedConfig,
+            now: now,
+            attentionEngine: &engine
+        )
+        XCTAssertEqual(pinned.primaryEntityID, throughput.id)
+
+        engine = AttentionEngine()
+        let alerted = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [throughput.id],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+        XCTAssertEqual(alerted.primaryEntityID, throughput.id)
+    }
+
+    func testBoostedThresholdCrossingOverridesRestingPrimary() {
+        var engine = AttentionEngine()
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        var throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        throughput.displayThreshold = DisplayThreshold(comparison: .greaterThan, value: 10_000, consecutive: 1)
+        let descriptors = [cpu.id: cpu, throughput.id: throughput]
+
+        _ = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 5_000, severity: .normal))
+            ],
+            descriptors: descriptors,
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 5_000, severity: .normal)],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        let boosted = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: descriptors,
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [],
+            config: .empty,
+            now: now.addingTimeInterval(1),
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(boosted.primaryEntityID, throughput.id)
+        XCTAssertEqual(boosted.selection.lanes.first?.reason.transitionBoosted, true)
+    }
+
     func testPresentationSettingsModelIncludesAllRegistryRecordsAndCurrentSlots() {
         let ping = IntegrationInstanceRecord(id: "ping@1.1.1.1:443", integrationID: IntegrationIDs.ping, displayName: "Cloudflare DNS")
         let disabledSystem = IntegrationInstanceRecord(
@@ -687,6 +805,30 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
     private func state(_ id: EntityID, value: Double, severity: Severity) -> EntityState {
         EntityState(id: id, value: .number(value), availability: .online, severity: severity)
+    }
+
+    private func systemMetric(
+        _ key: String,
+        name: String,
+        deviceClass: DeviceClass,
+        instanceID: ProviderInstanceID,
+        isPrimary: Bool = false,
+        priority: Int? = nil
+    ) -> EntityDescriptor {
+        EntityDescriptor(
+            id: EntityID(rawValue: "system@local/\(key)"),
+            instanceID: instanceID,
+            name: name,
+            kind: .sensor,
+            deviceClass: deviceClass,
+            category: .primary,
+            capability: key.contains("network") ? "system.network" : "system.cpu",
+            stateClass: .measurement,
+            defaultVisibility: .auto,
+            graphStyle: deviceClass == .throughput ? .sparkline : .gauge,
+            isPrimary: isPrimary,
+            priority: priority
+        )
     }
 
     private func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {

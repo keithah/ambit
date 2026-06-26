@@ -889,7 +889,7 @@ final class StatusViewModel: ObservableObject {
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
         let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
-        let glyph = StatusSlotReadout.resolveGlyph(
+        let readout = StatusSlotReadout.resolveReadout(
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
@@ -905,7 +905,8 @@ final class StatusViewModel: ObservableObject {
         return SlotSurface(
             plan: SurfacePlan(cards: planCards),
             data: SurfaceData(descriptors: descriptors, states: states, series: series),
-            glyph: glyph,
+            glyph: readout.glyph,
+            primaryEntityID: readout.primaryEntityID,
             hostOptions: hostOptions
         )
     }
@@ -1029,6 +1030,12 @@ final class StatusViewModel: ObservableObject {
     }
 }
 
+struct StatusSlotReadoutResult {
+    var glyph: MenuBarGlyph
+    var primaryEntityID: EntityID?
+    var selection: AttentionSelection
+}
+
 struct StatusSlotReadout {
     private static let surfaceID = SurfaceID(rawValue: "macos.bar")
 
@@ -1058,12 +1065,34 @@ struct StatusSlotReadout {
         now: Date,
         attentionEngine: inout AttentionEngine
     ) -> MenuBarGlyph {
+        resolveReadout(
+            mode: mode,
+            candidates: candidates,
+            descriptors: descriptors,
+            states: states,
+            alertingIDs: alertingIDs,
+            config: config,
+            now: now,
+            attentionEngine: &attentionEngine
+        ).glyph
+    }
+
+    static func resolveReadout(
+        mode: BarReadoutMode,
+        candidates: [AttentionCandidate],
+        descriptors: [EntityID: EntityDescriptor],
+        states: [EntityID: EntityState],
+        alertingIDs: Set<EntityID>,
+        config: PresentationConfig,
+        now: Date,
+        attentionEngine: inout AttentionEngine
+    ) -> StatusSlotReadoutResult {
         switch mode {
         case .fixed(let id):
             if let descriptor = descriptors[id] {
-                return glyph(descriptor: descriptor, state: states[id])
+                return StatusSlotReadoutResult(glyph: glyph(descriptor: descriptor, state: states[id]), primaryEntityID: id, selection: AttentionSelection())
             }
-            return staticFallback(candidates: candidates, states: states)
+            return fallbackResult(candidates: candidates, states: states)
         case .dynamic:
             let selection = resolveSelection(
                 candidates: candidates,
@@ -1072,22 +1101,90 @@ struct StatusSlotReadout {
                 now: now,
                 attentionEngine: &attentionEngine
             )
+
+            let selectedID = activeSelectionID(selection, config: config, alertingIDs: alertingIDs)
+                ?? restingPrimaryID(candidates: candidates, states: states, config: config)
+
             guard
-                let selectedID = selection.lanes.first?.id,
+                let selectedID,
                 let selectedCandidate = candidates.first(where: { $0.descriptor.id == selectedID })
             else {
-                return staticFallback(candidates: candidates, states: states)
+                return fallbackResult(candidates: candidates, states: states, selection: selection)
             }
             let descriptor = descriptors[selectedID] ?? selectedCandidate.descriptor
-            return glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state)
+            return StatusSlotReadoutResult(
+                glyph: glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state),
+                primaryEntityID: selectedID,
+                selection: selection
+            )
         }
     }
 
     private static func staticFallback(candidates: [AttentionCandidate], states: [EntityID: EntityState]) -> MenuBarGlyph {
+        fallbackResult(candidates: candidates, states: states).glyph
+    }
+
+    private static func fallbackResult(
+        candidates: [AttentionCandidate],
+        states: [EntityID: EntityState],
+        selection: AttentionSelection = AttentionSelection()
+    ) -> StatusSlotReadoutResult {
         guard let fallback = (candidates.first { $0.descriptor.isPrimary } ?? candidates.first) else {
-            return MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+            return StatusSlotReadoutResult(glyph: MenuBarGlyph(latencyText: "--ms", tone: .neutral), primaryEntityID: nil, selection: selection)
         }
-        return glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state)
+        return StatusSlotReadoutResult(
+            glyph: glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state),
+            primaryEntityID: fallback.descriptor.id,
+            selection: selection
+        )
+    }
+
+    private static func activeSelectionID(
+        _ selection: AttentionSelection,
+        config: PresentationConfig,
+        alertingIDs: Set<EntityID>
+    ) -> EntityID? {
+        selection.lanes.first { entity in
+            entity.tier == .alerted ||
+            entity.tier == .surfaced ||
+            entity.reason.severity > .normal ||
+            entity.reason.transitionBoosted ||
+            alertingIDs.contains(entity.id) ||
+            (config.entityOverrides[entity.id]?.pinned ?? false)
+        }?.id
+    }
+
+    private static func restingPrimaryID(
+        candidates: [AttentionCandidate],
+        states: [EntityID: EntityState],
+        config: PresentationConfig
+    ) -> EntityID? {
+        let visible = candidates.enumerated().filter { _, candidate in
+            let override = config.entityOverrides[candidate.descriptor.id]
+            return override?.enabled != false && (override?.visibility ?? candidate.descriptor.defaultVisibility) != .never
+        }
+        return visible.sorted { lhs, rhs in
+            let a = lhs.element
+            let b = rhs.element
+            if a.descriptor.isPrimary != b.descriptor.isPrimary {
+                return a.descriptor.isPrimary && !b.descriptor.isPrimary
+            }
+            let aPriority = a.descriptor.priority ?? 0
+            let bPriority = b.descriptor.priority ?? 0
+            if aPriority != bPriority { return aPriority > bPriority }
+            let aAvailability = availabilityRank(states[a.descriptor.id]?.availability ?? a.state.availability)
+            let bAvailability = availabilityRank(states[b.descriptor.id]?.availability ?? b.state.availability)
+            if aAvailability != bAvailability { return aAvailability > bAvailability }
+            return lhs.offset < rhs.offset
+        }.first?.element.descriptor.id
+    }
+
+    private static func availabilityRank(_ availability: Availability) -> Int {
+        switch availability {
+        case .online: return 2
+        case .stale: return 1
+        case .unavailable: return 0
+        }
     }
 
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
@@ -1111,7 +1208,7 @@ enum StatusSlotSurfaceBuilder {
             guard let state = states[descriptor.id] else { return nil }
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
-        let glyph = StatusSlotReadout.resolveGlyph(
+        let readout = StatusSlotReadout.resolveReadout(
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
@@ -1125,7 +1222,8 @@ enum StatusSlotSurfaceBuilder {
         return SlotSurface(
             plan: SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
             data: SurfaceData(descriptors: descriptors, states: states),
-            glyph: glyph,
+            glyph: readout.glyph,
+            primaryEntityID: readout.primaryEntityID,
             hostOptions: []
         )
     }

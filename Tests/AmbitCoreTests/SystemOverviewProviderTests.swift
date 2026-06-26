@@ -12,6 +12,7 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(cpu?.capability, "system.cpu")
         XCTAssertEqual(cpu?.graphStyle, .gauge)
         XCTAssertEqual(cpu?.isPrimary, true)
+        XCTAssertEqual(cpu?.priority, 100)
         XCTAssertEqual(cpu?.defaultVisibility, .auto)
         XCTAssertEqual(cpu?.displayThreshold, DisplayThreshold(comparison: .greaterThan, value: 85, consecutive: 3))
 

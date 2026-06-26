@@ -22,6 +22,7 @@ public struct SystemOverviewProvider: Provider {
             EntityProjection.healthDescriptor(instanceID: instance),
             descriptor("cpu_usage_percent", "CPU", .percent, capability: "system.cpu",
                        graphStyle: .gauge, isPrimary: true,
+                       priority: 100,
                        displayThreshold: DisplayThreshold(comparison: .greaterThan, value: 85, consecutive: 3)),
             descriptor("cpu_user_percent", "User", .percent, capability: "system.cpu"),
             descriptor("cpu_system_percent", "System", .percent, capability: "system.cpu"),
@@ -51,6 +52,7 @@ public struct SystemOverviewProvider: Provider {
         unit: String? = nil,
         graphStyle: GraphStyle? = nil,
         isPrimary: Bool = false,
+        priority: Int? = nil,
         displayThreshold: DisplayThreshold? = nil
     ) -> EntityDescriptor {
         EntityDescriptor(
@@ -68,7 +70,8 @@ public struct SystemOverviewProvider: Provider {
             defaultVisibility: .auto,
             displayThreshold: displayThreshold,
             graphStyle: graphStyle,
-            isPrimary: isPrimary
+            isPrimary: isPrimary,
+            priority: priority
         )
     }
 
