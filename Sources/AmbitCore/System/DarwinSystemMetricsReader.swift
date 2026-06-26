@@ -133,6 +133,7 @@ private extension DarwinSystemMetricsReader {
             totalBytes: totalBytes,
             pressurePercent: pressurePercent,
             appActiveBytes: active,
+            cachedInactiveBytes: inactive,
             freeBytes: min(free, totalBytes)
         )
     }

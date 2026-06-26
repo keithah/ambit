@@ -83,16 +83,44 @@ public struct SegmentedRingCard: View {
             let center = members.first { $0.1.compositionRole == .total && $0.1.isPrimary }
                 ?? members.first { $0.1.isPrimary && ($0.1.compositionRole ?? .segment) != .remainder }
                 ?? colored.first
+            let centerSibling = Self.primaryPercentSibling(for: members, data: data)
             self.segments = colored.map(segment)
             self.remainder = remainder
             self.total = total
-            if let remainder {
+            if let centerSibling {
+                self.centerReadout = EntityReadout.make(descriptor: centerSibling.0, state: centerSibling.1).text
+            } else if let remainder {
                 let usedFraction = Swift.min(Swift.max(1 - remainder.fraction, 0), 1)
                 self.centerReadout = EntityReadout.format(usedFraction * 100, deviceClass: .percent, unit: "%")
             } else {
                 self.centerReadout = center.map { EntityReadout.make(descriptor: $0.1, state: $0.2).text }
             }
             self.isIncomplete = false
+        }
+
+        private static func primaryPercentSibling(
+            for members: [(EntityID, EntityDescriptor, EntityState, Double)],
+            data: SurfaceData
+        ) -> (EntityDescriptor, EntityState)? {
+            guard let capability = members.first?.1.capability else { return nil }
+            let memberIDs = Set(members.map(\.0))
+            let candidates = data.descriptors.values.filter { descriptor in
+                guard !memberIDs.contains(descriptor.id) else { return false }
+                guard descriptor.capability == capability else { return false }
+                guard descriptor.isPrimary else { return false }
+                guard descriptor.graphStyle == .progress else { return false }
+                return descriptor.deviceClass == .percent || descriptor.deviceClass == .battery
+            }
+            for descriptor in candidates.sorted(by: { ($0.priority ?? Int.min) > ($1.priority ?? Int.min) }) {
+                guard
+                    let state = data.states[descriptor.id],
+                    state.availability == .online,
+                    case .number(let value)? = state.value,
+                    value.isFinite
+                else { continue }
+                return (descriptor, state)
+            }
+            return nil
         }
     }
 

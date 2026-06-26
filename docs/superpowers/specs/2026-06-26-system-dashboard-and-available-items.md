@@ -79,9 +79,11 @@ Binding rule:
   same capability/device class/unit group.
 - A `.remainder` sibling represents known unused/free/remaining capacity. It participates in
   total calculation but renders as the unfilled track rather than a colored slice.
-- The optional center readout comes from an explicit `.total` or `isPrimary` entity when present;
-  otherwise it uses the largest/first segment's readout. This keeps the ring useful without
-  making "memory" a special case.
+- The optional center readout comes from a same-capability, online, numeric primary percent or
+  battery sibling when present, even when that sibling is outside the segment group because it
+  uses a different device class. Otherwise it falls back to an explicit `.total` or `isPrimary`
+  group member, and finally to the largest/first segment's readout. This keeps the ring useful
+  without making "memory" a special case.
 - Honesty rule: if a ring group represents a whole and any member needed for that whole is
   unavailable or non-numeric, the composer must not render a normalized partial full circle. It
   falls back to per-metric progress cards or an incomplete/unavailable presentation.
@@ -305,8 +307,10 @@ Public APIs should cover these clean wins:
   `system.memory`.
 - Per-core CPU usage: `host_processor_info` -> homogeneous percent descriptors under
   `system.cpu`, grouped into `coreGrid`.
-- Memory breakdown: VM counters for wired, compressed, free, and a clearly documented
-  app/active approximation. Labels must not imply precision beyond the public data.
+- Memory breakdown: VM counters for wired, compressed, true free, cached/inactive, and a clearly
+  documented app/active approximation. The breakdown must sum to physical RAM by including the
+  cached/inactive public-VM bucket instead of implying that app + wired + compressed + free are
+  the complete whole. Labels must not imply precision beyond the public data.
 
 ### Omit Private Or Fabricated Values
 

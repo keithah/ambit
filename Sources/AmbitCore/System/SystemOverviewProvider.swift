@@ -32,11 +32,12 @@ public struct SystemOverviewProvider: Provider {
                        displayThreshold: DisplayThreshold(comparison: .greaterThan, value: 85, consecutive: 3)),
             descriptor("cpu_user_percent", "User", .percent, capability: "system.cpu"),
             descriptor("cpu_system_percent", "System", .percent, capability: "system.cpu"),
-            descriptor("memory_used_percent", "Memory", .percent, capability: "system.memory", graphStyle: .progress),
+            descriptor("memory_used_percent", "Memory", .percent, capability: "system.memory", graphStyle: .progress, isPrimary: true),
             descriptor("memory_pressure_percent", "Memory Pressure", .percent, capability: "system.memory", graphStyle: .gauge),
             descriptor("memory_app_active_bytes", "App/Active", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 30, compositionRole: .segment),
             descriptor("memory_wired_bytes", "Wired", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 20, compositionRole: .segment),
             descriptor("memory_compressed_bytes", "Compressed", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 10, compositionRole: .segment),
+            descriptor("memory_cached_inactive_bytes", "Cached/Inactive", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 5, compositionRole: .segment),
             descriptor("memory_free_bytes", "Free", .dataSize, capability: "system.memory", unit: "B", graphStyle: .progress, priority: 0, compositionRole: .remainder),
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
@@ -117,6 +118,9 @@ public struct SystemOverviewProvider: Provider {
         }
         metrics.append(Metric(id: "memory_wired_bytes", label: "Wired", value: .level(Double(snapshot.memory.wiredBytes))))
         metrics.append(Metric(id: "memory_compressed_bytes", label: "Compressed", value: .level(Double(snapshot.memory.compressedBytes))))
+        if let cachedInactiveBytes = snapshot.memory.cachedInactiveBytes {
+            metrics.append(Metric(id: "memory_cached_inactive_bytes", label: "Cached/Inactive", value: .level(Double(cachedInactiveBytes))))
+        }
         if let freeBytes = snapshot.memory.freeBytes {
             metrics.append(Metric(id: "memory_free_bytes", label: "Free", value: .level(Double(freeBytes))))
         }

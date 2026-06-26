@@ -107,6 +107,41 @@ final class SegmentedRingCardTests: XCTestCase {
         XCTAssertEqual(model.remainder?.fraction, 0.3)
     }
 
+    func testPrimaryPercentSiblingSuppliesCenterReadout() {
+        let usedPercent = EntityID(rawValue: "system@local/overview.memory_used_percent")
+        let app = EntityID(rawValue: "system@local/overview.memory_app_active_bytes")
+        let cached = EntityID(rawValue: "system@local/overview.memory_cached_inactive_bytes")
+        let free = EntityID(rawValue: "system@local/overview.memory_free_bytes")
+        let descriptors: [EntityID: EntityDescriptor] = [
+            usedPercent: EntityDescriptor(id: usedPercent, instanceID: "system@local/overview", name: "Memory", kind: .sensor,
+                                          deviceClass: .percent, capability: "system.memory", graphStyle: .progress, isPrimary: true),
+            app: EntityDescriptor(id: app, instanceID: "system@local/overview", name: "App/Active", kind: .sensor,
+                                  deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                  graphStyle: .progress, compositionRole: .segment),
+            cached: EntityDescriptor(id: cached, instanceID: "system@local/overview", name: "Cached/Inactive", kind: .sensor,
+                                     deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                     graphStyle: .progress, compositionRole: .segment),
+            free: EntityDescriptor(id: free, instanceID: "system@local/overview", name: "Free", kind: .sensor,
+                                   deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                   graphStyle: .progress, compositionRole: .remainder)
+        ]
+        let states: [EntityID: EntityState] = [
+            usedPercent: EntityState(id: usedPercent, value: .number(98), availability: .online),
+            app: EntityState(id: app, value: .number(4_000_000_000), availability: .online),
+            cached: EntityState(id: cached, value: .number(5_800_000_000), availability: .online),
+            free: EntityState(id: free, value: .number(200_000_000), availability: .online)
+        ]
+
+        let model = SegmentedRingCard.Model(
+            entityIDs: [app, cached, free],
+            data: SurfaceData(descriptors: descriptors, states: states)
+        )
+
+        XCTAssertEqual(model.centerReadout, "98%")
+        XCTAssertEqual(model.remainder?.label, "Free")
+        XCTAssertEqual(model.remainder?.fraction, 0.02)
+    }
+
     func testIncompleteWholeDoesNotProduceMisleadingSegments() {
         let used = EntityID(rawValue: "system@local/overview.memory_used")
         let free = EntityID(rawValue: "system@local/overview.memory_free")

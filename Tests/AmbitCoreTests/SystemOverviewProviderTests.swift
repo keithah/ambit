@@ -35,7 +35,9 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["memory_app_active_bytes"]?.compositionRole, .segment)
         XCTAssertEqual(descriptors["memory_wired_bytes"]?.compositionRole, .segment)
         XCTAssertEqual(descriptors["memory_compressed_bytes"]?.compositionRole, .segment)
+        XCTAssertEqual(descriptors["memory_cached_inactive_bytes"]?.compositionRole, .segment)
         XCTAssertEqual(descriptors["memory_free_bytes"]?.compositionRole, .remainder)
+        XCTAssertEqual(descriptors["memory_used_percent"]?.isPrimary, true)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.deviceClass, .dataSize)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["battery_percent"]?.deviceClass, .battery)
@@ -66,7 +68,8 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("memory_app_active_bytes"), .level(4_000_000_000))
         XCTAssertEqual(snapshot.metricValue("memory_wired_bytes"), .level(2_000_000_000))
         XCTAssertEqual(snapshot.metricValue("memory_compressed_bytes"), .level(1_000_000_000))
-        XCTAssertEqual(snapshot.metricValue("memory_free_bytes"), .level(8_000_000_000))
+        XCTAssertEqual(snapshot.metricValue("memory_cached_inactive_bytes"), .level(7_500_000_000))
+        XCTAssertEqual(snapshot.metricValue("memory_free_bytes"), .level(1_500_000_000))
         XCTAssertEqual(snapshot.metricValue("memory_used_bytes"), .level(8_000_000_000))
         XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(88))
         XCTAssertEqual(snapshot.metricValue("battery_charging"), .bool(true))
@@ -119,8 +122,22 @@ final class SystemOverviewProviderTests: XCTestCase {
             "system@local/overview.memory_app_active_bytes",
             "system@local/overview.memory_wired_bytes",
             "system@local/overview.memory_compressed_bytes",
+            "system@local/overview.memory_cached_inactive_bytes",
             "system@local/overview.memory_free_bytes"
         ])
+    }
+
+    func testMemoryBreakdownSegmentsAndRemainderSumToPhysicalMemory() async {
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        let app = snapshot.metricValue("memory_app_active_bytes")?.numberValue ?? 0
+        let wired = snapshot.metricValue("memory_wired_bytes")?.numberValue ?? 0
+        let compressed = snapshot.metricValue("memory_compressed_bytes")?.numberValue ?? 0
+        let cachedInactive = snapshot.metricValue("memory_cached_inactive_bytes")?.numberValue ?? 0
+        let free = snapshot.metricValue("memory_free_bytes")?.numberValue ?? 0
+
+        XCTAssertEqual(app + wired + compressed + cachedInactive + free, 16_000_000_000)
     }
 
     func testPerCoreDescriptorsComposeIntoCoreGrid() async {
@@ -149,7 +166,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     private static func snapshot() -> SystemMetricsSnapshot {
         SystemMetricsSnapshot(
             cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 4, loadAverages: [1.2, 1.4, 1.6], coreUsagePercents: [10, 20, 30, 40]),
-            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25, appActiveBytes: 4_000_000_000, freeBytes: 8_000_000_000),
+            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25, appActiveBytes: 4_000_000_000, cachedInactiveBytes: 7_500_000_000, freeBytes: 1_500_000_000),
             battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
             uptimeSeconds: 12_345
         )
@@ -164,6 +181,17 @@ private struct FakeOverviewReader: SystemMetricsReading {
 private extension ProviderSnapshot {
     func metricValue(_ id: String) -> MetricValue? {
         metrics.first { $0.id == id }?.value
+    }
+}
+
+private extension MetricValue {
+    var numberValue: Double? {
+        switch self {
+        case .level(let value), .percent(let value):
+            return value
+        default:
+            return nil
+        }
     }
 }
 
