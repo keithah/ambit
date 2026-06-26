@@ -36,9 +36,9 @@ final class SettingsWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Ping Settings"
+        window.title = "Ambit Settings"
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: PingSettings().environmentObject(viewModel))
+        window.contentView = NSHostingView(rootView: AmbitSettings().environmentObject(viewModel))
         window.center()
         return window
     }

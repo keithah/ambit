@@ -265,6 +265,49 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.data.states[cpu.id], states[cpu.id])
     }
 
+    func testPresentationSettingsModelIncludesAllRegistryRecordsAndCurrentSlots() {
+        let ping = IntegrationInstanceRecord(id: "ping@1.1.1.1:443", integrationID: IntegrationIDs.ping, displayName: "Cloudflare DNS")
+        let disabledSystem = IntegrationInstanceRecord(
+            id: IntegrationInstanceIDs.systemLocal,
+            integrationID: IntegrationIDs.system,
+            displayName: "System",
+            enabled: false
+        )
+        let latency = EntityDescriptor(
+            id: "ping@1.1.1.1:443/probe.latency_ms",
+            instanceID: "ping@1.1.1.1:443/probe",
+            name: "Latency",
+            kind: .sensor,
+            deviceClass: .latency,
+            defaultVisibility: .auto
+        )
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            defaultVisibility: .never
+        )
+        var config = PresentationConfig.empty
+        config.slots = [Slot(id: "combined", title: "Combined", selection: .integrations([ping.id, disabledSystem.id]))]
+        config.entityOverrides[cpu.id] = EntityPresentationOverride(visibility: .always)
+
+        let model = StatusViewModel.presentationSettingsModel(
+            registryRecords: [ping, disabledSystem],
+            descriptors: [latency.instanceID: [latency], cpu.instanceID: [cpu]],
+            states: [latency.id: EntityState(id: latency.id, value: .number(12), availability: .online)],
+            config: config
+        )
+
+        XCTAssertEqual(model.integrations.map(\.id), [ping.id, disabledSystem.id])
+        XCTAssertEqual(model.integrations.map(\.enabled), [true, false])
+        XCTAssertEqual(model.integrations[0].entities.map(\.descriptor.id), [latency.id])
+        XCTAssertEqual(model.integrations[1].entities.map(\.descriptor.id), [cpu.id])
+        XCTAssertEqual(model.integrations[1].entities[0].effectiveVisibility, .always)
+        XCTAssertEqual(model.slots, config.slots)
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),

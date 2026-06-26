@@ -30,6 +30,7 @@ final class StatusViewModel: ObservableObject {
     @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
     /// Per-slot surface values (plan + data + glyph + hostOptions), keyed by SlotID.
     @Published var slotSurfaces: [SlotID: SlotSurface] = [:]
+    @Published var presentationSettings = PresentationSettingsModel(integrations: [], slots: [])
     /// Per-slot focused instance (nil = show all resolved instances for the slot).
     @Published var slotFocus: [SlotID: IntegrationInstanceID] = [:]
 
@@ -530,6 +531,12 @@ final class StatusViewModel: ObservableObject {
         // Build per-slot surfaces.
         let allDescriptors = await engine.entityDescriptors()
         let allStates = await engine.entityStates(now: now)
+        presentationSettings = Self.presentationSettingsModel(
+            registryRecords: allRegistryRecords,
+            descriptors: allDescriptors,
+            states: allStates,
+            config: configStore.load()
+        )
         var newSurfaces: [SlotID: SlotSurface] = [:]
 
         for slot in slots {
@@ -546,6 +553,21 @@ final class StatusViewModel: ObservableObject {
             newSurfaces[slot.id] = surface
         }
         slotSurfaces = newSurfaces
+    }
+
+    nonisolated static func presentationSettingsModel(
+        registryRecords: [IntegrationInstanceRecord],
+        descriptors: [ProviderInstanceID: [EntityDescriptor]],
+        states: [EntityID: EntityState],
+        config: PresentationConfig
+    ) -> PresentationSettingsModel {
+        PresentationSettingsModel.build(
+            integrations: registryRecords,
+            descriptors: descriptors,
+            states: states,
+            overrides: config,
+            schemas: [:]
+        )
     }
 
     private func buildSlotSurface(
