@@ -420,6 +420,82 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(cpu?.children[1].entities, [descriptors[3].id])
     }
 
+    func testSlotCustomizationAutoMinusHiddenFiltersLeafCardsAndRegroupsRows() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "entity:i/p.B")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.id, "row:CPU:0")
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), ["card.i/p.A", "card.i/p.C"])
+    }
+
+    func testSlotCustomizationExplicitShownItemsOrdersLeavesAndSkipsMissingIDs() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            shownItems: [
+                SurfaceItemID(rawValue: "entity:i/p.C"),
+                SurfaceItemID(rawValue: "entity:missing"),
+                SurfaceItemID(rawValue: "entity:i/p.A")
+            ],
+            hiddenItems: [SurfaceItemID(rawValue: "entity:i/p.A")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), ["card.i/p.C", "card.i/p.A"])
+    }
+
+    func testSlotCustomizationPureAutoMatchesUncustomizedPlan() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("latency", .latency, stateClass: .measurement, capability: "uplink")
+        ]
+        let auto = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride()
+
+        let customizedAuto = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        XCTAssertEqual(customizedAuto, auto)
+    }
+
+    func testSlotCustomizationCanHideWholeSection() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, capability: "system.memory")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "section:Memory")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        XCTAssertEqual(plan.cards.map(\.title), ["CPU"])
+    }
+
     func testControlsAndConfigExclusionSurviveCapabilitySections() {
         let control = EntityDescriptor(
             id: "i/p.toggle",

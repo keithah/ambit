@@ -845,7 +845,7 @@ final class StatusViewModel: ObservableObject {
 
         if !isPingSlot {
             let config = configStore.load()
-            let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config)
+            let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config, slotID: slot.id)
             let series = await historySeries(for: plan, now: now)
             return StatusSlotSurfaceBuilder.genericSurface(
                 slot: slot,
@@ -894,18 +894,19 @@ final class StatusViewModel: ObservableObject {
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
         let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
+        let config = configStore.load()
         let readout = StatusSlotReadout.resolveReadout(
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
             states: states,
             alertingIDs: alertingIDs,
-            config: configStore.load(),
+            config: config,
             now: now,
             attentionEngine: &attentionEngine
         )
 
-        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states).cards
+        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
 
         return SlotSurface(
             plan: SurfacePlan(cards: planCards),
@@ -1257,7 +1258,7 @@ enum StatusSlotSurfaceBuilder {
         )
 
         return SlotSurface(
-            plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
+            plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config, slotID: slot.id),
             data: SurfaceData(descriptors: descriptors, states: states, series: series),
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,

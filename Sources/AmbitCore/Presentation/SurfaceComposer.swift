@@ -27,7 +27,8 @@ public enum SurfaceComposer {
     public static func detailPlan(
         descriptors: [EntityDescriptor],
         states: [EntityID: EntityState],
-        config: PresentationConfig = .empty
+        config: PresentationConfig = .empty,
+        slotID: SlotID? = nil
     ) -> SurfacePlan {
         let visible = descriptors.filter { descriptor in
             if descriptor.category == .config { return false }
@@ -44,8 +45,18 @@ public enum SurfaceComposer {
         for section in Section.allCases {
             guard let group = bySection[section], !group.isEmpty else { continue }
             let ordered = group.sorted(by: ordering)
+            if slotOverride(for: slotID, config: config)?.hiddenItems.contains(sectionItemID(for: section)) == true {
+                continue
+            }
+            let leaves = customizedLeaves(
+                buildCards(for: ordered, states: states, config: config),
+                section: section,
+                slotID: slotID,
+                config: config
+            )
+            guard !leaves.isEmpty else { continue }
             let children = deduplicatingEponymousTitle(
-                in: groupRows(in: buildCards(for: ordered, states: states, config: config), section: section),
+                in: groupRows(in: leaves, section: section),
                 section: section
             )
             let role: CardRole = ordered.contains(where: \.isPrimary) ? .primary : .secondary
@@ -53,6 +64,44 @@ public enum SurfaceComposer {
                                   title: section.title, children: children, role: role))
         }
         return SurfacePlan(cards: cards)
+    }
+
+    private static func slotOverride(for slotID: SlotID?, config: PresentationConfig) -> SlotPresentationOverride? {
+        guard let slotID else { return nil }
+        return config.slotOverrides[slotID]
+    }
+
+    private static func customizedLeaves(
+        _ leaves: [CardSpec],
+        section: Section,
+        slotID: SlotID?,
+        config: PresentationConfig
+    ) -> [CardSpec] {
+        guard let override = slotOverride(for: slotID, config: config) else { return leaves }
+        let byItemID = Dictionary(uniqueKeysWithValues: leaves.map { (surfaceItemID(for: $0), $0) })
+        if let shownItems = override.shownItems {
+            return shownItems.flatMap { itemID -> [CardSpec] in
+                if itemID == sectionItemID(for: section) { return leaves }
+                guard let card = byItemID[itemID] else { return [] }
+                return [card]
+            }
+        }
+        guard !override.hiddenItems.isEmpty else { return leaves }
+        return leaves.filter { !override.hiddenItems.contains(surfaceItemID(for: $0)) }
+    }
+
+    private static func sectionItemID(for section: Section) -> SurfaceItemID {
+        SurfaceItemID(rawValue: "section:\(section.title)")
+    }
+
+    private static func surfaceItemID(for card: CardSpec) -> SurfaceItemID {
+        if card.id.hasPrefix("group:") {
+            return SurfaceItemID(rawValue: card.id)
+        }
+        if let entityID = card.entities.first {
+            return SurfaceItemID(rawValue: "entity:\(entityID.rawValue)")
+        }
+        return SurfaceItemID(rawValue: card.id)
     }
 
     private static func section(for d: EntityDescriptor) -> Section {
