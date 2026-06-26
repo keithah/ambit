@@ -140,7 +140,7 @@ public actor SystemNetworkProvider: Provider {
                 TableColumn(id: "out_bps", title: "Out bps", alignment: .trailing, valueStyle: .number),
                 TableColumn(id: "loopback", title: "Loopback", alignment: .center, valueStyle: .badge)
             ],
-            rows: counters.map { counter in
+            rows: counters.filter { shouldShowInterface($0, rate: rates[$0.interfaceName]) }.map { counter in
                 let rate = rates[counter.interfaceName]
                 return TableRow(id: counter.interfaceName, cells: [
                     "interface": .text(counter.interfaceName),
@@ -150,6 +150,18 @@ public actor SystemNetworkProvider: Provider {
                 ])
             }
         )
+    }
+
+    private static func shouldShowInterface(_ counter: NetworkCounterMetrics, rate: InterfaceRate?) -> Bool {
+        if counter.isLoopback { return true }
+        guard isVirtualInterface(counter.interfaceName) else { return true }
+        guard let rate else { return false }
+        return rate.inBitsPerSecond > 0 || rate.outBitsPerSecond > 0
+    }
+
+    private static func isVirtualInterface(_ name: String) -> Bool {
+        let prefixes = ["utun", "awdl", "llw", "bridge", "gif", "stf", "ipsec", "anpi"]
+        return prefixes.contains { name.hasPrefix($0) }
     }
 }
 
