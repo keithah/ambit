@@ -29,6 +29,26 @@ final class GraphSummaryTests: XCTestCase {
         XCTAssertEqual(items.first { $0.label == "Min" }?.value, "12.0 Mbps")
     }
 
+    func testGenericMeasurementSummaryOmitsPingProbeVocabulary() {
+        let samples = [
+            Sample(timestamp: now, value: 1.2),
+            Sample(timestamp: now.addingTimeInterval(1), value: 1.8),
+            Sample(timestamp: now.addingTimeInterval(2), value: 1.5)
+        ]
+
+        let items = GraphSummary.summary(samples: samples, deviceClass: .count, unit: nil)
+
+        XCTAssertEqual(items, [
+            GraphSummaryItem(label: "Min", value: "1"),
+            GraphSummaryItem(label: "Avg", value: "2"),
+            GraphSummaryItem(label: "Max", value: "2"),
+            GraphSummaryItem(label: "Current", value: "2")
+        ])
+        XCTAssertFalse(items.map(\.label).contains("TX"))
+        XCTAssertFalse(items.map(\.label).contains("RX"))
+        XCTAssertFalse(items.map(\.label).contains("Loss"))
+    }
+
     func testNoValuedSamplesKeepsCountsAndDashesValueStats() {
         let items = GraphSummary.summary(samples: [Sample(timestamp: now, value: nil, ok: false)], deviceClass: .latency, unit: "ms")
         XCTAssertEqual(items.map(\.label), ["TX", "RX", "Loss", "Min", "Avg", "Max"])
