@@ -29,6 +29,7 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["battery_charging"]?.capability, "power.battery")
         XCTAssertEqual(descriptors["battery_charging"]?.defaultVisibility, .auto)
         XCTAssertEqual(descriptors["load_1m"]?.capability, "system.cpu")
+        XCTAssertEqual(descriptors["load_1m"]?.deviceClass, .count)
     }
 
     func testSystemOverviewProviderMapsSnapshotToMetricsAndStates() async {

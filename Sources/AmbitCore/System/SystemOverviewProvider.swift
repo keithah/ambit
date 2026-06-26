@@ -29,7 +29,7 @@ public struct SystemOverviewProvider: Provider {
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
             descriptor("battery_charging", "Charging", .battery, kind: .binarySensor, capability: "power.battery"),
-            descriptor("load_1m", "Load 1m", nil, capability: "system.cpu")
+            descriptor("load_1m", "Load 1m", .count, capability: "system.cpu")
         ]
     }
 

@@ -157,6 +157,9 @@ Binding rule:
 - Rows contain two or three eligible siblings. One leftover eligible card stays full width.
 - Stable row IDs use `row:<section-title>:<index>`, where index is the zero-based row batch
   within that section. Children retain their own stable card IDs for Phase C customization.
+- `cardRow` is a layout post-pass over stable-id leaf items. Rows are positional containers and
+  are never the unit of customization; users reorder leaf cards (`entity:` or `group:` IDs), and
+  rows regroup deterministically afterward.
 
 `cardRow` is preferred over adding ad hoc grouping fields to leaf cards because the existing
 section model already uses container children. It also keeps layout decisions in the plan where

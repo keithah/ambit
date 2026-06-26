@@ -24,6 +24,16 @@ public struct SurfaceData {
 
     public func title(_ id: EntityID) -> String { descriptors[id]?.name ?? id.rawValue }
     public func samples(_ id: EntityID) -> [Sample] { series[id] ?? [] }
+    public func graphAxis(_ ids: [EntityID]) -> GraphAxis? {
+        guard let descriptor = ids.first.flatMap({ descriptors[$0] }) else { return nil }
+        var allSamples = ids.flatMap { samples($0) }
+        for id in ids {
+            if case .number(let value)? = states[id]?.value {
+                allSamples.append(Sample(timestamp: Date(timeIntervalSince1970: 0), value: value))
+            }
+        }
+        return GraphAxisResolver.axis(descriptor: descriptor, samples: allSamples, currentState: nil)
+    }
 }
 
 /// Renders one CardSpec by dispatching on its kind. Unknown/compound kinds with no single-entity
@@ -76,14 +86,21 @@ public struct CardView: View {
                     : []
                 HistoryGraphCard(title: spec.title ?? "",
                                  lines: lines,
+                                 axis: data.graphAxis(spec.entities),
                                  deviceClass: descriptor?.deviceClass,
                                  unit: descriptor?.unit,
                                  summary: summary,
                                  showLegend: spec.entities.count > 1)
             }
         case .dualLineGraph:
+            let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
             DualLineGraphCard(title: spec.title ?? "",
-                              lines: spec.entities.map { GraphLine(id: data.title($0), color: DisplayTone.good.color, samples: data.samples($0)) })
+                              lines: spec.entities.enumerated().map { index, id in
+                                  GraphLine(id: data.title(id), color: Theme.lineColor(index), samples: data.samples(id))
+                              },
+                              axis: data.graphAxis(spec.entities),
+                              deviceClass: descriptor?.deviceClass,
+                              unit: descriptor?.unit)
         case .control:
             if let id = primaryID, let descriptor = data.descriptors[id] {
                 ControlCard(descriptor: descriptor, state: data.states[id])
