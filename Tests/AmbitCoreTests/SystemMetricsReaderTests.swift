@@ -34,6 +34,10 @@ final class SystemMetricsReaderTests: XCTestCase {
 
         XCTAssertGreaterThan(snapshot.memory.totalBytes, 0)
         XCTAssertLessThanOrEqual(snapshot.memory.usedBytes, snapshot.memory.totalBytes)
+        if let pressurePercent = snapshot.memory.pressurePercent {
+            XCTAssertGreaterThanOrEqual(pressurePercent, 0)
+            XCTAssertLessThanOrEqual(pressurePercent, 100)
+        }
     }
 
     func testDarwinReaderReturnsAtLeastOneNonLoopbackVolume() async throws {
@@ -69,7 +73,8 @@ final class SystemMetricsReaderTests: XCTestCase {
                 usedBytes: 8_000_000_000,
                 wiredBytes: 2_000_000_000,
                 compressedBytes: 1_000_000_000,
-                totalBytes: 16_000_000_000
+                totalBytes: 16_000_000_000,
+                pressurePercent: 31.25
             ),
             diskVolumes: [
                 DiskVolumeMetrics(

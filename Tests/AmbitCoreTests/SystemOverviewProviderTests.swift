@@ -21,6 +21,9 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(descriptors["memory_used_percent"]?.deviceClass, .percent)
         XCTAssertEqual(descriptors["memory_used_percent"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["memory_used_percent"]?.graphStyle, .progress)
+        XCTAssertEqual(descriptors["memory_pressure_percent"]?.deviceClass, .percent)
+        XCTAssertEqual(descriptors["memory_pressure_percent"]?.capability, "system.memory")
+        XCTAssertEqual(descriptors["memory_pressure_percent"]?.graphStyle, .gauge)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.deviceClass, .dataSize)
         XCTAssertEqual(descriptors["memory_used_bytes"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["battery_percent"]?.deviceClass, .battery)
@@ -45,6 +48,7 @@ final class SystemOverviewProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.metricValue("cpu_user_percent"), .percent(12.5))
         XCTAssertEqual(snapshot.metricValue("cpu_system_percent"), .percent(7.5))
         XCTAssertEqual(snapshot.metricValue("memory_used_percent"), .percent(50))
+        XCTAssertEqual(snapshot.metricValue("memory_pressure_percent"), .percent(31.25))
         XCTAssertEqual(snapshot.metricValue("memory_used_bytes"), .level(8_000_000_000))
         XCTAssertEqual(snapshot.metricValue("battery_percent"), .level(88))
         XCTAssertEqual(snapshot.metricValue("battery_charging"), .bool(true))
@@ -61,7 +65,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     func testSystemOverviewOmitsBatteryMetricsWhenBatteryNotPresent() async {
         let snapshot = SystemMetricsSnapshot(
             cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10),
-            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000),
+            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25),
             battery: BatteryMetrics(percent: 0, isCharging: false, isPresent: false)
         )
         let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: snapshot))
@@ -88,7 +92,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     private static func snapshot() -> SystemMetricsSnapshot {
         SystemMetricsSnapshot(
             cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10, loadAverages: [1.2, 1.4, 1.6]),
-            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000),
+            memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25),
             battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
             uptimeSeconds: 12_345
         )

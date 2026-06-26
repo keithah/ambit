@@ -87,12 +87,16 @@ private extension DarwinSystemMetricsReader {
         let active = UInt64(stats.active_count) * pageSize
         let inactive = UInt64(stats.inactive_count) * pageSize
         let used = min(active + inactive + wired + compressed, totalBytes)
+        let pressurePercent: Double? = totalBytes > 0
+            ? min(max((Double(active + wired + compressed) / Double(totalBytes)) * 100, 0), 100)
+            : nil
 
         return MemoryMetrics(
             usedBytes: used,
             wiredBytes: wired,
             compressedBytes: compressed,
-            totalBytes: totalBytes
+            totalBytes: totalBytes,
+            pressurePercent: pressurePercent
         )
     }
 

@@ -27,6 +27,7 @@ public struct SystemOverviewProvider: Provider {
             descriptor("cpu_user_percent", "User", .percent, capability: "system.cpu"),
             descriptor("cpu_system_percent", "System", .percent, capability: "system.cpu"),
             descriptor("memory_used_percent", "Memory", .percent, capability: "system.memory", graphStyle: .progress),
+            descriptor("memory_pressure_percent", "Memory Pressure", .percent, capability: "system.memory", graphStyle: .gauge),
             descriptor("memory_used_bytes", "Memory Used", .dataSize, capability: "system.memory", unit: "B"),
             descriptor("battery_percent", "Battery", .battery, capability: "power.battery", graphStyle: .progress),
             descriptor("battery_charging", "Charging", .battery, kind: .binarySensor, capability: "power.battery"),
@@ -91,6 +92,9 @@ public struct SystemOverviewProvider: Provider {
             Metric(id: "memory_used_percent", label: "Memory", value: .percent(memoryPercent)),
             Metric(id: "memory_used_bytes", label: "Memory Used", value: .level(Double(snapshot.memory.usedBytes)))
         ]
+        if let pressurePercent = snapshot.memory.pressurePercent {
+            metrics.append(Metric(id: "memory_pressure_percent", label: "Memory Pressure", value: .percent(pressurePercent)))
+        }
         if snapshot.battery.isPresent {
             metrics.append(Metric(id: "battery_percent", label: "Battery", value: .level(snapshot.battery.percent)))
             metrics.append(Metric(id: "battery_charging", label: "Charging", value: .bool(snapshot.battery.isCharging)))
