@@ -120,12 +120,12 @@ private final class StatusBarController: NSObject {
         }
 
         // Initial glyph from current slotSurfaces (may be .empty on first tick).
-        updateGlyph(viewModel.slotSurfaces[slotID]?.glyph ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral))
+        updateGlyph(viewModel.slotSurfaces[slotID]?.glyph ?? SlotSurface.empty.glyph)
         viewModel.$slotSurfaces
             .receive(on: RunLoop.main)
             .sink { [weak self] surfaces in
                 guard let self else { return }
-                self.updateGlyph(surfaces[self.slotID]?.glyph ?? MenuBarGlyph(latencyText: "--ms", tone: .neutral))
+                self.updateGlyph(surfaces[self.slotID]?.glyph ?? SlotSurface.empty.glyph)
             }
             .store(in: &cancellables)
     }

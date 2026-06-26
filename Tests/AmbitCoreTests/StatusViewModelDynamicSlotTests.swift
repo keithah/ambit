@@ -100,6 +100,28 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(glyph.tone, .warn)
     }
 
+    func testDynamicReadoutUsesNeutralNoDataForInitialUnavailableValue() {
+        var engine = AttentionEngine()
+        let primary = descriptor("primary", isPrimary: true)
+        let initial = EntityState(id: primary.id, value: nil, availability: .unavailable, severity: .normal)
+
+        let glyph = StatusSlotReadout.resolveGlyph(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: primary, state: initial)
+            ],
+            descriptors: [primary.id: primary],
+            states: [primary.id: initial],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(glyph.latencyText, "No Data")
+        XCTAssertEqual(glyph.tone, .neutral)
+    }
+
     func testDynamicReadoutUsesSelectedCandidateStateWhenStateMapIsMissingIt() {
         var engine = AttentionEngine()
         let primary = descriptor("primary", isPrimary: true)

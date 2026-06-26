@@ -1158,7 +1158,7 @@ struct StatusSlotReadout {
         selection: AttentionSelection = AttentionSelection()
     ) -> StatusSlotReadoutResult {
         guard let fallback = (candidates.first { $0.descriptor.isPrimary } ?? candidates.first) else {
-            return StatusSlotReadoutResult(glyph: MenuBarGlyph(latencyText: "--ms", tone: .neutral), primaryEntityID: nil, selection: selection)
+            return StatusSlotReadoutResult(glyph: noDataGlyph(), primaryEntityID: nil, selection: selection)
         }
         return StatusSlotReadoutResult(
             glyph: glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state),
@@ -1216,8 +1216,15 @@ struct StatusSlotReadout {
     }
 
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
+        if let state, state.value == nil, (state.severity ?? .normal) <= .normal {
+            return noDataGlyph()
+        }
         let readout = EntityReadout.make(descriptor: descriptor, state: state)
         return MenuBarGlyph(latencyText: readout.text, tone: LatencyTone(readout.tone))
+    }
+
+    private static func noDataGlyph() -> MenuBarGlyph {
+        MenuBarGlyph(latencyText: "No Data", tone: .neutral)
     }
 }
 
