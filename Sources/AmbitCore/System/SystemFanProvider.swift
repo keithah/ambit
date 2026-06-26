@@ -17,7 +17,8 @@ public struct SystemFanProvider: Provider {
     }
 
     public func entityDescriptors() -> [EntityDescriptor] {
-        [
+        guard reader.isAvailable else { return [] }
+        return [
             EntityDescriptor(
                 id: instanceID.entity("fans"),
                 instanceID: instanceID,
@@ -28,7 +29,7 @@ public struct SystemFanProvider: Provider {
                 capability: "system.fans",
                 access: .read,
                 metricID: "fans",
-                defaultVisibility: reader.isAvailable ? .auto : .never
+                defaultVisibility: .auto
             )
         ]
     }
