@@ -64,7 +64,8 @@ public extension PresentationSettingsModel {
         descriptors: [ProviderInstanceID: [EntityDescriptor]],
         states: [EntityID: EntityState],
         overrides: PresentationConfig,
-        schemas: [IntegrationID: IntegrationConfigSchema]
+        schemas: [IntegrationID: IntegrationConfigSchema],
+        disabledIntegrationIDs: Set<IntegrationID> = []
     ) -> PresentationSettingsModel {
         let groups = integrations.map { record in
             let rows = descriptors
@@ -88,7 +89,7 @@ public extension PresentationSettingsModel {
                 id: record.id,
                 integrationID: record.integrationID,
                 displayName: record.displayName,
-                enabled: record.enabled,
+                enabled: record.enabled && !disabledIntegrationIDs.contains(record.integrationID),
                 entities: rows,
                 configValues: record.config,
                 configSchema: schemas[record.integrationID]

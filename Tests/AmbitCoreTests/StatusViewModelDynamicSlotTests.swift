@@ -324,6 +324,16 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testStatusViewModelSeedsPresentationSettingsBeforeFirstSnapshot() {
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let viewModel = makeViewModel(integrationRegistry: InMemoryIntegrationRegistry(records: [.ping(host)]))
+
+        XCTAssertEqual(viewModel.presentationSettings.integrations.map(\.displayName), ["Cloudflare DNS"])
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].configSchema, PingIntegration().configSchema)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].configValues["address"], .string("1.1.1.1"))
+    }
+
+    @MainActor
     func testSetEntityVisibilityPersistsAndResetRemovesOverride() {
         let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
         let descriptor = EntityDescriptor(
@@ -501,6 +511,34 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(savedHost.thresholds.degradedAt, 150)
         XCTAssertEqual(savedHost.thresholds.downAfterFailures, 4)
         XCTAssertEqual(records[0].config["diagnosisSensitivity"], .string("aggressive"))
+    }
+
+    @MainActor
+    func testSaveIntegrationInstanceDraftAddsNewPingInstance() throws {
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let registry = InMemoryIntegrationRegistry(records: [.ping(host)])
+        let viewModel = makeViewModel(integrationRegistry: registry)
+        let draft = IntegrationInstanceDraft(
+            integrationID: IntegrationIDs.ping,
+            values: [
+                "name": .string("P5 Temp Host"),
+                "address": .string("127.0.0.1"),
+                "method": .string("tcp"),
+                "port": .number(80),
+                "interval": .number(2),
+                "timeout": .number(1),
+                "degradedAfter": .number(250),
+                "downAfter": .number(3),
+                "diagnosisSensitivity": .string("standard")
+            ]
+        )
+
+        try viewModel.saveIntegrationInstanceDraft(draft)
+
+        let records = try registry.instances()
+        XCTAssertEqual(records.map(\.displayName), ["Cloudflare DNS", "P5 Temp Host"])
+        XCTAssertEqual(records.last?.id, IntegrationInstanceID(rawValue: "ping@127.0.0.1:80"))
+        XCTAssertEqual(viewModel.presentationSettings.integrations.map(\.displayName), ["Cloudflare DNS", "P5 Temp Host"])
     }
 
     func testGenericConfigFormValidationCoversAllFieldKinds() {

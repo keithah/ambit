@@ -10,6 +10,7 @@ private enum SettingsSelection: Hashable {
 struct AmbitSettings: View {
     @EnvironmentObject private var viewModel: StatusViewModel
     @State private var selection: SettingsSelection = .slots
+    @State private var didChooseInitialSelection = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -19,6 +20,10 @@ struct AmbitSettings: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: 820, height: 560)
+        .onAppear { chooseInitialSelectionIfNeeded() }
+        .onChange(of: viewModel.presentationSettings.integrations.map(\.id)) { _ in
+            chooseInitialSelectionIfNeeded()
+        }
     }
 
     private var sidebar: some View {
@@ -30,7 +35,7 @@ struct AmbitSettings: View {
             .padding(.horizontal, 10)
 
             VStack(spacing: 2) {
-                ForEach(viewModel.presentationSettings.integrations) { group in
+                ForEach(sidebarGroups) { group in
                     sidebarButton(
                         title: group.displayName,
                         subtitle: group.integrationID.rawValue,
@@ -52,13 +57,31 @@ struct AmbitSettings: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
+    private var sidebarGroups: [IntegrationSettingsGroup] {
+        viewModel.presentationSettings.integrations.sorted { lhs, rhs in
+            let lhsRank = sidebarRank(lhs)
+            let rhsRank = sidebarRank(rhs)
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
+            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+        }
+    }
+
+    private func sidebarRank(_ group: IntegrationSettingsGroup) -> Int {
+        if group.enabled, group.configSchema != nil { return 0 }
+        if group.enabled { return 1 }
+        return 2
+    }
+
     private func sidebarButton(
         title: String,
         subtitle: String,
         systemImage: String,
         selection item: SettingsSelection
     ) -> some View {
-        Button { selection = item } label: {
+        Button {
+            selection = item
+            didChooseInitialSelection = true
+        } label: {
             HStack(spacing: 10) {
                 Image(systemName: systemImage).frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
@@ -74,6 +97,7 @@ struct AmbitSettings: View {
             .foregroundStyle(selection == item ? Color.white : Color.primary)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
@@ -88,6 +112,14 @@ struct AmbitSettings: View {
         case .slots:
             SlotsSettingsDetail(slots: viewModel.presentationSettings.slots)
         }
+    }
+
+    private func chooseInitialSelectionIfNeeded() {
+        guard !didChooseInitialSelection,
+              let first = sidebarGroups.first
+        else { return }
+        selection = .integration(first.id)
+        didChooseInitialSelection = true
     }
 }
 
@@ -253,9 +285,11 @@ private struct IntegrationConfigForm: View {
                 Button("Save") {
                     save(replacing: group.id)
                 }
+                .accessibilityLabel("Save configuration")
                 Button("Add") {
                     save(replacing: nil)
                 }
+                .accessibilityLabel("Add integration instance")
                 Button("Delete", role: .destructive) {
                     do {
                         try viewModel.deleteIntegrationInstance(group.id)
@@ -264,6 +298,7 @@ private struct IntegrationConfigForm: View {
                         saveError = error.localizedDescription
                     }
                 }
+                .accessibilityLabel("Delete integration instance")
             }
             .disabled(!model.validationErrors.isEmpty)
         }
@@ -394,9 +429,19 @@ private struct EntitySettingsRowView: View {
             }
 
             if hasAdvancedControls {
-                DisclosureGroup("Advanced", isExpanded: $advancedExpanded) {
-                    advancedControls
-                        .padding(.top, 6)
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        advancedExpanded.toggle()
+                    } label: {
+                        Label("Advanced", systemImage: advancedExpanded ? "chevron.down" : "chevron.right")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Advanced")
+
+                    if advancedExpanded {
+                        advancedControls
+                            .padding(.top, 2)
+                    }
                 }
                 .font(.system(size: 11))
             }

@@ -8,10 +8,17 @@ struct AmbitApp: App {
     @StateObject private var appModel = MenuBarAppModel()
 
     var body: some Scene {
-        // Settings are shown via a self-managed AppKit window (SettingsWindowController),
-        // not this scene — the SwiftUI Settings scene / showSettingsWindow: is unreliable in
-        // an .accessory menu-bar app. This placeholder just satisfies the Scene requirement.
+        // Settings are shown via a self-managed AppKit window (SettingsWindowController);
+        // the SwiftUI Settings scene is unreliable in an .accessory menu-bar app.
         Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") {
+                        appModel.viewModel.openSettings?()
+                    }
+                    .keyboardShortcut(",", modifiers: .command)
+                }
+        }
     }
 }
 
@@ -72,7 +79,10 @@ private final class MenuBarAppModel: ObservableObject {
         self.settingsController = settingsController
         viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
         viewModel.showPopover = { [weak firstController] in firstController?.showPopover() }
-        viewModel.openSettings = { [weak settingsController] in settingsController?.show() }
+        viewModel.openSettings = { [weak viewModel, weak settingsController] in
+            viewModel?.refreshPresentationSettingsFromRegistry()
+            settingsController?.show()
+        }
         viewModel.start()
         // On system wake, kick a fresh poll cycle — a probe in flight at sleep is wedged and the
         // inter-cycle sleep won't have advanced. (Core stays UI-free; NSWorkspace lives here.)

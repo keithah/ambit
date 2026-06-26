@@ -117,6 +117,7 @@ final class StatusViewModel: ObservableObject {
             history: HistoryService(store: historyStore),
             activeMeasurementProcessRunner: SystemProcessRunner()
         )
+        refreshPresentationSettingsFromRegistry()
     }
 
     deinit {
@@ -334,6 +335,14 @@ final class StatusViewModel: ObservableObject {
         loadProviderCredentialValues()
     }
 
+    func refreshPresentationSettingsFromRegistry() {
+        let records = (try? integrationRegistry.instances()) ?? []
+        rebuildPresentationSettings(
+            registryRecords: records,
+            config: configStore.load()
+        )
+    }
+
     func credentialRequirements(for provider: InstalledProviderRecord) -> [ProviderManifest.Credential] {
         (try? ProviderManifestPackage.load(from: URL(fileURLWithPath: provider.packagePath, isDirectory: true)).manifest.credentials) ?? []
     }
@@ -534,7 +543,8 @@ final class StatusViewModel: ObservableObject {
             registryRecords: allRegistryRecords,
             descriptors: allDescriptors,
             states: allStates,
-            config: configStore.load()
+            config: configStore.load(),
+            disabledIntegrationIDs: disabledTypes
         )
         var newSurfaces: [SlotID: SlotSurface] = [:]
 
@@ -558,14 +568,16 @@ final class StatusViewModel: ObservableObject {
         registryRecords: [IntegrationInstanceRecord],
         descriptors: [ProviderInstanceID: [EntityDescriptor]],
         states: [EntityID: EntityState],
-        config: PresentationConfig
+        config: PresentationConfig,
+        disabledIntegrationIDs: Set<IntegrationID> = []
     ) -> PresentationSettingsModel {
         PresentationSettingsModel.build(
             integrations: registryRecords,
             descriptors: descriptors,
             states: states,
             overrides: config,
-            schemas: knownIntegrationSchemas()
+            schemas: knownIntegrationSchemas(),
+            disabledIntegrationIDs: disabledIntegrationIDs
         )
     }
 
@@ -744,7 +756,8 @@ final class StatusViewModel: ObservableObject {
             registryRecords: registryRecords,
             descriptors: descriptors,
             states: states,
-            config: config
+            config: config,
+            disabledIntegrationIDs: (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         )
     }
 

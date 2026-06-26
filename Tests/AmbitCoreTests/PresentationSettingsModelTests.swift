@@ -126,6 +126,26 @@ final class PresentationSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.integrations[0].enabled, false)
     }
 
+    func testDisabledIntegrationTypeIsReflectedInGroup() {
+        let record = IntegrationInstanceRecord(
+            id: IntegrationInstanceIDs.glinet,
+            integrationID: IntegrationIDs.glinet,
+            displayName: "GL.iNet",
+            enabled: true
+        )
+
+        let model = PresentationSettingsModel.build(
+            integrations: [record],
+            descriptors: [:],
+            states: [:],
+            overrides: .empty,
+            schemas: [:],
+            disabledIntegrationIDs: [IntegrationIDs.glinet]
+        )
+
+        XCTAssertEqual(model.integrations[0].enabled, false)
+    }
+
     func testIntegrationConfigSchemaAndDraftAreCodableAndEquatable() throws {
         let schema = Self.pingSchema()
         let data = try JSONEncoder().encode(schema)
