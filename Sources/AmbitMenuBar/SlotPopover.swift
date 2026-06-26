@@ -79,8 +79,11 @@ struct SlotPopover: View {
         VStack(alignment: .leading, spacing: 14) {
             header
             if isPingSlot { rangePicker }
-            SurfaceView(plan: surface.plan, data: surface.data)
-            Spacer(minLength: 0)
+            ScrollView(.vertical) {
+                SurfaceView(plan: surface.plan, data: surface.data)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(18)
         .frame(width: 420, height: 640, alignment: .topLeading)
