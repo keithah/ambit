@@ -5,9 +5,10 @@ final class CardSpecTests: XCTestCase {
     func testCardKindCoversTheVocabulary() {
         let kinds: Set<CardKind> = [
             .statusRow, .gauge, .historyGraph, .dualLineGraph, .progress,
-            .statTable, .control, .instanceSelector, .section, .statusBanner
+            .statTable, .control, .instanceSelector, .section, .statusBanner,
+            .segmentedRing
         ]
-        XCTAssertEqual(kinds.count, 10)
+        XCTAssertEqual(kinds.count, 11)
     }
 
     func testSectionCardNestsChildren() {

@@ -196,6 +196,47 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(plan.cards[1].children.first?.entities, [descriptors[1].id])
     }
 
+    func testProgressSiblingComponentsProduceSegmentedRing() {
+        let descriptors = [
+            sensor("App", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 30, capability: "system.memory"),
+            sensor("Wired", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 20, capability: "system.memory"),
+            sensor("Compressed", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 10, capability: "system.memory"),
+            sensor("Free", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 0, capability: "system.memory")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.enumerated().map { index, descriptor in
+            (descriptor.id, EntityState(id: descriptor.id, value: .number(Double(index + 1)), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let memory = plan.cards.first { $0.title == "Memory" }
+        XCTAssertEqual(memory?.children.count, 1)
+        XCTAssertEqual(memory?.children.first?.kind, .segmentedRing)
+        XCTAssertEqual(memory?.children.first?.id, "group:system.memory:segments")
+        XCTAssertEqual(memory?.children.first?.entities.map(\.rawValue), [
+            "i/p.App", "i/p.Wired", "i/p.Compressed", "i/p.Free"
+        ])
+    }
+
+    func testSegmentedRingRequiresAvailableNumericSegments() {
+        let descriptors = [
+            sensor("App", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
+            sensor("Wired", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
+            sensor("Compressed", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory")
+        ]
+        let states: [EntityID: EntityState] = [
+            descriptors[0].id: EntityState(id: descriptors[0].id, value: .number(4), availability: .online),
+            descriptors[1].id: EntityState(id: descriptors[1].id, value: nil, availability: .online),
+            descriptors[2].id: EntityState(id: descriptors[2].id, value: .number(1), availability: .unavailable)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let kinds = plan.cards.flatMap(\.children).map(\.kind)
+        XCTAssertFalse(kinds.contains(.segmentedRing))
+        XCTAssertEqual(kinds, [.progress, .progress, .progress])
+    }
+
     func testControlsAndConfigExclusionSurviveCapabilitySections() {
         let control = EntityDescriptor(
             id: "i/p.toggle",

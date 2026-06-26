@@ -94,7 +94,13 @@ public enum SurfaceComposer {
     private static func buildCards(for ordered: [EntityDescriptor], states: [EntityID: EntityState], config: PresentationConfig) -> [CardSpec] {
         var result: [CardSpec] = []
         var combinedIndexByKey: [String: Int] = [:]
+        let segmentedGroups = segmentedRingGroups(in: ordered, states: states, config: config)
+        let segmentedIDs = Set(segmentedGroups.flatMap { $0.map(\.id) })
+        for group in segmentedGroups {
+            result.append(segmentedRingCard(for: group))
+        }
         for d in ordered {
+            if segmentedIDs.contains(d.id) { continue }
             guard cardKind(for: d, state: states[d.id], config: config) == .historyGraph, d.stateClass == .measurement else {
                 result.append(card(for: d, state: states[d.id], config: config))
                 continue
@@ -109,6 +115,49 @@ public enum SurfaceComposer {
             }
         }
         return result
+    }
+
+    private static func segmentedRingGroups(in ordered: [EntityDescriptor], states: [EntityID: EntityState], config: PresentationConfig) -> [[EntityDescriptor]] {
+        let candidates = ordered.filter { descriptor in
+            guard descriptor.kind == .sensor else { return false }
+            guard effectiveGraphStyle(descriptor, config: config) == .progress else { return false }
+            guard descriptor.stateClass == .measurement || descriptor.stateClass == nil else { return false }
+            guard numericOnlineValue(for: descriptor, states: states) != nil else { return false }
+            return descriptor.capability != nil && descriptor.deviceClass != nil
+        }
+        let grouped = Dictionary(grouping: candidates) { descriptor in
+            [
+                descriptor.capability?.rawValue ?? "",
+                descriptor.deviceClass?.rawValue ?? "",
+                descriptor.unit ?? ""
+            ].joined(separator: "|")
+        }
+        return grouped.values
+            .map { $0.sorted(by: ordering) }
+            .filter { $0.count >= 3 }
+            .sorted { lhs, rhs in
+                guard let a = ordered.firstIndex(where: { $0.id == lhs[0].id }),
+                      let b = ordered.firstIndex(where: { $0.id == rhs[0].id }) else { return false }
+                return a < b
+            }
+    }
+
+    private static func segmentedRingCard(for group: [EntityDescriptor]) -> CardSpec {
+        let capability = group[0].capability?.rawValue ?? "unknown"
+        let role: CardRole = group.contains(where: \.isPrimary) ? .primary : .secondary
+        return CardSpec(
+            id: "group:\(capability):segments",
+            kind: .segmentedRing,
+            entities: group.map(\.id),
+            graphStyle: .progress,
+            role: role
+        )
+    }
+
+    private static func numericOnlineValue(for descriptor: EntityDescriptor, states: [EntityID: EntityState]) -> Double? {
+        guard let state = states[descriptor.id], state.availability == .online else { return nil }
+        guard case .number(let value)? = state.value, value.isFinite, value >= 0 else { return nil }
+        return value
     }
 
     private static func card(for d: EntityDescriptor, state: EntityState?, config: PresentationConfig) -> CardSpec {

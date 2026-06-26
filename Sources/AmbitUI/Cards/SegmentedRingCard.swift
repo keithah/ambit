@@ -1,0 +1,107 @@
+import SwiftUI
+import AmbitCore
+
+/// A generic proportional ring for sibling metrics that form parts of a whole.
+public struct SegmentedRingCard: View {
+    public struct Model: Equatable {
+        public struct Segment: Identifiable, Equatable {
+            public var id: String
+            public var label: String
+            public var value: Double
+            public var fraction: Double
+            public var readout: String
+            public var tone: DisplayTone
+
+            public init(id: String, label: String, value: Double, fraction: Double, readout: String, tone: DisplayTone = .neutral) {
+                self.id = id
+                self.label = label
+                self.value = value
+                self.fraction = fraction
+                self.readout = readout
+                self.tone = tone
+            }
+        }
+
+        public var segments: [Segment]
+
+        public init(segments: [Segment]) {
+            self.segments = segments
+        }
+
+        public init(entityIDs: [EntityID], data: SurfaceData) {
+            let raw = entityIDs.compactMap { id -> (EntityID, EntityDescriptor, EntityState, Double)? in
+                guard let descriptor = data.descriptors[id], let state = data.states[id] else { return nil }
+                guard state.availability == .online else { return nil }
+                guard case .number(let value)? = state.value, value.isFinite, value >= 0 else { return nil }
+                return (id, descriptor, state, value)
+            }
+            let total = raw.reduce(0) { $0 + $1.3 }
+            guard total > 0 else {
+                self.segments = []
+                return
+            }
+            self.segments = raw.map { id, descriptor, state, value in
+                Segment(
+                    id: id.rawValue,
+                    label: descriptor.name,
+                    value: value,
+                    fraction: value / total,
+                    readout: EntityReadout.make(descriptor: descriptor, state: state).text,
+                    tone: EntityReadout.make(descriptor: descriptor, state: state).tone
+                )
+            }
+        }
+    }
+
+    let title: String?
+    let model: Model
+
+    public init(title: String? = nil, model: Model) {
+        self.title = title
+        self.model = model
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title, !title.isEmpty {
+                Text(title).font(.system(size: 13, weight: .semibold))
+            }
+            HStack(alignment: .center, spacing: 14) {
+                ring
+                    .frame(width: 78, height: 78)
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(Array(model.segments.enumerated()), id: \.element.id) { index, segment in
+                        HStack(spacing: 7) {
+                            Circle().fill(Theme.lineColor(index)).frame(width: 7, height: 7)
+                            Text(segment.label).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            Spacer(minLength: 8)
+                            Text(segment.readout).font(.system(size: 11.5, design: .monospaced))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var ring: some View {
+        Canvas { context, size in
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 6, dy: 6)
+            let lineWidth: CGFloat = 8
+            var start = Angle(degrees: -90)
+            for (index, segment) in model.segments.enumerated() where segment.fraction > 0 {
+                let end = start + Angle(degrees: 360 * segment.fraction)
+                var path = Path()
+                path.addArc(
+                    center: CGPoint(x: rect.midX, y: rect.midY),
+                    radius: min(rect.width, rect.height) / 2,
+                    startAngle: start,
+                    endAngle: end,
+                    clockwise: false
+                )
+                context.stroke(path, with: .color(Theme.lineColor(index)), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                start = end
+            }
+        }
+    }
+}
