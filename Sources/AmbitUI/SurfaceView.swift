@@ -52,6 +52,8 @@ public struct CardView: View {
             if let id = primaryID { GaugeCard(title: data.title(id), readout: data.readout(id)) }
         case .segmentedRing:
             SegmentedRingCard(title: spec.title, model: SegmentedRingCard.Model(entityIDs: spec.entities, data: data))
+        case .breakdownLegend:
+            BreakdownLegendCard(title: spec.title, model: BreakdownLegendCard.Model(entityIDs: spec.entities, data: data))
         case .progress:
             if let id = primaryID { ProgressCard(title: data.title(id), readout: data.readout(id)) }
         case .historyGraph:

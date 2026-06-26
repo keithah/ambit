@@ -98,6 +98,7 @@ public enum SurfaceComposer {
         let segmentedIDs = Set(segmentedGroups.flatMap { $0.map(\.id) })
         for group in segmentedGroups {
             result.append(segmentedRingCard(for: group))
+            result.append(breakdownLegendCard(for: group))
         }
         for d in ordered {
             if segmentedIDs.contains(d.id) { continue }
@@ -146,6 +147,15 @@ public enum SurfaceComposer {
             entities: group.map(\.id),
             graphStyle: .progress,
             role: role
+        )
+    }
+
+    private static func breakdownLegendCard(for group: [EntityDescriptor]) -> CardSpec {
+        CardSpec(
+            id: "group:\(segmentedRingGroupKey(for: group[0])):breakdown",
+            kind: .breakdownLegend,
+            entities: group.map(\.id),
+            role: .secondary
         )
     }
 

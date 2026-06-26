@@ -213,10 +213,11 @@ final class SurfaceComposerTests: XCTestCase {
         let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
 
         let memory = plan.cards.first { $0.title == "Memory" }
-        XCTAssertEqual(memory?.children.count, 1)
-        XCTAssertEqual(memory?.children.first?.kind, .segmentedRing)
-        XCTAssertEqual(memory?.children.first?.id, "group:system.memory:dataSize:none:segments")
-        XCTAssertEqual(memory?.children.first?.entities.map(\.rawValue), [
+        XCTAssertEqual(memory?.children.count, 2)
+        XCTAssertEqual(memory?.children.map(\.kind), [.segmentedRing, .breakdownLegend])
+        XCTAssertEqual(memory?.children[0].id, "group:system.memory:dataSize:none:segments")
+        XCTAssertEqual(memory?.children[1].id, "group:system.memory:dataSize:none:breakdown")
+        XCTAssertEqual(memory?.children[1].entities.map(\.rawValue), [
             "i/p.App", "i/p.Wired", "i/p.Compressed", "i/p.Free"
         ])
     }
@@ -237,6 +238,7 @@ final class SurfaceComposerTests: XCTestCase {
 
         let kinds = plan.cards.flatMap(\.children).map(\.kind)
         XCTAssertFalse(kinds.contains(.segmentedRing))
+        XCTAssertFalse(kinds.contains(.breakdownLegend))
         XCTAssertEqual(kinds, [.progress, .progress, .progress])
     }
 
