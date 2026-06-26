@@ -3,6 +3,13 @@ import XCTest
 @testable import AmbitMenuBar
 
 final class StatusViewModelDynamicSlotTests: XCTestCase {
+    func testSlotPopoverScrollIdentityIsStableAcrossSurfaceRefreshes() {
+        let slotID = SlotID(rawValue: "slot.system")
+
+        XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
+        XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
+    }
+
     private let now = Date(timeIntervalSince1970: 20_000)
 
     func testGatewaySeedReconciliationKeepsOnlyCurrentAutoGateway() {
