@@ -107,7 +107,7 @@ aggregator/viewport, never the coordinator.
   (host = instance); TCP/UDP/ICMP probes; the shared `HistoryService`; `AlertEngine` upgrade; the macOS UI;
   tier-diagnosis (`NetworkPerspectiveDiagnosis`).
 - **`pingscope → ping` rename** (RESET migration) — merged.
-- **Presentation program: P1, P2, P3, P4, P6 merged.**
+- **Presentation program: P1, P2, P3, P4, P6, P5 merged.**
   - P1: generic card vocabulary + `SurfaceComposer` (retired old display models).
   - P2: pingscope renders entirely through generic primitives; bespoke Canvas UI deleted. (Recent-samples
     table deferred to P6.)
@@ -120,8 +120,11 @@ aggregator/viewport, never the coordinator.
   `SystemIntegration` (CPU/memory/disk/network/battery/processes), generic non-ping slot surface path, and
   `system@local` enabled by default. The thesis proof is complete: two integrations (`ping` + `system`) render
   through identical generic primitives with **zero bespoke UI**.
-- Current master: **454 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
-  and system slots polling through slot-driven chrome and dynamic attention-driven bar readouts.
+- **P5 complete** — merged on master through `d4db185`: generic progressive-disclosure settings renderer;
+  `PingSettings.swift` deleted; settings are driven by `IntegrationConfigSchema`, `EntityPresentationOverride`,
+  and `PresentationSettingsModel`; there is no bespoke ping settings pane.
+- Current master: **472 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+  and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, and generic settings.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -130,6 +133,7 @@ aggregator/viewport, never the coordinator.
 
 ## 6. Roadmap (presentation program)
 
+- **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -139,10 +143,12 @@ aggregator/viewport, never the coordinator.
   route system cards, SMC sensors/fans gracefully degrade through generic unavailable cards, and the macOS bar
   uses the generic non-ping slot surface path. **NOTE: "StarBar" (starbar.app) is the *Starlink dish* app — a
   separate, later integration, NOT the system one; iStat is the system-stats reference.**
-- **P5 — Generic progressive-disclosure settings** renderer is next (deletes remaining bespoke settings; the
-  typed per-field host editor that P3 left bespoke).
-- **Later:** Starlink integration (reconcile with ping's existing Starlink probe); capability-surface UI;
-  multi-engine topology (Phase 3); iOS/widgets/Live Activity; real packaging.
+- **P5 — Generic progressive-disclosure settings: complete.** `PingSettings.swift` is gone; host config,
+  diagnosis sensitivity, entity visibility/pin/show, and advanced per-entity threshold/graph/alert controls
+  flow through generic schemas and presentation overrides.
+- **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
+  `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
+  real packaging.
 
 ---
 
@@ -202,9 +208,12 @@ bug in the core value prop.** This was fixed before P4 and merged as `71b2f81`. 
 ## 10. How to resume right now
 
 1. Choose the next milestone:
-   - **P5: generic settings renderer** — deletes remaining bespoke settings and finishes progressive-disclosure
-     configuration.
+   - **Device integrations:** rebuild `gl.inet`, `speedify`, `ecoflow`, `starlink`, and `reachability` against
+     the proven generic integration/entity/presentation shape.
+   - **Multi-engine topology (Phase 3):** peer-to-peer ownership, failover, dedup, and handoff across Mac,
+     always-on box, and phone.
+   - **iOS/widgets/Live Activity:** mobile and glanceable surfaces on top of the proven engine primitives.
 2. Keep legacy device integrations disabled until they are rebuilt against the proven generic presentation shape.
-3. Keep using eyeball checkpoints for each milestone; P4 and P6 showed they catch real architecture gaps.
+3. Keep using eyeball checkpoints for each milestone; P4, P6, and P5 showed they catch real architecture gaps.
 
 Open the design docs in §3 for full detail on anything above — they're current and authoritative.
