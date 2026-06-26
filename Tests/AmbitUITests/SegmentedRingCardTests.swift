@@ -61,11 +61,50 @@ final class SegmentedRingCardTests: XCTestCase {
         )
 
         XCTAssertEqual(model.total, 10_000_000_000)
-        XCTAssertEqual(model.centerReadout, "6.0 GB")
+        XCTAssertEqual(model.centerReadout, "60%")
         XCTAssertEqual(model.segments.map(\.id), [used.rawValue])
         XCTAssertEqual(model.remainder?.id, free.rawValue)
         XCTAssertEqual(model.remainder?.fraction, 0.4)
         XCTAssertEqual(model.segments.first?.fraction, 0.6)
+    }
+
+    func testRemainderWholeComputesCenterAsUsedPercent() {
+        let app = EntityID(rawValue: "system@local/overview.memory_app_active_bytes")
+        let wired = EntityID(rawValue: "system@local/overview.memory_wired_bytes")
+        let compressed = EntityID(rawValue: "system@local/overview.memory_compressed_bytes")
+        let free = EntityID(rawValue: "system@local/overview.memory_free_bytes")
+        let descriptors: [EntityID: EntityDescriptor] = [
+            app: EntityDescriptor(id: app, instanceID: "system@local/overview", name: "App/Active", kind: .sensor,
+                                  deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                  graphStyle: .progress, compositionRole: .segment),
+            wired: EntityDescriptor(id: wired, instanceID: "system@local/overview", name: "Wired", kind: .sensor,
+                                    deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                    graphStyle: .progress, compositionRole: .segment),
+            compressed: EntityDescriptor(id: compressed, instanceID: "system@local/overview", name: "Compressed", kind: .sensor,
+                                         deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                         graphStyle: .progress, compositionRole: .segment),
+            free: EntityDescriptor(id: free, instanceID: "system@local/overview", name: "Free", kind: .sensor,
+                                   deviceClass: .dataSize, capability: "system.memory", unit: "B",
+                                   graphStyle: .progress, compositionRole: .remainder)
+        ]
+        let states: [EntityID: EntityState] = [
+            app: EntityState(id: app, value: .number(4_000_000_000), availability: .online),
+            wired: EntityState(id: wired, value: .number(2_000_000_000), availability: .online),
+            compressed: EntityState(id: compressed, value: .number(1_000_000_000), availability: .online),
+            free: EntityState(id: free, value: .number(3_000_000_000), availability: .online)
+        ]
+
+        let model = SegmentedRingCard.Model(
+            entityIDs: [app, wired, compressed, free],
+            data: SurfaceData(descriptors: descriptors, states: states)
+        )
+
+        XCTAssertEqual(model.total, 10_000_000_000)
+        XCTAssertEqual(model.centerReadout, "70%")
+        XCTAssertEqual(model.segments.map(\.label), ["App/Active", "Wired", "Compressed"])
+        XCTAssertEqual(model.segments.map(\.fraction), [0.4, 0.2, 0.1])
+        XCTAssertEqual(model.remainder?.label, "Free")
+        XCTAssertEqual(model.remainder?.fraction, 0.3)
     }
 
     func testIncompleteWholeDoesNotProduceMisleadingSegments() {

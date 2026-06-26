@@ -86,7 +86,12 @@ public struct SegmentedRingCard: View {
             self.segments = colored.map(segment)
             self.remainder = remainder
             self.total = total
-            self.centerReadout = center.map { EntityReadout.make(descriptor: $0.1, state: $0.2).text }
+            if let remainder {
+                let usedFraction = Swift.min(Swift.max(1 - remainder.fraction, 0), 1)
+                self.centerReadout = EntityReadout.format(usedFraction * 100, deviceClass: .percent, unit: "%")
+            } else {
+                self.centerReadout = center.map { EntityReadout.make(descriptor: $0.1, state: $0.2).text }
+            }
             self.isIncomplete = false
         }
     }
