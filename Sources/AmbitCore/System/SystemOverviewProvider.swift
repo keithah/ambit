@@ -10,15 +10,21 @@ public struct SystemOverviewProvider: Provider {
     public let pollInterval: TimeInterval
 
     private let reader: any SystemMetricsReading
+    private let coreCountHint: Int
 
-    public init(reader: any SystemMetricsReading = DarwinSystemMetricsReader(), pollInterval: TimeInterval = 2) {
+    public init(
+        reader: any SystemMetricsReading = DarwinSystemMetricsReader(),
+        pollInterval: TimeInterval = 2,
+        coreCountHint: Int = max(ProcessInfo.processInfo.processorCount, 1)
+    ) {
         self.reader = reader
         self.pollInterval = pollInterval
+        self.coreCountHint = max(coreCountHint, 0)
     }
 
     public func entityDescriptors() -> [EntityDescriptor] {
         let instance = instanceID
-        return [
+        var descriptors = [
             EntityProjection.healthDescriptor(instanceID: instance),
             descriptor("cpu_usage_percent", "CPU", .percent, capability: "system.cpu",
                        graphStyle: .gauge, isPrimary: true,
@@ -38,6 +44,11 @@ public struct SystemOverviewProvider: Provider {
             descriptor("load_1m", "Load 1m", .count, capability: "system.cpu"),
             descriptor("uptime_seconds", "Uptime", .duration, capability: "system.cpu", unit: "s")
         ]
+        descriptors.append(contentsOf: (0..<coreCountHint).map { index in
+            descriptor("cpu_core_\(index)_percent", "Core \(index + 1)", .percent, capability: "system.cpu",
+                       unit: "%", graphStyle: .gauge, priority: 50 - index, compositionRole: .channel)
+        })
+        return descriptors
     }
 
     public func poll(context: EnvironmentContext) async -> ProviderSnapshot {
@@ -118,6 +129,9 @@ public struct SystemOverviewProvider: Provider {
         }
         if let uptimeSeconds = snapshot.uptimeSeconds {
             metrics.append(Metric(id: "uptime_seconds", label: "Uptime", value: .level(uptimeSeconds)))
+        }
+        for (index, coreUsage) in snapshot.cpu.coreUsagePercents.enumerated() {
+            metrics.append(Metric(id: "cpu_core_\(index)_percent", label: "Core \(index + 1)", value: .percent(coreUsage)))
         }
         return metrics
     }

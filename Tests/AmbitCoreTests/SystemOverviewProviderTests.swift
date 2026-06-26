@@ -3,7 +3,7 @@ import XCTest
 
 final class SystemOverviewProviderTests: XCTestCase {
     func testSystemOverviewProviderDeclaresExpectedDescriptors() {
-        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()))
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
         let descriptors = byKey(provider.entityDescriptors())
 
         let cpu = descriptors["cpu_usage_percent"]
@@ -18,6 +18,11 @@ final class SystemOverviewProviderTests: XCTestCase {
 
         XCTAssertEqual(descriptors["cpu_user_percent"]?.capability, "system.cpu")
         XCTAssertEqual(descriptors["cpu_system_percent"]?.capability, "system.cpu")
+        XCTAssertEqual(descriptors["cpu_core_0_percent"]?.deviceClass, .percent)
+        XCTAssertEqual(descriptors["cpu_core_0_percent"]?.capability, "system.cpu")
+        XCTAssertEqual(descriptors["cpu_core_0_percent"]?.graphStyle, .gauge)
+        XCTAssertEqual(descriptors["cpu_core_0_percent"]?.compositionRole, .channel)
+        XCTAssertEqual(descriptors["cpu_core_3_percent"]?.compositionRole, .channel)
         XCTAssertEqual(descriptors["memory_used_percent"]?.deviceClass, .percent)
         XCTAssertEqual(descriptors["memory_used_percent"]?.capability, "system.memory")
         XCTAssertEqual(descriptors["memory_used_percent"]?.graphStyle, .progress)
@@ -47,13 +52,15 @@ final class SystemOverviewProviderTests: XCTestCase {
     }
 
     func testSystemOverviewProviderMapsSnapshotToMetricsAndStates() async {
-        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()))
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
         let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
 
         XCTAssertEqual(snapshot.health, .ok)
         XCTAssertEqual(snapshot.metricValue("cpu_usage_percent"), .percent(20))
         XCTAssertEqual(snapshot.metricValue("cpu_user_percent"), .percent(12.5))
         XCTAssertEqual(snapshot.metricValue("cpu_system_percent"), .percent(7.5))
+        XCTAssertEqual(snapshot.metricValue("cpu_core_0_percent"), .percent(10))
+        XCTAssertEqual(snapshot.metricValue("cpu_core_3_percent"), .percent(40))
         XCTAssertEqual(snapshot.metricValue("memory_used_percent"), .percent(50))
         XCTAssertEqual(snapshot.metricValue("memory_pressure_percent"), .percent(31.25))
         XCTAssertEqual(snapshot.metricValue("memory_app_active_bytes"), .level(4_000_000_000))
@@ -79,7 +86,7 @@ final class SystemOverviewProviderTests: XCTestCase {
             memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25),
             battery: BatteryMetrics(percent: 0, isCharging: false, isPresent: false)
         )
-        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: snapshot))
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: snapshot), coreCountHint: 4)
 
         let result = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
 
@@ -88,7 +95,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     }
 
     func testSystemOverviewDescriptorsRouteThroughGenericSections() {
-        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()))
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
         let metricDescriptors = provider.entityDescriptors().filter { $0.metricID != nil }
 
         let plan = SurfaceComposer.detailPlan(descriptors: metricDescriptors, states: [:])
@@ -97,7 +104,7 @@ final class SystemOverviewProviderTests: XCTestCase {
     }
 
     func testMemoryBreakdownDescriptorsComposeIntoRingAndLegend() async {
-        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()))
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
         let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
         let descriptors = provider.entityDescriptors()
         let states = EntityProjection.states(snapshot: snapshot, descriptors: descriptors)
@@ -116,13 +123,32 @@ final class SystemOverviewProviderTests: XCTestCase {
         ])
     }
 
+    func testPerCoreDescriptorsComposeIntoCoreGrid() async {
+        let provider = SystemOverviewProvider(reader: FakeOverviewReader(snapshot: Self.snapshot()), coreCountHint: 4)
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let descriptors = provider.entityDescriptors()
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: descriptors)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        let coreGrid = cpu?.children.first { $0.kind == .coreGrid }
+        XCTAssertEqual(coreGrid?.id, "group:system.cpu:percent:%:cores")
+        XCTAssertEqual(coreGrid?.entities.map(\.rawValue), [
+            "system@local/overview.cpu_core_0_percent",
+            "system@local/overview.cpu_core_1_percent",
+            "system@local/overview.cpu_core_2_percent",
+            "system@local/overview.cpu_core_3_percent"
+        ])
+    }
+
     private func byKey(_ descriptors: [EntityDescriptor]) -> [String: EntityDescriptor] {
         Dictionary(uniqueKeysWithValues: descriptors.map { (String($0.id.rawValue.split(separator: ".").last ?? ""), $0) })
     }
 
     private static func snapshot() -> SystemMetricsSnapshot {
         SystemMetricsSnapshot(
-            cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 10, loadAverages: [1.2, 1.4, 1.6]),
+            cpu: CPUMetrics(userPercent: 12.5, systemPercent: 7.5, idlePercent: 80, coreCount: 4, loadAverages: [1.2, 1.4, 1.6], coreUsagePercents: [10, 20, 30, 40]),
             memory: MemoryMetrics(usedBytes: 8_000_000_000, wiredBytes: 2_000_000_000, compressedBytes: 1_000_000_000, totalBytes: 16_000_000_000, pressurePercent: 31.25, appActiveBytes: 4_000_000_000, freeBytes: 8_000_000_000),
             battery: BatteryMetrics(percent: 88, isCharging: true, isPresent: true),
             uptimeSeconds: 12_345

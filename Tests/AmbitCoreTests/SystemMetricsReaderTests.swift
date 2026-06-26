@@ -27,6 +27,11 @@ final class SystemMetricsReaderTests: XCTestCase {
         let total = snapshot.cpu.userPercent + snapshot.cpu.systemPercent + snapshot.cpu.idlePercent
         XCTAssertEqual(total, 100, accuracy: 1.0)
         XCTAssertGreaterThan(snapshot.cpu.coreCount, 0)
+        XCTAssertLessThanOrEqual(snapshot.cpu.coreUsagePercents.count, snapshot.cpu.coreCount)
+        for coreUsage in snapshot.cpu.coreUsagePercents {
+            XCTAssertGreaterThanOrEqual(coreUsage, 0)
+            XCTAssertLessThanOrEqual(coreUsage, 100)
+        }
     }
 
     func testDarwinReaderReturnsReasonableMemoryShape() async throws {
@@ -73,7 +78,8 @@ final class SystemMetricsReaderTests: XCTestCase {
                 systemPercent: 7.5,
                 idlePercent: 80,
                 coreCount: 10,
-                loadAverages: [1.2, 1.4, 1.6]
+                loadAverages: [1.2, 1.4, 1.6],
+                coreUsagePercents: [10, 20, 30, 40]
             ),
             memory: MemoryMetrics(
                 usedBytes: 8_000_000_000,

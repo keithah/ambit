@@ -34,19 +34,22 @@ public struct CPUMetrics: Equatable, Sendable, Codable {
     public var idlePercent: Double
     public var coreCount: Int
     public var loadAverages: [Double]
+    public var coreUsagePercents: [Double]
 
     public init(
         userPercent: Double,
         systemPercent: Double,
         idlePercent: Double,
         coreCount: Int,
-        loadAverages: [Double] = []
+        loadAverages: [Double] = [],
+        coreUsagePercents: [Double] = []
     ) {
         self.userPercent = userPercent
         self.systemPercent = systemPercent
         self.idlePercent = idlePercent
         self.coreCount = coreCount
         self.loadAverages = loadAverages
+        self.coreUsagePercents = coreUsagePercents
     }
 }
 
