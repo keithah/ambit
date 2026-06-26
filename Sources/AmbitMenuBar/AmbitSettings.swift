@@ -98,6 +98,9 @@ private struct IntegrationSettingsDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                if let schema = group.configSchema {
+                    IntegrationConfigForm(group: group, schema: schema)
+                }
                 entityList
             }
             .padding(22)
@@ -139,6 +142,203 @@ private struct IntegrationSettingsDetail: View {
                 }
             }
         }
+    }
+}
+
+struct IntegrationConfigValidationError: Equatable, Sendable {
+    var fieldID: String
+    var message: String
+}
+
+struct IntegrationConfigFormModel: Equatable, Sendable {
+    var schema: IntegrationConfigSchema
+    var values: [String: JSONValue]
+
+    init(schema: IntegrationConfigSchema, values: [String: JSONValue]) {
+        self.schema = schema
+        self.values = values
+    }
+
+    var validationErrors: [IntegrationConfigValidationError] {
+        schema.fields.compactMap(validate)
+    }
+
+    func draft(integrationID: IntegrationID, replacing id: IntegrationInstanceID) -> IntegrationInstanceDraft {
+        IntegrationInstanceDraft(integrationID: integrationID, replacing: id, values: values)
+    }
+
+    private func validate(_ field: IntegrationConfigField) -> IntegrationConfigValidationError? {
+        let value = values[field.id] ?? field.defaultValue
+        if field.required, isMissing(value, kind: field.kind) {
+            return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) is required.")
+        }
+        guard let value, value != .null else { return nil }
+
+        switch field.kind {
+        case .text:
+            guard value.stringValue != nil else {
+                return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) must be text.")
+            }
+        case .number:
+            guard let number = value.numberValue else {
+                return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) must be a number.")
+            }
+            if let range = field.range, number < range.min || number > range.max {
+                return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) must be between \(range.min) and \(range.max).")
+            }
+        case .toggle:
+            guard value.boolValue != nil else {
+                return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) must be on or off.")
+            }
+        case .select:
+            guard let selected = value.stringValue,
+                  field.options?.contains(where: { $0.value == selected }) ?? false else {
+                return IntegrationConfigValidationError(fieldID: field.id, message: "\(field.title) must be one of the listed options.")
+            }
+        }
+        return nil
+    }
+
+    private func isMissing(_ value: JSONValue?, kind: ConfigFieldKind) -> Bool {
+        guard let value, value != .null else { return true }
+        if kind == .text {
+            return value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        }
+        return false
+    }
+}
+
+private struct IntegrationConfigForm: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let group: IntegrationSettingsGroup
+    let schema: IntegrationConfigSchema
+    @State private var model: IntegrationConfigFormModel
+    @State private var saveError: String?
+
+    init(group: IntegrationSettingsGroup, schema: IntegrationConfigSchema) {
+        self.group = group
+        self.schema = schema
+        _model = State(initialValue: IntegrationConfigFormModel(schema: schema, values: Self.initialValues(group: group, schema: schema)))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Configuration")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(schema.fields) { field in
+                    fieldRow(field)
+                }
+            }
+
+            if !model.validationErrors.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.validationErrors, id: \.fieldID) { error in
+                        Text(error.message)
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.red)
+            }
+
+            if let saveError {
+                Text(saveError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+            }
+
+            Button("Save") {
+                do {
+                    try viewModel.saveIntegrationInstanceDraft(model.draft(integrationID: group.integrationID, replacing: group.id))
+                    saveError = nil
+                } catch {
+                    saveError = error.localizedDescription
+                }
+            }
+            .disabled(!model.validationErrors.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private func fieldRow(_ field: IntegrationConfigField) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(field.title)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 150, alignment: .leading)
+            switch field.kind {
+            case .text:
+                TextField(field.title, text: textBinding(field))
+            case .number:
+                TextField(field.title, text: numberBinding(field))
+                    .frame(width: 120)
+            case .toggle:
+                Toggle("", isOn: toggleBinding(field))
+                    .labelsHidden()
+            case .select:
+                Picker(field.title, selection: selectBinding(field)) {
+                    ForEach(field.options ?? [], id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 180)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func textBinding(_ field: IntegrationConfigField) -> Binding<String> {
+        Binding {
+            model.values[field.id]?.stringValue ?? field.defaultValue?.stringValue ?? ""
+        } set: { value in
+            model.values[field.id] = .string(value)
+        }
+    }
+
+    private func numberBinding(_ field: IntegrationConfigField) -> Binding<String> {
+        Binding {
+            if let number = model.values[field.id]?.numberValue ?? field.defaultValue?.numberValue {
+                return number.formatted()
+            }
+            return model.values[field.id]?.stringValue ?? ""
+        } set: { value in
+            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                model.values[field.id] = nil
+            } else if let number = Double(value) {
+                model.values[field.id] = .number(number)
+            } else {
+                model.values[field.id] = .string(value)
+            }
+        }
+    }
+
+    private func toggleBinding(_ field: IntegrationConfigField) -> Binding<Bool> {
+        Binding {
+            model.values[field.id]?.boolValue ?? field.defaultValue?.boolValue ?? false
+        } set: { value in
+            model.values[field.id] = .bool(value)
+        }
+    }
+
+    private func selectBinding(_ field: IntegrationConfigField) -> Binding<String> {
+        Binding {
+            model.values[field.id]?.stringValue ?? field.defaultValue?.stringValue ?? field.options?.first?.value ?? ""
+        } set: { value in
+            model.values[field.id] = .string(value)
+        }
+    }
+
+    private static func initialValues(group: IntegrationSettingsGroup, schema: IntegrationConfigSchema) -> [String: JSONValue] {
+        var values = group.configValues
+        if values["name"] == nil {
+            values["name"] = .string(group.displayName)
+        }
+        for field in schema.fields where values[field.id] == nil {
+            values[field.id] = field.defaultValue
+        }
+        return values
     }
 }
 

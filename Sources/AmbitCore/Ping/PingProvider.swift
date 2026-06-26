@@ -109,6 +109,37 @@ public struct PingIntegration: Integration {
     public let id = IntegrationIDs.ping
     public let displayName = "Ping"
     public let isMultiInstance = true
+    public var configSchema: IntegrationConfigSchema? {
+        IntegrationConfigSchema(fields: [
+            IntegrationConfigField(id: "name", title: "Name", kind: .text, defaultValue: .string(""), required: true),
+            IntegrationConfigField(id: "address", title: "Address", kind: .text, defaultValue: .string(""), required: true),
+            IntegrationConfigField(
+                id: "method",
+                title: "Method",
+                kind: .select,
+                options: [ProbeMethod.icmp, .tcp, .udp].map { EntityOption(value: $0.rawValue, label: $0.rawValue.uppercased()) },
+                defaultValue: .string(ProbeMethod.tcp.rawValue),
+                required: true
+            ),
+            IntegrationConfigField(id: "port", title: "Port", kind: .number, range: ValueRange(min: 1, max: 65_535, step: 1), defaultValue: .number(443)),
+            IntegrationConfigField(id: "interval", title: "Interval", kind: .number, range: ValueRange(min: PingHostConfig.minimumTiming, max: 3_600, step: 0.25), defaultValue: .number(2), required: true),
+            IntegrationConfigField(id: "timeout", title: "Timeout", kind: .number, range: ValueRange(min: PingHostConfig.minimumTiming, max: 3_600, step: 0.25), defaultValue: .number(2), required: true),
+            IntegrationConfigField(id: "degradedAfter", title: "Degraded After", kind: .number, range: ValueRange(min: 1, max: 60_000, step: 1), defaultValue: .number(250), required: true),
+            IntegrationConfigField(id: "downAfter", title: "Down After", kind: .number, range: ValueRange(min: 1, max: 100, step: 1), defaultValue: .number(3), required: true),
+            IntegrationConfigField(
+                id: "diagnosisSensitivity",
+                title: "Diagnosis Sensitivity",
+                kind: .select,
+                options: [
+                    EntityOption(value: "conservative", label: "Conservative"),
+                    EntityOption(value: "standard", label: "Standard"),
+                    EntityOption(value: "aggressive", label: "Aggressive")
+                ],
+                defaultValue: .string("standard"),
+                required: true
+            )
+        ])
+    }
 
     private let probeFactory: @Sendable (PingHostConfig) -> any PingProbe
 

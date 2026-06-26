@@ -16,6 +16,7 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
     public var displayName: String
     public var enabled: Bool
     public var entities: [EntitySettingsRow]
+    public var configValues: [String: JSONValue]
     public var configSchema: IntegrationConfigSchema?
 
     public init(
@@ -24,6 +25,7 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
         displayName: String,
         enabled: Bool,
         entities: [EntitySettingsRow],
+        configValues: [String: JSONValue] = [:],
         configSchema: IntegrationConfigSchema? = nil
     ) {
         self.id = id
@@ -31,6 +33,7 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
         self.displayName = displayName
         self.enabled = enabled
         self.entities = entities
+        self.configValues = configValues
         self.configSchema = configSchema
     }
 }
@@ -87,6 +90,7 @@ public extension PresentationSettingsModel {
                 displayName: record.displayName,
                 enabled: record.enabled,
                 entities: rows,
+                configValues: record.config,
                 configSchema: schemas[record.integrationID]
             )
         }

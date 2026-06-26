@@ -94,4 +94,35 @@ final class PingProviderTests: XCTestCase {
         let record = IntegrationInstanceRecord(id: "ping@bad", integrationID: IntegrationIDs.ping, displayName: "bad", origin: .user, config: ["nonsense": .bool(true)])
         XCTAssertTrue(integration.makeProviders(instance: record).isEmpty)
     }
+
+    func testPingConfigSchemaContainsFullHostFieldsAndDiagnosisSensitivity() {
+        let schema = PingIntegration().configSchema
+        let fields = Dictionary(uniqueKeysWithValues: schema?.fields.map { ($0.id, $0) } ?? [])
+
+        XCTAssertEqual(schema?.fields.map(\.id), [
+            "name",
+            "address",
+            "method",
+            "port",
+            "interval",
+            "timeout",
+            "degradedAfter",
+            "downAfter",
+            "diagnosisSensitivity"
+        ])
+        XCTAssertEqual(fields["name"]?.kind, .text)
+        XCTAssertEqual(fields["name"]?.required, true)
+        XCTAssertEqual(fields["address"]?.kind, .text)
+        XCTAssertEqual(fields["address"]?.required, true)
+        XCTAssertEqual(fields["method"]?.kind, .select)
+        XCTAssertEqual(fields["method"]?.options?.map(\.value), ["icmp", "tcp", "udp"])
+        XCTAssertEqual(fields["port"]?.kind, .number)
+        XCTAssertEqual(fields["port"]?.required, false)
+        XCTAssertEqual(fields["interval"]?.kind, .number)
+        XCTAssertEqual(fields["timeout"]?.kind, .number)
+        XCTAssertEqual(fields["degradedAfter"]?.kind, .number)
+        XCTAssertEqual(fields["downAfter"]?.kind, .number)
+        XCTAssertEqual(fields["diagnosisSensitivity"]?.kind, .select)
+        XCTAssertEqual(fields["diagnosisSensitivity"]?.options?.map(\.value), ["conservative", "standard", "aggressive"])
+    }
 }

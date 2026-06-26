@@ -4,6 +4,11 @@ import Foundation
 import SwiftUI
 import UserNotifications
 
+enum IntegrationInstanceDraftError: Error, Equatable {
+    case unsupportedIntegration(IntegrationID)
+    case invalidValues
+}
+
 @MainActor
 final class StatusViewModel: ObservableObject {
     @Published var snapshot = StatusSnapshot()
@@ -72,6 +77,7 @@ final class StatusViewModel: ObservableObject {
         installedProviderStore: any InstalledProviderStore = UserDefaultsInstalledProviderStore(),
         endpointSelector: EndpointSelector = EndpointSelector(),
         reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe(),
+        integrationRegistry: (any IntegrationRegistry)? = nil,
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore()
     ) {
@@ -85,7 +91,7 @@ final class StatusViewModel: ObservableObject {
         self.addressDiscovery = addressDiscovery
         self.configStore = configStore
         self.slots = Self.loadOrSeedSlots(configStore)
-        let integrationRegistry = UserDefaultsIntegrationRegistry()
+        let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.migrateRetiredPingscopeRecords(integrationRegistry)
         Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
@@ -566,7 +572,16 @@ final class StatusViewModel: ObservableObject {
             descriptors: descriptors,
             states: states,
             overrides: config,
-            schemas: [:]
+            schemas: knownIntegrationSchemas()
+        )
+    }
+
+    nonisolated private static func knownIntegrationSchemas() -> [IntegrationID: IntegrationConfigSchema] {
+        Dictionary(
+            uniqueKeysWithValues: [PingIntegration()]
+                .compactMap { integration in
+                    integration.configSchema.map { (integration.id, $0) }
+                }
         )
     }
 
@@ -594,6 +609,69 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
+    func saveIntegrationInstanceDraft(_ draft: IntegrationInstanceDraft) throws {
+        switch draft.integrationID {
+        case IntegrationIDs.ping:
+            try savePingIntegrationInstanceDraft(draft)
+        default:
+            throw IntegrationInstanceDraftError.unsupportedIntegration(draft.integrationID)
+        }
+    }
+
+    private func savePingIntegrationInstanceDraft(_ draft: IntegrationInstanceDraft) throws {
+        let existing = try draft.replacing.flatMap { try integrationRegistry.instance($0) }
+        let existingHost = existing.flatMap { PingHostConfig(configObject: $0.config) }
+        let method = draft.values["method"]?.stringValue.flatMap(ProbeMethod.init(rawValue:)) ?? existingHost?.method ?? .tcp
+        let port = method.requiresPort
+            ? UInt16(clamping: Int(draft.values["port"]?.numberValue ?? Double(existingHost?.port ?? method.defaultPort ?? 443)))
+            : nil
+        let host = PingHostConfig(
+            displayName: draft.values["name"]?.stringValue ?? existingHost?.displayName ?? "Host",
+            address: draft.values["address"]?.stringValue ?? existingHost?.address ?? "",
+            method: method,
+            port: port,
+            interval: draft.values["interval"]?.numberValue ?? existingHost?.interval ?? 2,
+            timeout: draft.values["timeout"]?.numberValue ?? existingHost?.timeout ?? 2,
+            thresholds: HealthThresholds(
+                degradedAt: draft.values["degradedAfter"]?.numberValue ?? existingHost?.thresholds.degradedAt ?? 100,
+                downAfterFailures: Int(draft.values["downAfter"]?.numberValue ?? Double(existingHost?.thresholds.downAfterFailures ?? 3))
+            ),
+            policy: existingHost?.policy ?? .preset(.balanced),
+            tier: existingHost?.tier
+        )
+        guard host.isValid else {
+            throw IntegrationInstanceDraftError.invalidValues
+        }
+
+        var config = host.asConfigObject()
+        if let diagnosisSensitivity = draft.values["diagnosisSensitivity"] {
+            config["diagnosisSensitivity"] = diagnosisSensitivity
+        }
+        let record = IntegrationInstanceRecord(
+            id: host.integrationInstanceID,
+            integrationID: IntegrationIDs.ping,
+            displayName: host.displayName,
+            enabled: existing?.enabled ?? true,
+            origin: existing?.origin ?? .user,
+            config: config
+        )
+
+        var records = try integrationRegistry.instances()
+        if let replacing = draft.replacing {
+            records.removeAll { $0.id == replacing }
+        }
+        if let index = records.firstIndex(where: { $0.id == record.id }) {
+            records[index] = record
+        } else {
+            records.append(record)
+        }
+        try integrationRegistry.save(records)
+        rebuildPresentationSettings(
+            registryRecords: records,
+            config: configStore.load()
+        )
+    }
+
     private func mutateEntityOverride(
         _ id: EntityID,
         mutate: (inout EntityPresentationOverride) -> Void,
@@ -617,9 +695,17 @@ final class StatusViewModel: ObservableObject {
                 id: group.id,
                 integrationID: group.integrationID,
                 displayName: group.displayName,
-                enabled: group.enabled
+                enabled: group.enabled,
+                config: group.configValues
             )
         }
+        rebuildPresentationSettings(registryRecords: registryRecords, config: config)
+    }
+
+    private func rebuildPresentationSettings(
+        registryRecords: [IntegrationInstanceRecord],
+        config: PresentationConfig
+    ) {
         var descriptors: [ProviderInstanceID: [EntityDescriptor]] = [:]
         var states: [EntityID: EntityState] = [:]
         for group in presentationSettings.integrations {

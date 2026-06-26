@@ -308,6 +308,21 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(model.slots, config.slots)
     }
 
+    func testPresentationSettingsModelWiresKnownIntegrationSchemas() {
+        let ping = IntegrationInstanceRecord(id: "ping@1.1.1.1:443", integrationID: IntegrationIDs.ping, displayName: "Cloudflare DNS")
+        let system = IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")
+
+        let model = StatusViewModel.presentationSettingsModel(
+            registryRecords: [ping, system],
+            descriptors: [:],
+            states: [:],
+            config: .empty
+        )
+
+        XCTAssertEqual(model.integrations[0].configSchema, PingIntegration().configSchema)
+        XCTAssertNil(model.integrations[1].configSchema)
+    }
+
     @MainActor
     func testSetEntityVisibilityPersistsAndResetRemovesOverride() {
         let id = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
@@ -322,7 +337,14 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let store = MemoryPresentationConfigStore()
         let viewModel = makeViewModel(configStore: store)
         viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
-            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            registryRecords: [
+                IntegrationInstanceRecord(
+                    id: IntegrationInstanceIDs.systemLocal,
+                    integrationID: IntegrationIDs.system,
+                    displayName: "System",
+                    config: ["sample": .string("kept")]
+                )
+            ],
             descriptors: [descriptor.instanceID: [descriptor]],
             states: [:],
             config: .empty
@@ -332,6 +354,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         XCTAssertEqual(store.config.entityOverrides[id]?.visibility, .always)
         XCTAssertEqual(viewModel.presentationSettings.integrations[0].entities[0].effectiveVisibility, .always)
+        XCTAssertEqual(viewModel.presentationSettings.integrations[0].configValues["sample"], .string("kept"))
 
         viewModel.setEntityVisibility(id, nil)
 
@@ -369,6 +392,76 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertNil(store.config.entityOverrides[id])
     }
 
+    @MainActor
+    func testSaveIntegrationInstanceDraftRoundTripsThroughRegistry() throws {
+        let host = PingHostConfig(displayName: "Old", address: "1.1.1.1", method: .tcp, port: 443)
+        let registry = InMemoryIntegrationRegistry(records: [.ping(host)])
+        let viewModel = makeViewModel(integrationRegistry: registry)
+        let draft = IntegrationInstanceDraft(
+            integrationID: IntegrationIDs.ping,
+            replacing: host.integrationInstanceID,
+            values: [
+                "name": .string("Gateway"),
+                "address": .string("192.168.8.1"),
+                "method": .string("icmp"),
+                "interval": .number(3),
+                "timeout": .number(1),
+                "degradedAfter": .number(150),
+                "downAfter": .number(4),
+                "diagnosisSensitivity": .string("aggressive")
+            ]
+        )
+
+        try viewModel.saveIntegrationInstanceDraft(draft)
+
+        let records = try registry.instances()
+        XCTAssertEqual(records.map(\.id), [IntegrationInstanceID(rawValue: "ping@192.168.8.1")])
+        XCTAssertEqual(records[0].displayName, "Gateway")
+        let savedHost = try XCTUnwrap(PingHostConfig(configObject: records[0].config))
+        XCTAssertEqual(savedHost.displayName, "Gateway")
+        XCTAssertEqual(savedHost.address, "192.168.8.1")
+        XCTAssertEqual(savedHost.method, .icmp)
+        XCTAssertNil(savedHost.port)
+        XCTAssertEqual(savedHost.interval, 3)
+        XCTAssertEqual(savedHost.timeout, 1)
+        XCTAssertEqual(savedHost.thresholds.degradedAt, 150)
+        XCTAssertEqual(savedHost.thresholds.downAfterFailures, 4)
+        XCTAssertEqual(records[0].config["diagnosisSensitivity"], .string("aggressive"))
+    }
+
+    func testGenericConfigFormValidationCoversAllFieldKinds() {
+        let schema = IntegrationConfigSchema(fields: [
+            IntegrationConfigField(id: "name", title: "Name", kind: .text, required: true),
+            IntegrationConfigField(id: "interval", title: "Interval", kind: .number, range: ValueRange(min: 1, max: 10)),
+            IntegrationConfigField(id: "enabled", title: "Enabled", kind: .toggle),
+            IntegrationConfigField(
+                id: "mode",
+                title: "Mode",
+                kind: .select,
+                options: [
+                    EntityOption(value: "a", label: "A"),
+                    EntityOption(value: "b", label: "B")
+                ]
+            )
+        ])
+
+        let valid = IntegrationConfigFormModel(schema: schema, values: [
+            "name": .string("Host"),
+            "interval": .number(2),
+            "enabled": .bool(true),
+            "mode": .string("a")
+        ])
+        XCTAssertTrue(valid.validationErrors.isEmpty)
+
+        let invalid = IntegrationConfigFormModel(schema: schema, values: [
+            "name": .string(""),
+            "interval": .number(20),
+            "enabled": .string("yes"),
+            "mode": .string("c")
+        ])
+        XCTAssertEqual(Set(invalid.validationErrors.map(\.fieldID)), ["name", "interval", "enabled", "mode"])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),
@@ -399,11 +492,15 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    private func makeViewModel(configStore: MemoryPresentationConfigStore) -> StatusViewModel {
+    private func makeViewModel(
+        configStore: MemoryPresentationConfigStore = MemoryPresentationConfigStore(),
+        integrationRegistry: any IntegrationRegistry = InMemoryIntegrationRegistry()
+    ) -> StatusViewModel {
         StatusViewModel(
             settingsStore: MemorySettingsStore(),
             credentialStore: StaticCredentialStore(credentials: [:]),
             installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: integrationRegistry,
             addressDiscovery: StaticRouterAddressDiscovery(),
             configStore: configStore
         )
