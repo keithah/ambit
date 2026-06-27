@@ -134,14 +134,19 @@ public enum SurfaceComposer {
         slotID: SlotID?
     ) -> [SurfaceItem] {
         let override = slotOverride(for: slotID, config: config)
-        let leaves = buildCards(for: ordered, states: states, config: config).map { card -> CardSpec in
+        let baseCards = buildCards(for: ordered, states: states, config: config).map { card -> CardSpec in
             guard card.kind == .statTable, let limit = override?.tableRowLimit else { return card }
             var card = card
             card.tableRowLimit = limit
             return card
         }
+        let autoSampleHistoryID = primaryLatencyHistoryEntityID(in: ordered)
+        let cardsWithDefaultVisibility = baseCards.map { (card: $0, defaultShown: true) }
+            + sampleHistoryCards(for: ordered).map { card in
+                (card: card, defaultShown: card.entities.first == autoSampleHistoryID)
+            }
         let sectionHidden = override?.hiddenItems.contains(sectionItemID(for: section)) == true
-        let items = leaves.map { card in
+        let items = cardsWithDefaultVisibility.map { card, defaultShown in
             let itemID = surfaceItemID(for: card)
             let hidden = sectionHidden || (override?.hiddenItems.contains(itemID) == true)
             return SurfaceItem(
@@ -149,7 +154,7 @@ public enum SurfaceComposer {
                 label: surfaceItemLabel(for: card, section: section),
                 section: section.title,
                 card: card,
-                isShown: !hidden,
+                isShown: defaultShown && !hidden,
                 isHidden: hidden
             )
         }
@@ -183,6 +188,9 @@ public enum SurfaceComposer {
         if card.id.hasPrefix("group:") {
             return SurfaceItemID(rawValue: card.id)
         }
+        if card.kind == .sampleHistory {
+            return SurfaceItemID(rawValue: card.id)
+        }
         if let entityID = card.entities.first {
             return SurfaceItemID(rawValue: "entity:\(entityID.rawValue)")
         }
@@ -192,6 +200,11 @@ public enum SurfaceComposer {
     private static func surfaceItemLabel(for card: CardSpec, section: Section) -> String {
         if let title = card.title, !title.isEmpty { return title }
         switch card.kind {
+        case .sampleHistory:
+            if let entity = card.entities.first {
+                return "\(entity.rawValue.split(separator: ".").last.map(String.init) ?? section.title) history"
+            }
+            return "\(section.title) history"
         case .segmentedRing:
             return "\(section.title) breakdown"
         case .breakdownLegend:
@@ -365,6 +378,32 @@ public enum SurfaceComposer {
                       let b = ordered.firstIndex(where: { $0.id == rhs[0].id }) else { return false }
                 return a < b
             }
+    }
+
+    private static func sampleHistoryCards(for ordered: [EntityDescriptor]) -> [CardSpec] {
+        ordered
+            .filter { descriptor in
+                descriptor.stateClass == .measurement && descriptor.kind == .sensor
+            }
+            .map { descriptor in
+                CardSpec(
+                    id: "history:\(descriptor.id.rawValue)",
+                    kind: .sampleHistory,
+                    entities: [descriptor.id],
+                    graphRange: descriptor.defaultGraphRange ?? .m5,
+                    tableRowLimit: 8,
+                    role: .secondary
+                )
+            }
+    }
+
+    private static func primaryLatencyHistoryEntityID(in ordered: [EntityDescriptor]) -> EntityID? {
+        ordered.first { descriptor in
+            descriptor.isPrimary
+                && descriptor.kind == .sensor
+                && descriptor.deviceClass == .latency
+                && descriptor.stateClass == .measurement
+        }?.id
     }
 
     private static func segmentedRingCard(for group: [EntityDescriptor]) -> CardSpec {

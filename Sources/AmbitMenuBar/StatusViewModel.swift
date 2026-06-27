@@ -1077,7 +1077,7 @@ final class StatusViewModel: ObservableObject {
 
     private func historySeries(for plan: SurfacePlan, now: Date) async -> [EntityID: [Sample]] {
         var result: [EntityID: [Sample]] = [:]
-        for card in Self.graphCards(in: plan.cards) {
+        for card in Self.historyBackedCards(in: plan.cards) {
             let range = card.graphRange ?? .m5
             for id in card.entities {
                 result[id] = await engine.historySamples(id, since: now.addingTimeInterval(-range.seconds))
@@ -1086,11 +1086,11 @@ final class StatusViewModel: ObservableObject {
         return result
     }
 
-    nonisolated private static func graphCards(in cards: [CardSpec]) -> [CardSpec] {
+    nonisolated static func historyBackedCards(in cards: [CardSpec]) -> [CardSpec] {
         cards.flatMap { card -> [CardSpec] in
-            let children = graphCards(in: card.children)
+            let children = historyBackedCards(in: card.children)
             switch card.kind {
-            case .historyGraph, .dualLineGraph:
+            case .historyGraph, .dualLineGraph, .sampleHistory:
                 return [card] + children
             default:
                 return children

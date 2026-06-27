@@ -122,6 +122,45 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(card?.title, "lat")
     }
 
+    func testPrimaryLatencyMeasurementAutoIncludesSampleHistoryCard() {
+        let descriptors = [
+            sensor("primary", .latency, stateClass: .measurement, isPrimary: true),
+            sensor("secondary", .latency, stateClass: .measurement, isPrimary: true)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        let leaves = renderedLeaves(in: plan)
+
+        XCTAssertEqual(leaves.map(\.kind), [.historyGraph, .sampleHistory])
+        XCTAssertEqual(leaves.first { $0.kind == .sampleHistory }?.id, "history:i/p.primary")
+        XCTAssertEqual(leaves.first { $0.kind == .sampleHistory }?.entities, ["i/p.primary"])
+    }
+
+    func testSampleHistoryFollowsFocusedLatencyDescriptorInput() {
+        let focused = sensor("focused", .latency, stateClass: .measurement, isPrimary: true)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [focused], states: [:])
+        let history = renderedLeaves(in: plan).first { $0.kind == .sampleHistory }
+
+        XCTAssertEqual(history?.id, "history:i/p.focused")
+        XCTAssertEqual(history?.entities, ["i/p.focused"])
+    }
+
+    func testNonLatencyMeasurementsExposeSampleHistoryAsAvailableButNotAutoShown() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("CPU", .percent, stateClass: .measurement, graphStyle: .gauge, isPrimary: true, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], slotID: slotID)
+        let items = SurfaceComposer.surfaceItems(descriptors: descriptors, states: [:], slotID: slotID)
+
+        XCTAssertFalse(renderedLeaves(in: plan).contains { $0.kind == .sampleHistory })
+        XCTAssertEqual(items.map(\.id.rawValue), ["entity:i/p.CPU", "history:i/p.CPU"])
+        XCTAssertEqual(items.map(\.isShown), [true, false])
+        XCTAssertEqual(items.map(\.label), ["CPU", "CPU history"])
+    }
+
     func testSingleEponymousChildOmitsRepeatedSectionTitle() {
         let plan = SurfaceComposer.detailPlan(descriptors: [
             sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu")
@@ -537,13 +576,16 @@ final class SurfaceComposerTests: XCTestCase {
             "group:system.cpu:percent:none:cores",
             "group:system.cpu:percent:none:user-system",
             "entity:i/p.CPU",
+            "history:i/p.CPU",
+            "history:i/p.User",
+            "history:i/p.System",
             "group:system.memory:dataSize:B:segments",
             "group:system.memory:dataSize:B:breakdown"
         ])
-        XCTAssertEqual(items.map(\.label), ["CPU Cores", "CPU User/System", "CPU", "Memory breakdown", "Memory breakdown details"])
-        XCTAssertEqual(items.map(\.section), ["CPU", "CPU", "CPU", "Memory", "Memory"])
-        XCTAssertEqual(items.map(\.isShown), [true, true, true, true, false])
-        XCTAssertEqual(items.map(\.isHidden), [false, false, false, false, true])
+        XCTAssertEqual(items.map(\.label), ["CPU Cores", "CPU User/System", "CPU", "CPU history", "User history", "System history", "Memory breakdown", "Memory breakdown details"])
+        XCTAssertEqual(items.map(\.section), ["CPU", "CPU", "CPU", "CPU", "CPU", "CPU", "Memory", "Memory"])
+        XCTAssertEqual(items.map(\.isShown), [true, true, true, false, false, false, true, false])
+        XCTAssertEqual(items.map(\.isHidden), [false, false, false, false, false, false, false, true])
     }
 
     func testSurfaceItemsMatchRenderedLeafIDs() {
@@ -583,5 +625,11 @@ final class SurfaceComposerTests: XCTestCase {
 
         XCTAssertEqual(plan.cards.map(\.title), ["Controls"])
         XCTAssertEqual(plan.cards.first?.children.first?.entities, [control.id])
+    }
+
+    private func renderedLeaves(in plan: SurfacePlan) -> [CardSpec] {
+        plan.cards.flatMap(\.children).flatMap { card in
+            card.kind == .cardRow ? card.children : [card]
+        }
     }
 }

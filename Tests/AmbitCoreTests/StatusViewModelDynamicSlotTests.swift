@@ -10,6 +10,20 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
     }
 
+    func testHistoryBackedCardsIncludeSampleHistoryCards() {
+        let latencyID = EntityID(rawValue: "ping@1.1.1.1/probe.latency_ms")
+        let graph = CardSpec(id: "card.latency", kind: .historyGraph, entities: [latencyID])
+        let history = CardSpec(id: "history.latency", kind: .sampleHistory, entities: [latencyID])
+        let plan = SurfacePlan(cards: [
+            CardSpec(id: "section.Network", kind: .section, children: [graph, history])
+        ])
+
+        let cards = StatusViewModel.historyBackedCards(in: plan.cards)
+
+        XCTAssertEqual(cards.map(\.kind), [.historyGraph, .sampleHistory])
+        XCTAssertEqual(cards.flatMap(\.entities), [latencyID, latencyID])
+    }
+
     private let now = Date(timeIntervalSince1970: 20_000)
 
     func testGatewaySeedReconciliationKeepsOnlyCurrentAutoGateway() {
