@@ -5,12 +5,14 @@ import Foundation
 /// sparklines) read from it. Retention-managed: prunes on a throttled cadence as samples
 /// arrive. Backed by a swappable HistoryStore (in-memory or SQLite).
 public actor HistoryService {
+    public static let defaultRetentionInterval: TimeInterval = 7 * 24 * 60 * 60
+
     private let store: any HistoryStore
     private let retention: TimeInterval
     private let pruneInterval: TimeInterval
     private var lastPrune: Date?
 
-    public init(store: any HistoryStore = InMemoryHistoryStore(), retention: TimeInterval = 7 * 24 * 60 * 60, pruneInterval: TimeInterval = 60) {
+    public init(store: any HistoryStore = InMemoryHistoryStore(), retention: TimeInterval = HistoryService.defaultRetentionInterval, pruneInterval: TimeInterval = 60) {
         self.store = store
         self.retention = retention
         self.pruneInterval = pruneInterval

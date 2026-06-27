@@ -41,10 +41,41 @@ public enum HistoryExportRange: Hashable, Sendable, Codable {
     case retention
 
     public var label: String {
+        label(retentionInterval: HistoryService.defaultRetentionInterval)
+    }
+
+    public func label(retentionInterval: TimeInterval) -> String {
         switch self {
         case .graph(let range): return range.label
-        case .retention: return "7 days"
+        case .retention: return Self.retentionLabel(for: retentionInterval)
         }
+    }
+
+    public func seconds(retentionInterval: TimeInterval) -> TimeInterval {
+        switch self {
+        case .graph(let range): return range.seconds
+        case .retention: return retentionInterval
+        }
+    }
+
+    public static func retentionLabel(for interval: TimeInterval) -> String {
+        let days = interval / (24 * 60 * 60)
+        if days >= 1, days.rounded() == days {
+            let count = Int(days)
+            return count == 1 ? "1 day" : "\(count) days"
+        }
+        let hours = interval / (60 * 60)
+        if hours >= 1, hours.rounded() == hours {
+            let count = Int(hours)
+            return count == 1 ? "1 hour" : "\(count) hours"
+        }
+        let minutes = interval / 60
+        if minutes >= 1, minutes.rounded() == minutes {
+            let count = Int(minutes)
+            return count == 1 ? "1 minute" : "\(count) minutes"
+        }
+        let count = Int(interval.rounded())
+        return count == 1 ? "1 second" : "\(count) seconds"
     }
 }
 

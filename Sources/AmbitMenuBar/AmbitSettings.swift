@@ -54,7 +54,7 @@ struct AmbitSettings: View {
                 )
                 sidebarButton(
                     title: "History",
-                    subtitle: "7 days retained",
+                    subtitle: "\(viewModel.historyRetentionLabel) retained",
                     systemImage: "clock.arrow.circlepath",
                     selection: .history
                 )
@@ -922,7 +922,7 @@ private struct HistorySettingsDetail: View {
                     }
                     .frame(width: 180)
 
-                    Text("Retained for 7 days")
+                    Text("Retained for \(viewModel.historyRetentionLabel)")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 

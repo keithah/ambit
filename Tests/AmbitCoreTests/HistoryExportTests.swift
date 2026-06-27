@@ -99,6 +99,14 @@ final class HistoryExportTests: XCTestCase {
         XCTAssertTrue(text.contains("2023-11-14T22:13:21Z\tCPU\tNo sample\tFailed"))
     }
 
+    func testRetentionRangeLabelDerivesFromHistoryServiceRetentionInterval() {
+        XCTAssertEqual(HistoryExportRange.retention.label, HistoryExportRange.retention.label(retentionInterval: HistoryService.defaultRetentionInterval))
+        XCTAssertEqual(HistoryExportRange.retention.label(retentionInterval: 2 * 24 * 60 * 60), "2 days")
+        XCTAssertEqual(HistoryExportRange.retention.label(retentionInterval: 60 * 60), "1 hour")
+        XCTAssertEqual(HistoryExportRange.retention.seconds(retentionInterval: 123), 123)
+        XCTAssertEqual(HistoryExportRange.graph(.m5).seconds(retentionInterval: 123), GraphRange.m5.seconds)
+    }
+
     func testEntityTargetExportsOnlyTheSelectedMeasurementDescriptor() {
         let latency = latencyDescriptor(name: "Latency")
         let diagnostic = EntityDescriptor(

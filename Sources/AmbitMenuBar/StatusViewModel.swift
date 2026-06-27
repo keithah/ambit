@@ -76,6 +76,7 @@ final class StatusViewModel: ObservableObject {
     // one status item per slot.
     @Published var slots: [Slot] = []
     private let configStore: any PresentationConfigStore
+    let historyRetentionInterval = HistoryService.defaultRetentionInterval
 
     private let pingDiagnoser = NetworkPerspectiveDiagnoser()
     private let pingTierClassifier = NetworkTierClassifier()
@@ -770,7 +771,7 @@ final class StatusViewModel: ObservableObject {
             slots: model.slots,
             records: records
         )
-        let since = now.addingTimeInterval(-Self.historyExportSeconds(for: range))
+        let since = now.addingTimeInterval(-range.seconds(retentionInterval: historyRetentionInterval))
         var samplesByEntity: [EntityID: [Sample]] = [:]
         for descriptor in exportDescriptors {
             samplesByEntity[descriptor.id] = await engine.historySamples(descriptor.id, since: since)
@@ -1195,11 +1196,8 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
-    nonisolated private static func historyExportSeconds(for range: HistoryExportRange) -> TimeInterval {
-        switch range {
-        case .graph(let graphRange): return graphRange.seconds
-        case .retention: return 7 * 24 * 60 * 60
-        }
+    var historyRetentionLabel: String {
+        HistoryExportRange.retention.label(retentionInterval: historyRetentionInterval)
     }
 
     func setSpeedifyFocused(_ isFocused: Bool) {
