@@ -58,7 +58,7 @@ public struct CardView: View {
         switch spec.kind {
         case .historyGraph, .dualLineGraph:
             return spec.role == .primary
-        case .statusRow, .gauge, .segmentedRing, .breakdownLegend, .coreGrid, .cardRow, .progress, .statTable, .control, .instanceSelector, .section, .statusBanner:
+        case .statusRow, .gauge, .sampleHistory, .segmentedRing, .breakdownLegend, .coreGrid, .cardRow, .progress, .statTable, .control, .instanceSelector, .section, .statusBanner:
             return false
         }
     }
@@ -114,6 +114,21 @@ public struct CardView: View {
                               deviceClass: descriptor?.deviceClass,
                               unit: descriptor?.unit,
                               showsAxes: shouldShowGraphAxes)
+        case .sampleHistory:
+            if let id = primaryID, let descriptor = data.descriptors[id] {
+                let rows = SampleHistoryModel.rows(
+                    samples: data.samples(id),
+                    descriptor: descriptor,
+                    limit: spec.tableRowLimit ?? SampleHistoryCard.Model.defaultRowLimit
+                )
+                SampleHistoryCard(
+                    title: spec.title,
+                    model: SampleHistoryCard.Model(
+                        rows: rows,
+                        emptyMessage: SampleHistoryModel.emptyMessage(rangeLabel: spec.graphRange?.label)
+                    )
+                )
+            }
         case .control:
             if let id = primaryID, let descriptor = data.descriptors[id] {
                 ControlCard(descriptor: descriptor, state: data.states[id])

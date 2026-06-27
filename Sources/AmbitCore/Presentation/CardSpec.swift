@@ -9,6 +9,7 @@ public enum CardKind: String, Equatable, Sendable, Codable {
     case gauge
     case historyGraph
     case dualLineGraph
+    case sampleHistory
     case segmentedRing
     case breakdownLegend
     case coreGrid

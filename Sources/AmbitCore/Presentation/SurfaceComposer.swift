@@ -341,7 +341,7 @@ public enum SurfaceComposer {
     private static func isRowEligible(_ card: CardSpec) -> Bool {
         switch card.kind {
         case .gauge, .progress: return true
-        case .statusRow, .historyGraph, .dualLineGraph, .segmentedRing, .breakdownLegend, .coreGrid, .statTable, .control, .instanceSelector, .section, .statusBanner, .cardRow:
+        case .statusRow, .historyGraph, .dualLineGraph, .sampleHistory, .segmentedRing, .breakdownLegend, .coreGrid, .statTable, .control, .instanceSelector, .section, .statusBanner, .cardRow:
             return false
         }
     }
