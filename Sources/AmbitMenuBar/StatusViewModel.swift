@@ -92,7 +92,7 @@ final class StatusViewModel: ObservableObject {
     private let integrationRegistry: any IntegrationRegistry
     private let addressDiscovery: any RouterAddressDiscovery
     private var alertEngine = AlertEngine()
-    private var attentionEngine = AttentionEngine()
+    private var slotAttentionEngines = SlotAttentionEngines()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
@@ -1038,16 +1038,18 @@ final class StatusViewModel: ObservableObject {
             let config = configStore.load()
             let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config, slotID: slot.id)
             let series = await historySeries(for: plan, now: now)
-            return StatusSlotSurfaceBuilder.genericSurface(
-                slot: slot,
-                descriptors: shownResolved,
-                states: allStates,
-                series: series,
-                plan: plan,
-                config: config,
-                now: now,
-                attentionEngine: &attentionEngine
-            )
+            return slotAttentionEngines.withEngine(for: slot.id) { attentionEngine in
+                StatusSlotSurfaceBuilder.genericSurface(
+                    slot: slot,
+                    descriptors: shownResolved,
+                    states: allStates,
+                    series: series,
+                    plan: plan,
+                    config: config,
+                    now: now,
+                    attentionEngine: &attentionEngine
+                )
+            }
         }
 
         // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
@@ -1086,15 +1088,15 @@ final class StatusViewModel: ObservableObject {
         }
         let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
         let config = configStore.load()
-        let readout = StatusSlotReadout.resolveReadout(
+        let readout = slotAttentionEngines.resolveReadout(
+            slotID: slot.id,
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
             states: states,
             alertingIDs: alertingIDs,
             config: config,
-            now: now,
-            attentionEngine: &attentionEngine
+            now: now
         )
 
         let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
@@ -1279,6 +1281,41 @@ struct StatusSlotReadoutResult {
     var glyph: MenuBarGlyph
     var primaryEntityID: EntityID?
     var selection: AttentionSelection
+}
+
+struct SlotAttentionEngines {
+    private var engines: [SlotID: AttentionEngine] = [:]
+
+    mutating func withEngine<T>(for slotID: SlotID, _ body: (inout AttentionEngine) -> T) -> T {
+        var engine = engines[slotID] ?? AttentionEngine()
+        let result = body(&engine)
+        engines[slotID] = engine
+        return result
+    }
+
+    mutating func resolveReadout(
+        slotID: SlotID,
+        mode: BarReadoutMode,
+        candidates: [AttentionCandidate],
+        descriptors: [EntityID: EntityDescriptor],
+        states: [EntityID: EntityState],
+        alertingIDs: Set<EntityID>,
+        config: PresentationConfig,
+        now: Date
+    ) -> StatusSlotReadoutResult {
+        withEngine(for: slotID) { engine in
+            StatusSlotReadout.resolveReadout(
+                mode: mode,
+                candidates: candidates,
+                descriptors: descriptors,
+                states: states,
+                alertingIDs: alertingIDs,
+                config: config,
+                now: now,
+                attentionEngine: &engine
+            )
+        }
+    }
 }
 
 struct StatusSlotReadout {

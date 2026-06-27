@@ -426,6 +426,56 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(boosted.selection.lanes.first?.reason.transitionBoosted, true)
     }
 
+    func testSlotScopedAttentionEnginesKeepDebounceAndBoostStateAcrossInterleavedSlotEvaluations() {
+        var engines = SlotAttentionEngines()
+        let pingSlotID = SlotID(rawValue: "ping")
+        let systemSlotID = SlotID(rawValue: "system@local")
+        var pingLatency = descriptor("ping.latency", isPrimary: true)
+        pingLatency.displayThreshold = DisplayThreshold(comparison: .greaterThan, value: 100, consecutive: 3)
+        var systemCPU = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true)
+        systemCPU.displayThreshold = DisplayThreshold(comparison: .greaterThan, value: 80, consecutive: 3)
+
+        func readout(
+            slotID: SlotID,
+            _ descriptor: EntityDescriptor,
+            value: Double,
+            severity: Severity,
+            at date: Date
+        ) -> StatusSlotReadoutResult {
+            let entityState = state(descriptor.id, value: value, severity: severity)
+            return engines.resolveReadout(
+                slotID: slotID,
+                mode: .dynamic,
+                candidates: [AttentionCandidate(descriptor: descriptor, state: entityState)],
+                descriptors: [descriptor.id: descriptor],
+                states: [descriptor.id: entityState],
+                alertingIDs: [],
+                config: .empty,
+                now: date
+            )
+        }
+
+        _ = readout(slotID: pingSlotID, pingLatency, value: 150, severity: .normal, at: now)
+        _ = readout(slotID: systemSlotID, systemCPU, value: 90, severity: .normal, at: now.addingTimeInterval(0.1))
+        _ = readout(slotID: pingSlotID, pingLatency, value: 150, severity: .normal, at: now.addingTimeInterval(1))
+        _ = readout(slotID: systemSlotID, systemCPU, value: 90, severity: .normal, at: now.addingTimeInterval(1.1))
+
+        let pingSurfaced = readout(slotID: pingSlotID, pingLatency, value: 150, severity: .normal, at: now.addingTimeInterval(2))
+        let systemSurfaced = readout(slotID: systemSlotID, systemCPU, value: 90, severity: .normal, at: now.addingTimeInterval(2.1))
+
+        XCTAssertEqual(pingSurfaced.selection.lanes.first?.tier, .surfaced)
+        XCTAssertEqual(systemSurfaced.selection.lanes.first?.tier, .surfaced)
+
+        let pingRecovered = readout(slotID: pingSlotID, pingLatency, value: 50, severity: .normal, at: now.addingTimeInterval(3))
+        _ = readout(slotID: systemSlotID, systemCPU, value: 90, severity: .normal, at: now.addingTimeInterval(3.1))
+
+        XCTAssertEqual(pingRecovered.primaryEntityID, pingLatency.id)
+
+        let pingBoosted = readout(slotID: pingSlotID, pingLatency, value: 50, severity: .elevated, at: now.addingTimeInterval(4))
+        XCTAssertEqual(pingBoosted.primaryEntityID, pingLatency.id)
+        XCTAssertEqual(pingBoosted.selection.lanes.first?.reason.transitionBoosted, true)
+    }
+
     func testPresentationSettingsModelIncludesAllRegistryRecordsAndCurrentSlots() {
         let ping = IntegrationInstanceRecord(id: "ping@1.1.1.1:443", integrationID: IntegrationIDs.ping, displayName: "Cloudflare DNS")
         let disabledSystem = IntegrationInstanceRecord(
