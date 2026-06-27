@@ -308,6 +308,51 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.data.states[cpu.id], states[cpu.id])
     }
 
+    @MainActor
+    func testSlotSurfaceCoordinatorBuildsGenericSurfaceAndLoadsHistorySeries() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            category: .primary,
+            capability: "system.cpu",
+            stateClass: .measurement,
+            graphStyle: .sparkline,
+            isPrimary: true
+        )
+        let sample = Sample(timestamp: now, value: 34, ok: true)
+        let surface = await coordinator.buildSurface(
+            slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: [],
+            allRegistryRecords: [
+                IntegrationInstanceRecord(
+                    id: "system@local",
+                    integrationID: IntegrationIDs.system,
+                    displayName: "System",
+                    enabled: true,
+                    config: [:]
+                )
+            ],
+            allDescriptors: [ProviderInstanceIDs.systemOverview: [cpu]],
+            allStates: [cpu.id: state(cpu.id, value: 34, severity: .normal)],
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in id == cpu.id ? [sample] : [] }
+        )
+
+        XCTAssertEqual(surface.glyph.primaryText, "34%")
+        XCTAssertEqual(surface.primaryEntityID, cpu.id)
+        XCTAssertEqual(surface.data.series[cpu.id], [sample])
+        XCTAssertEqual(surface.plan.cards.flatMap { $0.children }.first?.kind, .historyGraph)
+    }
+
     func testHealthyGenericSlotUsesRestingPrimaryOverNormalThroughputForGlyphAndSurfaceSelection() {
         var engine = AttentionEngine()
         let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)

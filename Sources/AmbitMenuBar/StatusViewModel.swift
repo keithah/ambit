@@ -93,7 +93,7 @@ final class StatusViewModel: ObservableObject {
     private let integrationRegistry: any IntegrationRegistry
     private let addressDiscovery: any RouterAddressDiscovery
     private var alertEngine = AlertEngine()
-    private var slotAttentionEngines = SlotAttentionEngines()
+    private let slotSurfaceCoordinator = SlotSurfaceCoordinator()
     private let alertNotifier: AlertNotifier
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
@@ -601,16 +601,21 @@ final class StatusViewModel: ObservableObject {
         var newSurfaces: [SlotID: SlotSurface] = [:]
 
         for slot in slots {
-            let surface = await buildSlotSurface(
+            let surface = await slotSurfaceCoordinator.buildSurface(
                 slot: slot,
                 diagnosis: diagnosis,
-                allRecords: activeRecords,
+                enabledPingRecords: activeRecords,
                 allRegistryRecords: allRegistryRecords,
                 allDescriptors: allDescriptors,
                 allStates: allStates,
                 firedAlertEvents: events,
+                slotFocus: slotFocus,
+                pingRange: pingRange,
+                config: configStore.load(),
                 now: now
-            )
+            ) { [engine] id, since in
+                await engine.historySamples(id, since: since)
+            }
             newSurfaces[slot.id] = surface
         }
         slotSurfaces = newSurfaces
@@ -998,144 +1003,8 @@ final class StatusViewModel: ObservableObject {
         return states
     }
 
-    private func buildSlotSurface(
-        slot: Slot,
-        diagnosis: NetworkPerspectiveDiagnosis,
-        allRecords: [IntegrationInstanceRecord],         // enabled ping records
-        allRegistryRecords: [IntegrationInstanceRecord], // all records (for SlotResolver)
-        allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
-        allStates: [EntityID: EntityState],
-        firedAlertEvents: [AlertEvent],
-        now: Date
-    ) async -> SlotSurface {
-        // Flatten descriptors for SlotResolver.
-        let flatDescriptors = allDescriptors.values.flatMap { $0 }
-
-        // Resolve the slot's selection to descriptors.
-        let resolved = SlotResolver.resolve(slot.selection, descriptors: flatDescriptors, records: allRegistryRecords)
-
-        // Distinct integration instances the slot resolved to (for hostOptions).
-        let resolvedInstanceIDs = Set(resolved.map { $0.instanceID.integrationInstanceID })
-        let resolvedRecords = allRecords.filter { resolvedInstanceIDs.contains($0.id) }
-        let hostOptions = resolvedRecords.map { InstanceSelectorCard.Option(id: $0.id.rawValue, label: $0.displayName) }
-
-        // Apply per-slot focus: filter to the focused instance if set.
-        let focusedID = slotFocus[slot.id]
-        let shownRecords = focusedID.map { id in resolvedRecords.filter { $0.id == id } } ?? resolvedRecords
-        let shownInstanceIDs = Set(shownRecords.map(\.id))
-        let shownResolved = focusedID == nil
-            ? resolved
-            : resolved.filter { descriptor in
-                shownInstanceIDs.contains(descriptor.instanceID.integrationInstanceID)
-            }
-        let isPingSlot: Bool
-        if case .integrationType(let integID) = slot.selection, integID == IntegrationIDs.ping {
-            isPingSlot = true
-        } else {
-            isPingSlot = false
-        }
-
-        if !isPingSlot {
-            let config = configStore.load()
-            let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config, slotID: slot.id)
-            let series = await historySeries(for: plan, now: now)
-            return slotAttentionEngines.withEngine(for: slot.id) { attentionEngine in
-                StatusSlotSurfaceBuilder.genericSurface(
-                    slot: slot,
-                    descriptors: shownResolved,
-                    states: allStates,
-                    series: series,
-                    plan: plan,
-                    config: config,
-                    now: now,
-                    attentionEngine: &attentionEngine
-                )
-            }
-        }
-
-        // Build SurfaceData: latency descriptors for shown hosts (renamed to host displayName
-        // for multi-host legend, matching today's behaviour).
-        var descriptors: [EntityID: EntityDescriptor] = [:]
-        var states: [EntityID: EntityState] = [:]
-        var series: [EntityID: [Sample]] = [:]
-        var attentionDescriptors = shownResolved
-        var detailDescriptors: [EntityDescriptor] = []
-        for record in shownRecords {
-            let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
-            let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
-            guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
-            latency.name = record.displayName
-            detailDescriptors.append(latency)
-            descriptors[latencyID] = latency
-            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
-            series[latencyID] = samples
-            // States from engine.entityStates(now:) are already enriched (.stale + severity); no
-            // ad-hoc staleness overlay needed here (P4.2).
-            if let state = Self.latencyStateForSurface(id: latencyID, current: allStates[latencyID], samples: samples) {
-                states[latencyID] = state
-            }
-        }
-
-        if isPingSlot, let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
-            descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
-            states[diagnosisDescriptor.id] = diagnosisState
-            attentionDescriptors.append(diagnosisDescriptor)
-            detailDescriptors.append(diagnosisDescriptor)
-        }
-
-        let candidates = attentionDescriptors.compactMap { descriptor -> AttentionCandidate? in
-            guard let state = states[descriptor.id] ?? allStates[descriptor.id] else { return nil }
-            return AttentionCandidate(descriptor: descriptor, state: state)
-        }
-        let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
-        let config = configStore.load()
-        let readout = slotAttentionEngines.resolveReadout(
-            slotID: slot.id,
-            mode: slot.barReadout,
-            candidates: candidates,
-            descriptors: descriptors,
-            states: states,
-            alertingIDs: alertingIDs,
-            config: config,
-            now: now
-        )
-
-        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
-
-        return SlotSurface(
-            plan: SurfacePlan(cards: planCards),
-            data: SurfaceData(descriptors: descriptors, states: states, series: series),
-            glyph: readout.glyph,
-            primaryEntityID: readout.primaryEntityID,
-            hostOptions: hostOptions
-        )
-    }
-
-    private static func alertingEntityIDs(from events: [AlertEvent], candidates: [AttentionCandidate]) -> Set<EntityID> {
-        let candidateIDs = Set(candidates.map(\.descriptor.id))
-        let ids = events.flatMap { event -> [EntityID] in
-            if event.providerID == "ping.network" {
-                return candidateIDs.contains(DiagnosisEntity.entityID) ? [DiagnosisEntity.entityID] : []
-            }
-            let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
-            return candidateIDs.contains(pingLatencyID) ? [pingLatencyID] : []
-        }
-        return Set(ids)
-    }
-
     nonisolated static func latencyStateForSurface(id: EntityID, current: EntityState?, samples: [Sample]) -> EntityState? {
-        if let current, current.value != nil {
-            return current
-        }
-        guard let latest = samples.last, latest.ok, let value = latest.value else {
-            return current
-        }
-        var state = current ?? EntityState(id: id, availability: .online)
-        state.value = .number(value)
-        state.availability = .online
-        state.lastUpdated = latest.timestamp
-        state.severity = state.severity ?? .normal
-        return state
+        SlotSurfaceCoordinator.latencyStateForSurface(id: id, current: current, samples: samples)
     }
 
     nonisolated private static func diagnosisSensitivity(from records: [IntegrationInstanceRecord]) -> DiagnosisSensitivity {
@@ -1155,27 +1024,8 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
-    private func historySeries(for plan: SurfacePlan, now: Date) async -> [EntityID: [Sample]] {
-        var result: [EntityID: [Sample]] = [:]
-        for card in Self.historyBackedCards(in: plan.cards) {
-            let range = card.graphRange ?? .m5
-            for id in card.entities {
-                result[id] = await engine.historySamples(id, since: now.addingTimeInterval(-range.seconds))
-            }
-        }
-        return result
-    }
-
     nonisolated static func historyBackedCards(in cards: [CardSpec]) -> [CardSpec] {
-        cards.flatMap { card -> [CardSpec] in
-            let children = historyBackedCards(in: card.children)
-            switch card.kind {
-            case .historyGraph, .dualLineGraph, .sampleHistory:
-                return [card] + children
-            default:
-                return children
-            }
-        }
+        SlotSurfaceCoordinator.historyBackedCards(in: cards)
     }
 
     nonisolated private static func historyExportDescriptors(model: PresentationSettingsModel) -> [EntityDescriptor] {
@@ -1426,44 +1276,6 @@ struct StatusSlotReadout {
 
     private static func noDataGlyph() -> MenuBarGlyph {
         MenuBarGlyph(primaryText: "No Data", tone: .neutral)
-    }
-}
-
-enum StatusSlotSurfaceBuilder {
-    static func genericSurface(
-        slot: Slot,
-        descriptors resolved: [EntityDescriptor],
-        states allStates: [EntityID: EntityState],
-        series: [EntityID: [Sample]] = [:],
-        plan: SurfacePlan? = nil,
-        config: PresentationConfig,
-        now: Date,
-        attentionEngine: inout AttentionEngine
-    ) -> SlotSurface {
-        let descriptors = Dictionary(uniqueKeysWithValues: resolved.map { ($0.id, $0) })
-        let states = allStates.filter { descriptors.keys.contains($0.key) }
-        let candidates = resolved.compactMap { descriptor -> AttentionCandidate? in
-            guard let state = states[descriptor.id] else { return nil }
-            return AttentionCandidate(descriptor: descriptor, state: state)
-        }
-        let readout = StatusSlotReadout.resolveReadout(
-            mode: slot.barReadout,
-            candidates: candidates,
-            descriptors: descriptors,
-            states: states,
-            alertingIDs: [],
-            config: config,
-            now: now,
-            attentionEngine: &attentionEngine
-        )
-
-        return SlotSurface(
-            plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config, slotID: slot.id),
-            data: SurfaceData(descriptors: descriptors, states: states, series: series),
-            glyph: readout.glyph,
-            primaryEntityID: readout.primaryEntityID,
-            hostOptions: []
-        )
     }
 }
 
