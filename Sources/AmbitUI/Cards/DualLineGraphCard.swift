@@ -11,7 +11,7 @@ public struct DualLineGraphCard: View {
     let unit: String?
     var hasDrawableSeries: Bool {
         lines.contains { line in
-            line.samples.filter { $0.value != nil }.count > 1
+            line.samples.filter { $0.ok && $0.value != nil }.count > 1
         }
     }
 

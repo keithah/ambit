@@ -24,7 +24,7 @@ public struct HistoryGraphCard: View {
     let summary: [GraphSummaryItem]
     var hasDrawableSeries: Bool {
         lines.contains { line in
-            line.samples.filter { $0.value != nil }.count > 1
+            line.samples.filter { $0.ok && $0.value != nil }.count > 1
         }
     }
 
@@ -68,14 +68,30 @@ public struct HistoryGraphCard: View {
                     grid.addLine(to: CGPoint(x: size.width, y: y))
                     context.stroke(grid, with: .color(.white.opacity(0.07)), lineWidth: 1)
                 }
-                guard hasDrawableSeries, let axisMax, axisMax > 0 else { return }
-                for line in lines where line.samples.count > 1 {
-                    let pts = GraphGeometry.points(samples: line.samples, in: size, axisMax: axisMax)
-                    var path = Path()
-                    for (index, point) in pts.enumerated() {
-                        if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                guard let axisMax, axisMax > 0 else { return }
+                let isMultiLine = lines.count > 1
+                for (lineIndex, line) in lines.enumerated() where line.samples.count > 1 {
+                    let geometry = GraphGeometry.series(samples: line.samples, in: size, axisMax: axisMax)
+                    if let failureStyle = GraphFailureMarkStyle.style(isMultiLine: isMultiLine, isPrimaryLine: lineIndex == 0) {
+                        for x in geometry.failureXPositions {
+                            let endpoints = GraphGeometry.failureMarkEndpoints(x: x, in: size)
+                            var failure = Path()
+                            failure.move(to: endpoints.start)
+                            failure.addLine(to: endpoints.end)
+                            context.stroke(
+                                failure,
+                                with: .color(.red.opacity(failureStyle.redOpacity)),
+                                lineWidth: failureStyle.lineWidth
+                            )
+                        }
                     }
-                    context.stroke(path, with: .color(line.color), lineWidth: 1.8)
+                    for segment in geometry.segments where segment.count > 1 {
+                        var path = Path()
+                        for (index, point) in segment.enumerated() {
+                            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                        }
+                        context.stroke(path, with: .color(line.color), lineWidth: 1.8)
+                    }
                 }
             }
             .frame(height: 112)

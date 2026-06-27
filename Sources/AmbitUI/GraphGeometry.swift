@@ -14,6 +14,23 @@ public struct GraphSeriesGeometry: Equatable, Sendable {
     }
 }
 
+public struct GraphFailureMarkStyle: Equatable, Sendable {
+    public var redOpacity: Double
+    public var lineWidth: CGFloat
+
+    public init(redOpacity: Double, lineWidth: CGFloat) {
+        self.redOpacity = redOpacity
+        self.lineWidth = lineWidth
+    }
+
+    public static func style(isMultiLine: Bool, isPrimaryLine: Bool) -> GraphFailureMarkStyle? {
+        if isMultiLine {
+            return isPrimaryLine ? GraphFailureMarkStyle(redOpacity: 0.55, lineWidth: 1.2) : nil
+        }
+        return GraphFailureMarkStyle(redOpacity: 0.72, lineWidth: 1.5)
+    }
+}
+
 public enum GraphGeometry {
 
     // Scale-invariant "nice" ceiling: a mantissa rung × the data's order of magnitude. Works
@@ -88,5 +105,18 @@ public enum GraphGeometry {
         flushSegment()
 
         return GraphSeriesGeometry(segments: segments, failureXPositions: failures)
+    }
+
+    public static func failureMarkEndpoints(
+        x: CGFloat,
+        in size: CGSize,
+        plotVerticalPadding: CGFloat = 0
+    ) -> (start: CGPoint, end: CGPoint) {
+        let plotTop = plotVerticalPadding
+        let plotHeight = max(size.height - plotVerticalPadding * 2, 1)
+        return (
+            start: CGPoint(x: x, y: plotTop + plotHeight * 0.2),
+            end: CGPoint(x: x, y: plotTop + plotHeight)
+        )
     }
 }
