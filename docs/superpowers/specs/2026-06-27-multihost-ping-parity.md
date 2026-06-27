@@ -105,7 +105,7 @@ The legend is a generic graph feature, not a ping-specific card:
 - The primary line is visually emphasized.
 - Long labels truncate to one line.
 
-The pingscope oracle caps visible legend entries to avoid crowding. Ambit should follow the same spirit: render the first few visible lines inline, ordered by descriptor order, and rely on the graph colors plus host selector for the rest. A future tooltip or expandable legend can expose all hosts if needed.
+The pingscope oracle caps visible legend entries to avoid crowding. Ambit uses the same concrete cap: render up to 4 visible legend entries inline, ordered by descriptor order. Remaining hosts are conveyed by line color plus the host selector. A future tooltip or expandable legend can expose all hosts if needed.
 
 ### Color Assignment
 
@@ -129,20 +129,20 @@ This requires `SurfaceView` or `SurfaceData` to expose the selected primary enti
 
 ## Recent Samples Rule
 
-Decision: in combined mode, the recent-samples table follows the focused/headline host, not all hosts.
+Decision: in combined mode, the recent-samples table follows the focused/headline measurement, not all hosts.
 
 Rationale:
 
 - The pingscope reference table is a single-host `Time | Result | Status` table.
 - A combined table interleaving hosts would need a Host column, more vertical space, and different scan behavior.
 - Ambit already has a single-entity `sampleHistory` card and the Available Items model can later add explicit per-host history cards if needed.
-- The compact readout already resolves a primary entity across all hosts; binding sample history to that same entity keeps the table explainable.
+- The compact readout already resolves a primary entity across all hosts; binding sample history to that same measurement entity keeps the table explainable.
 
 Implementation contract:
 
-- In focused mode, auto `sampleHistory` binds to the focused host's latency entity.
-- In combined mode, auto `sampleHistory` binds to `SlotSurface.primaryEntityID` if that entity is a latency measurement.
-- If the primary entity is a diagnosis banner or another non-latency entity because attention is active, fall back to the resting primary latency entity for sample history.
+- In focused mode, auto `sampleHistory` binds to the focused measurement entity selected for the surface.
+- In combined mode, auto `sampleHistory` binds to `SlotSurface.primaryEntityID` when that entity is a measurement eligible for sample history.
+- If the headline entity is a non-measurement entity, such as a diagnostic text/banner, fall back to the same generic rule the composer uses for auto sample-history visibility: the resting primary measurement in the section whose descriptor has `DeviceClass.latency`, `StateClass.measurement`, sensor kind, and primary/default history role. Ping satisfies this rule through its latency descriptors, but the rule is phrased in descriptor metadata rather than integration identity.
 - Do not auto-render one sample-history card per host.
 
 The card ID remains `history:<entityID>`, so Available Items customization stays leaf-card based.
@@ -266,5 +266,5 @@ None blocking implementation.
 Deferred decisions:
 
 - Whether combined sample history should later support an optional Host column. Current decision is focused/headline-host only.
-- Whether legend should expose more than the first few hosts through expansion. Current decision is compact inline legend.
+- Whether legend should expose more than the first 4 hosts through expansion. Current decision is compact inline legend capped at 4 entries.
 - Whether ping range becomes a generic per-slot graph range setting. Current milestone keeps the existing ping range picker.

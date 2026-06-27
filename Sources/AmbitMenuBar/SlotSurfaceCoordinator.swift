@@ -29,8 +29,10 @@ final class SlotSurfaceCoordinator {
         let resolvedRecords = enabledPingRecords.filter { resolvedInstanceIDs.contains($0.id) }
         let hostOptions = resolvedRecords.map { InstanceSelectorCard.Option(id: $0.id.rawValue, label: $0.displayName) }
 
-        let focusedID = slotFocus[slot.id]
-        let shownRecords = focusedID.map { id in resolvedRecords.filter { $0.id == id } } ?? resolvedRecords
+        let requestedFocusID = slotFocus[slot.id]
+        let focusedRecords = requestedFocusID.map { id in resolvedRecords.filter { $0.id == id } } ?? []
+        let focusedID = focusedRecords.isEmpty ? nil : requestedFocusID
+        let shownRecords = focusedID == nil ? resolvedRecords : focusedRecords
         let shownInstanceIDs = Set(shownRecords.map(\.id))
         let shownResolved = focusedID == nil
             ? resolved
@@ -95,6 +97,9 @@ final class SlotSurfaceCoordinator {
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
             latency.name = record.displayName
+            if shownRecords.count == 1 {
+                latency.isPrimary = true
+            }
             detailDescriptors.append(latency)
             descriptors[latencyID] = latency
             let samples = await historySamples(latencyID, now.addingTimeInterval(-pingRange.seconds))

@@ -379,6 +379,116 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(result.events, [])
     }
 
+    @MainActor
+    func testAllHostsPingSurfaceBuildsCombinedLatencyGraphAndLoadsEverySeries() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        let graph = surface.firstCard(kind: .historyGraph)
+        XCTAssertEqual(graph?.role, .primary)
+        XCTAssertEqual(graph?.entities, fixtures.latencyIDs)
+        XCTAssertEqual(Set(surface.data.series.keys), Set(fixtures.latencyIDs))
+        XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+    }
+
+    @MainActor
+    func testFocusedPingSurfaceFiltersDescriptorsSeriesAndSampleHistoryToFocusedHost() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        let focused = fixtures.records[1].id
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [fixtures.slot.id: focused],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(Set(surface.data.descriptors.keys), [fixtures.latencyIDs[1]])
+        XCTAssertEqual(Set(surface.data.series.keys), [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+    }
+
+    @MainActor
+    func testMissingFocusedPingHostFallsBackToAllHostsRendering() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [fixtures.slot.id: "ping@missing"],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, fixtures.latencyIDs)
+        XCTAssertEqual(Set(surface.data.series.keys), Set(fixtures.latencyIDs))
+        XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+    }
+
+    @MainActor
+    func testSingleEnabledPingHostBuildsFocusedEquivalentSurfaceWithoutAllHostsChoice() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        let record = fixtures.records[0]
+        let provider = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let latencyID = fixtures.latencyIDs[0]
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: [record],
+            allRegistryRecords: fixtures.records,
+            allDescriptors: [provider: fixtures.descriptorsByProvider[provider] ?? []],
+            allStates: [latencyID: fixtures.states[latencyID]!],
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [latencyID])
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [latencyID])
+        XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS"])
+    }
+
     func testHealthyGenericSlotUsesRestingPrimaryOverNormalThroughputForGlyphAndSurfaceSelection() {
         var engine = AttentionEngine()
         let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
@@ -1205,6 +1315,60 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         )
     }
 
+    private struct PingSurfaceFixtures {
+        var slot: Slot
+        var records: [IntegrationInstanceRecord]
+        var descriptorsByProvider: [ProviderInstanceID: [EntityDescriptor]]
+        var states: [EntityID: EntityState]
+        var samples: [EntityID: [Sample]]
+        var latencyIDs: [EntityID]
+    }
+
+    private func pingSurfaceFixtures() -> PingSurfaceFixtures {
+        let hosts = [
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
+            PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
+        ]
+        let records = hosts.map { IntegrationInstanceRecord.ping($0) }
+        var descriptorsByProvider: [ProviderInstanceID: [EntityDescriptor]] = [:]
+        var states: [EntityID: EntityState] = [:]
+        var samples: [EntityID: [Sample]] = [:]
+        var latencyIDs: [EntityID] = []
+        for (index, record) in records.enumerated() {
+            let provider = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+            let latencyID = EntityID(rawValue: "\(provider.rawValue).latency_ms")
+            latencyIDs.append(latencyID)
+            let descriptor = EntityDescriptor(
+                id: latencyID,
+                instanceID: provider,
+                name: record.displayName,
+                kind: .sensor,
+                deviceClass: .latency,
+                category: .primary,
+                capability: "network.latency",
+                unit: "ms",
+                stateClass: .measurement,
+                graphStyle: .sparkline,
+                isPrimary: index == 0,
+                priority: index == 0 ? 10 : 0
+            )
+            descriptorsByProvider[provider] = [descriptor]
+            states[latencyID] = state(latencyID, value: index == 0 ? 12 : 24, severity: .normal)
+            samples[latencyID] = [
+                Sample(timestamp: now.addingTimeInterval(-2), value: Double(10 + index), ok: true),
+                Sample(timestamp: now.addingTimeInterval(-1), value: Double(12 + index), ok: true)
+            ]
+        }
+        return PingSurfaceFixtures(
+            slot: Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping)),
+            records: records,
+            descriptorsByProvider: descriptorsByProvider,
+            states: states,
+            samples: samples,
+            latencyIDs: latencyIDs
+        )
+    }
+
     private func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {
         NetworkPerspectiveDiagnosis(
             scope: .monitoringStalled,
@@ -1231,6 +1395,22 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             addressDiscovery: StaticRouterAddressDiscovery(),
             configStore: configStore
         )
+    }
+}
+
+private extension SlotSurface {
+    func firstCard(kind: CardKind) -> CardSpec? {
+        plan.cards.firstDescendant(where: { $0.kind == kind })
+    }
+}
+
+private extension Array where Element == CardSpec {
+    func firstDescendant(where predicate: (CardSpec) -> Bool) -> CardSpec? {
+        for card in self {
+            if predicate(card) { return card }
+            if let match = card.children.firstDescendant(where: predicate) { return match }
+        }
+        return nil
     }
 }
 
