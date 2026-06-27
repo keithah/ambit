@@ -18,7 +18,7 @@ enum StatusGlyphRenderer {
             width: glyph.dotDiameter, height: glyph.dotDiameter))
         nsColor(glyph.tone).setFill()
         dot.fill()
-        let text = NSAttributedString(string: glyph.latencyText, attributes: [
+        let text = NSAttributedString(string: glyph.primaryText, attributes: [
             .font: NSFont.systemFont(ofSize: glyph.fontSize, weight: .regular),
             .foregroundColor: NSColor.labelColor
         ])
@@ -76,7 +76,7 @@ struct SlotPopover: View {
         case .warn: label = "Degraded"
         case .bad: label = "Down"
         }
-        return (g.latencyText, g.tone, label)
+        return (g.primaryText, g.tone, label)
     }
 
     var body: some View {

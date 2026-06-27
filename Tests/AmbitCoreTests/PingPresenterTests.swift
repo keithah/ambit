@@ -34,7 +34,7 @@ final class PingPresenterTests: XCTestCase {
 
     func testGlyphStacksTextAndTone() {
         let g = PingPresenter.glyph(latest: sample(22, agoSeconds: 5), health: .healthy, now: now, freshness: 60)
-        XCTAssertEqual(g.latencyText, "22ms")
+        XCTAssertEqual(g.primaryText, "22ms")
         XCTAssertEqual(g.tone, .good)
         XCTAssertEqual(g.itemWidth, 34)
         XCTAssertEqual(g.dotDiameter, 8)

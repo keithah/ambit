@@ -149,6 +149,6 @@ private final class StatusBarController: NSObject {
         let slot = viewModel.slots.first(where: { $0.id == slotID })
         let title = slot?.title ?? slotID.rawValue
         statusItem.button?.image = StatusGlyphRenderer.image(glyph)
-        statusItem.button?.toolTip = "\(title) · \(glyph.latencyText)"
+        statusItem.button?.toolTip = "\(title) · \(glyph.primaryText)"
     }
 }

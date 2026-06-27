@@ -110,7 +110,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.latencyText, "250ms")
+        XCTAssertEqual(glyph.primaryText, "250ms")
         XCTAssertEqual(glyph.tone, .warn)
     }
 
@@ -132,7 +132,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.latencyText, "No Data")
+        XCTAssertEqual(glyph.primaryText, "No Data")
         XCTAssertEqual(glyph.tone, .neutral)
     }
 
@@ -157,7 +157,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.latencyText, "250ms")
+        XCTAssertEqual(glyph.primaryText, "250ms")
         XCTAssertEqual(glyph.tone, .warn)
     }
 
@@ -200,7 +200,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.latencyText, "10ms")
+        XCTAssertEqual(glyph.primaryText, "10ms")
         XCTAssertEqual(glyph.tone, .good)
     }
 
@@ -226,7 +226,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.latencyText, "10ms")
+        XCTAssertEqual(glyph.primaryText, "10ms")
         XCTAssertEqual(glyph.tone, .good)
     }
 
@@ -301,7 +301,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(surface.glyph.latencyText, "34%")
+        XCTAssertEqual(surface.glyph.primaryText, "34%")
         XCTAssertEqual(surface.glyph.tone, .good)
         XCTAssertEqual(surface.plan.cards.map(\.title), ["CPU", "Disk"])
         XCTAssertEqual(surface.data.descriptors[cpu.id], cpu)
@@ -327,7 +327,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         )
 
         XCTAssertEqual(surface.primaryEntityID, cpu.id)
-        XCTAssertEqual(surface.glyph.latencyText, "34%")
+        XCTAssertEqual(surface.glyph.primaryText, "34%")
     }
 
     func testActiveThroughputOverridesRestingPrimary() {

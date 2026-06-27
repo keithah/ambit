@@ -1474,11 +1474,11 @@ struct StatusSlotReadout {
             return noDataGlyph()
         }
         let readout = EntityReadout.make(descriptor: descriptor, state: state)
-        return MenuBarGlyph(latencyText: readout.text, tone: LatencyTone(readout.tone))
+        return MenuBarGlyph(primaryText: readout.text, tone: LatencyTone(readout.tone))
     }
 
     private static func noDataGlyph() -> MenuBarGlyph {
-        MenuBarGlyph(latencyText: "No Data", tone: .neutral)
+        MenuBarGlyph(primaryText: "No Data", tone: .neutral)
     }
 }
 

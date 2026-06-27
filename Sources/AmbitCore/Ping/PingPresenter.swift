@@ -52,14 +52,14 @@ public struct LatencyReadout: Equatable, Sendable {
 
 /// Menu-bar glyph: a status dot stacked over the latency text (matches the oracle).
 public struct MenuBarGlyph: Equatable, Sendable {
-    public var latencyText: String
+    public var primaryText: String
     public var tone: LatencyTone
     public var itemWidth: Double
     public var fontSize: Double
     public var dotDiameter: Double
 
-    public init(latencyText: String, tone: LatencyTone, itemWidth: Double = 34, fontSize: Double = 9.5, dotDiameter: Double = 8) {
-        self.latencyText = latencyText
+    public init(primaryText: String, tone: LatencyTone, itemWidth: Double = 34, fontSize: Double = 9.5, dotDiameter: Double = 8) {
+        self.primaryText = primaryText
         self.tone = tone
         self.itemWidth = itemWidth
         self.fontSize = fontSize
@@ -96,7 +96,7 @@ public enum PingPresenter {
 
     public static func glyph(latest: Sample?, health: HealthStatus, now: Date, freshness: TimeInterval) -> MenuBarGlyph {
         let r = readout(latest: latest, health: health, now: now, freshness: freshness)
-        return MenuBarGlyph(latencyText: r.text, tone: r.tone)
+        return MenuBarGlyph(primaryText: r.text, tone: r.tone)
     }
 
     /// A readable axis maximum at or above the data max (rounded up to a clean 25ms step, so the

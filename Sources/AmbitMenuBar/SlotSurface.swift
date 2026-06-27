@@ -13,7 +13,7 @@ struct SlotSurface {
     @MainActor static let empty = SlotSurface(
         plan: SurfacePlan(),
         data: SurfaceData(),
-        glyph: MenuBarGlyph(latencyText: "No Data", tone: .neutral),
+        glyph: MenuBarGlyph(primaryText: "No Data", tone: .neutral),
         primaryEntityID: nil,
         hostOptions: []
     )
