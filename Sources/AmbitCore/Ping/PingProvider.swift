@@ -148,12 +148,12 @@ public struct PingIntegration: Integration {
     }
 
     public func makeProviders(instance: IntegrationInstanceRecord) -> [any Provider] {
-        guard let host = PingHostConfig(configObject: instance.config) else { return [] }
+        guard let host = PingHostConfig(configObject: instance.config, displayNameFallback: instance.displayName) else { return [] }
         return [PingProvider(host: host, integrationInstanceID: instance.id, probe: probeFactory(host))]
     }
 
     public func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] {
-        guard let host = PingHostConfig(configObject: instance.config), host.policy.enabled else { return [] }
+        guard let host = PingHostConfig(configObject: instance.config, displayNameFallback: instance.displayName), host.policy.enabled else { return [] }
         let providerID = "\(instance.id.rawValue)/probe"   // matches PingProvider.instanceID
         // High latency sustained for N consecutive samples (≈ N × interval).
         return [

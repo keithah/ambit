@@ -89,6 +89,33 @@ final class PingProviderTests: XCTestCase {
         XCTAssertNotEqual(a.first?.id, b.first?.id)
     }
 
+    func testIntegrationBuildsProviderWhenDisplayNameLivesOnRecordOnly() {
+        let integration = PingIntegration(probeFactory: { _ in FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 5)) })
+        let config: JSONObject = [
+            "address": .string("127.0.0.1"),
+            "method": .string("tcp"),
+            "port": .number(22),
+            "interval": .number(2),
+            "timeout": .number(0.25),
+            "thresholds": .object([
+                "degradedAt": .number(1_000),
+                "downAfterFailures": .number(2)
+            ])
+        ]
+        let record = IntegrationInstanceRecord(
+            id: "ping@127.0.0.1:22",
+            integrationID: IntegrationIDs.ping,
+            displayName: "Local",
+            origin: .user,
+            config: config
+        )
+
+        let providers = integration.makeProviders(instance: record)
+
+        XCTAssertEqual(providers.first?.displayName, "Local")
+        XCTAssertEqual(providers.first?.instanceID, "ping@127.0.0.1:22/probe")
+    }
+
     func testIntegrationReturnsNothingForUndecodableConfig() {
         let integration = PingIntegration()
         let record = IntegrationInstanceRecord(id: "ping@bad", integrationID: IntegrationIDs.ping, displayName: "bad", origin: .user, config: ["nonsense": .bool(true)])

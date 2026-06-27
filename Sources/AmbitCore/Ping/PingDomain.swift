@@ -150,4 +150,12 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
               let host = try? JSONDecoder().decode(PingHostConfig.self, from: data) else { return nil }
         self = host
     }
+
+    public init?(configObject: JSONObject, displayNameFallback: String) {
+        var object = configObject
+        if object["displayName"] == nil {
+            object["displayName"] = .string(displayNameFallback)
+        }
+        self.init(configObject: object)
+    }
 }
