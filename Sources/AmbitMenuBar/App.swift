@@ -54,7 +54,7 @@ final class SettingsWindowController {
 @MainActor
 private final class MenuBarAppModel: ObservableObject {
     let viewModel: StatusViewModel
-    private var statusBarControllers: [StatusBarController] = []
+    private let statusItemCoordinator: MenuBarStatusItemCoordinator
     private let overlayController: OverlayController
     private let settingsController: SettingsWindowController
 
@@ -62,23 +62,19 @@ private final class MenuBarAppModel: ObservableObject {
         let viewModel = StatusViewModel()
         self.viewModel = viewModel
 
-        // Create one StatusBarController per persisted/backfilled slot.
-        let controllers = viewModel.slots.map { slot in
-            StatusBarController(slotID: slot.id, viewModel: viewModel)
-        }
-        self.statusBarControllers = controllers
+        let statusItemCoordinator = MenuBarStatusItemCoordinator(viewModel: viewModel)
+        self.statusItemCoordinator = statusItemCoordinator
 
         // Overlay and settings always target the first (ping) slot's popover.
-        let firstController = controllers.first
         let overlayController = OverlayController(
             viewModel: viewModel,
-            onOpenPopover: { [weak firstController] in firstController?.showPopover() }
+            onOpenPopover: { [weak statusItemCoordinator] in statusItemCoordinator?.firstController?.showPopover() }
         )
         self.overlayController = overlayController
         let settingsController = SettingsWindowController(viewModel: viewModel)
         self.settingsController = settingsController
         viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
-        viewModel.showPopover = { [weak firstController] in firstController?.showPopover() }
+        viewModel.showPopover = { [weak statusItemCoordinator] in statusItemCoordinator?.firstController?.showPopover() }
         viewModel.openSettings = { [weak viewModel, weak settingsController] in
             viewModel?.refreshPresentationSettingsFromRegistry()
             settingsController?.show()
@@ -90,6 +86,57 @@ private final class MenuBarAppModel: ObservableObject {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak viewModel] _ in MainActor.assumeIsolated { viewModel?.kickPoll() } }
         NSApp.setActivationPolicy(.accessory)
+    }
+}
+
+struct MenuBarStatusItemReconciliationPlan: Equatable {
+    var idsToCreate: [SlotID]
+    var idsToRemove: [SlotID]
+    var orderedIDs: [SlotID]
+}
+
+enum MenuBarStatusItemReconciler {
+    static func plan(existing: [SlotID], desired: [Slot]) -> MenuBarStatusItemReconciliationPlan {
+        let desiredIDs = desired.map(\.id)
+        let existingSet = Set(existing)
+        let desiredSet = Set(desiredIDs)
+        return MenuBarStatusItemReconciliationPlan(
+            idsToCreate: desiredIDs.filter { !existingSet.contains($0) },
+            idsToRemove: existing.filter { !desiredSet.contains($0) },
+            orderedIDs: desiredIDs
+        )
+    }
+}
+
+@MainActor
+private final class MenuBarStatusItemCoordinator {
+    private let viewModel: StatusViewModel
+    private var controllersByID: [SlotID: StatusBarController] = [:]
+    private var orderedIDs: [SlotID] = []
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(viewModel: StatusViewModel) {
+        self.viewModel = viewModel
+        reconcile(slots: viewModel.slots)
+        viewModel.$slots
+            .receive(on: RunLoop.main)
+            .sink { [weak self] slots in self?.reconcile(slots: slots) }
+            .store(in: &cancellables)
+    }
+
+    var firstController: StatusBarController? {
+        orderedIDs.compactMap { controllersByID[$0] }.first
+    }
+
+    private func reconcile(slots: [Slot]) {
+        let plan = MenuBarStatusItemReconciler.plan(existing: orderedIDs, desired: slots)
+        for id in plan.idsToRemove {
+            controllersByID.removeValue(forKey: id)?.removeFromStatusBar()
+        }
+        for id in plan.idsToCreate {
+            controllersByID[id] = StatusBarController(slotID: id, viewModel: viewModel)
+        }
+        orderedIDs = plan.orderedIDs
     }
 }
 
@@ -143,6 +190,11 @@ private final class StatusBarController: NSObject {
         guard let button = statusItem.button, !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+    }
+
+    func removeFromStatusBar() {
+        popover.performClose(nil)
+        NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     private func updateGlyph(_ glyph: MenuBarGlyph) {
