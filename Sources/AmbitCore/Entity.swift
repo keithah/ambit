@@ -114,6 +114,35 @@ public enum Availability: String, Sendable, Codable { case online, stale, unavai
 public enum Severity: Int, Sendable, Codable, Comparable {
     case normal, elevated, degraded, alerting, down
     public static func < (lhs: Severity, rhs: Severity) -> Bool { lhs.rawValue < rhs.rawValue }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(Int.self), let severity = Severity(rawValue: value) {
+            self = severity
+            return
+        }
+        let value = try container.decode(String.self)
+        switch value {
+        case "normal", "info": self = .normal
+        case "elevated", "warning": self = .elevated
+        case "degraded": self = .degraded
+        case "alerting": self = .alerting
+        case "down", "critical": self = .down
+        default:
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown severity \(value)")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public extension Severity {
+    static var info: Severity { .normal }
+    static var warning: Severity { .elevated }
+    static var critical: Severity { .down }
 }
 
 public enum EntityKind: String, Sendable, Codable {

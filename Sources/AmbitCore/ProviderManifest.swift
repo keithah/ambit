@@ -488,7 +488,7 @@ public extension ProviderManifest {
         public var kind: Kind
         public var title: String
         public var message: String
-        public var severity: AlertSeverity
+        public var severity: Severity
 
         public init(
             id: String,
@@ -496,7 +496,7 @@ public extension ProviderManifest {
             kind: Kind,
             title: String,
             message: String,
-            severity: AlertSeverity = .warning
+            severity: Severity = .warning
         ) {
             self.id = id
             self.metricID = metricID

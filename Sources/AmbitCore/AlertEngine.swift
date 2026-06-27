@@ -1,37 +1,103 @@
 import Foundation
 
+public enum AlertEventPhase: String, Codable, Equatable, Sendable {
+    case active
+    case recovered
+}
+
+public enum AlertTarget: Codable, Equatable, Sendable {
+    case entity(EntityID)
+    case providerMetric(providerID: ProviderID, metricID: String)
+    case provider(ProviderID)
+    case capability(ProviderCapability)
+}
+
+public struct ResolvedAlertEvent: Equatable, Sendable {
+    public var event: AlertEvent
+    public var entityIDs: Set<EntityID>
+
+    public init(event: AlertEvent, entityIDs: Set<EntityID>) {
+        self.event = event
+        self.entityIDs = entityIDs
+    }
+}
+
+public protocol AlertTargetResolving: Sendable {
+    func resolve(_ event: AlertEvent, descriptors: [EntityDescriptor]) -> Set<EntityID>
+}
+
+public struct AlertTargetResolver: AlertTargetResolving {
+    public init() {}
+
+    public func resolve(_ event: AlertEvent, descriptors: [EntityDescriptor]) -> Set<EntityID> {
+        let target = event.target ?? legacyTarget(for: event, descriptors: descriptors)
+        guard let target else { return [] }
+        switch target {
+        case .entity(let id):
+            return descriptors.contains(where: { $0.id == id }) ? [id] : []
+        case .providerMetric(let providerID, let metricID):
+            return Set(descriptors.filter {
+                providerMatches($0.instanceID, providerID: providerID) && $0.metricID == metricID
+            }.map(\.id))
+        case .provider(let providerID):
+            let matches = descriptors.filter { providerMatches($0.instanceID, providerID: providerID) }
+            let primaries = matches.filter(\.isPrimary)
+            return Set((primaries.isEmpty ? matches : primaries).map(\.id))
+        case .capability(let capability):
+            let matches = descriptors.filter { $0.capability == capability }
+            let primaries = matches.filter(\.isPrimary)
+            return Set((primaries.isEmpty ? matches : primaries).map(\.id))
+        }
+    }
+
+    private func providerMatches(_ instanceID: ProviderInstanceID, providerID: ProviderID) -> Bool {
+        instanceID.rawValue == providerID || instanceID == ProviderInstanceIDs.resolve(providerID)
+    }
+
+    private func legacyTarget(for event: AlertEvent, descriptors: [EntityDescriptor]) -> AlertTarget? {
+        if event.providerID == "ping.network" {
+            return .entity(DiagnosisEntity.entityID)
+        }
+        let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
+        if descriptors.contains(where: { $0.id == pingLatencyID }) {
+            return .entity(pingLatencyID)
+        }
+        return nil
+    }
+}
+
 public struct AlertEvent: Equatable, Identifiable, Sendable {
     public var id: String
     public var ruleID: String
     public var providerID: ProviderID
+    public var target: AlertTarget?
+    public var phase: AlertEventPhase
     public var title: String
     public var message: String
-    public var severity: AlertSeverity
+    public var severity: Severity
     public var triggeredAt: Date
 
     public init(
         id: String = UUID().uuidString,
         ruleID: String,
         providerID: ProviderID,
+        target: AlertTarget? = nil,
+        phase: AlertEventPhase = .active,
         title: String,
         message: String,
-        severity: AlertSeverity,
+        severity: Severity,
         triggeredAt: Date = Date()
     ) {
         self.id = id
         self.ruleID = ruleID
         self.providerID = providerID
+        self.target = target
+        self.phase = phase
         self.title = title
         self.message = message
         self.severity = severity
         self.triggeredAt = triggeredAt
     }
-}
-
-public enum AlertSeverity: String, Codable, Equatable, Sendable {
-    case info
-    case warning
-    case critical
 }
 
 public enum AlertRule: Equatable, Sendable {
@@ -75,7 +141,7 @@ public struct ThresholdAlertRule: Equatable, Sendable {
     public var threshold: Double
     public var title: String
     public var message: String
-    public var severity: AlertSeverity
+    public var severity: Severity
     public var cooldown: TimeInterval
     public var notifyOnRecovery: Bool
     public var recoveryMessage: String?
@@ -88,7 +154,7 @@ public struct ThresholdAlertRule: Equatable, Sendable {
         threshold: Double,
         title: String,
         message: String,
-        severity: AlertSeverity = .warning,
+        severity: Severity = .warning,
         cooldown: TimeInterval = 0,
         notifyOnRecovery: Bool = false,
         recoveryMessage: String? = nil
@@ -114,7 +180,7 @@ public struct ThresholdAlertRule: Equatable, Sendable {
         return state.fireOnRisingEdge(
             ruleID: id,
             isActive: isActive,
-            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now),
+            event: AlertEvent(ruleID: id, providerID: providerID, target: .providerMetric(providerID: providerID, metricID: metricID), title: title, message: message, severity: severity, triggeredAt: now),
             cooldown: cooldown,
             recovery: notifyOnRecovery ? recoveryEvent(now) : nil,
             now: now
@@ -122,7 +188,7 @@ public struct ThresholdAlertRule: Equatable, Sendable {
     }
 
     private func recoveryEvent(_ now: Date) -> AlertEvent {
-        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
+        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, target: .providerMetric(providerID: providerID, metricID: metricID), phase: .recovered, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
     }
 }
 
@@ -133,7 +199,7 @@ public struct StateTransitionAlertRule: Equatable, Sendable {
     public var expectedValue: MetricValue
     public var title: String
     public var message: String
-    public var severity: AlertSeverity
+    public var severity: Severity
 
     public init(
         id: String,
@@ -142,7 +208,7 @@ public struct StateTransitionAlertRule: Equatable, Sendable {
         expectedValue: MetricValue,
         title: String,
         message: String,
-        severity: AlertSeverity = .warning
+        severity: Severity = .warning
     ) {
         self.id = id
         self.providerID = providerID
@@ -158,7 +224,7 @@ public struct StateTransitionAlertRule: Equatable, Sendable {
         let previous = state.lastMetricValues[id]
         state.lastMetricValues[id] = value
         guard value == expectedValue, previous != nil, previous != expectedValue else { return nil }
-        return AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now)
+        return AlertEvent(ruleID: id, providerID: providerID, target: .providerMetric(providerID: providerID, metricID: metricID), title: title, message: message, severity: severity, triggeredAt: now)
     }
 }
 
@@ -171,7 +237,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
     public var duration: TimeInterval
     public var title: String
     public var message: String
-    public var severity: AlertSeverity
+    public var severity: Severity
     public var cooldown: TimeInterval
     public var notifyOnRecovery: Bool
     public var recoveryMessage: String?
@@ -185,7 +251,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
         duration: TimeInterval,
         title: String,
         message: String,
-        severity: AlertSeverity = .warning,
+        severity: Severity = .warning,
         cooldown: TimeInterval = 0,
         notifyOnRecovery: Bool = false,
         recoveryMessage: String? = nil
@@ -218,7 +284,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
         return state.fireOnRisingEdge(
             ruleID: id,
             isActive: isActive,
-            event: AlertEvent(ruleID: id, providerID: providerID, title: title, message: message, severity: severity, triggeredAt: now),
+            event: AlertEvent(ruleID: id, providerID: providerID, target: .providerMetric(providerID: providerID, metricID: metricID), title: title, message: message, severity: severity, triggeredAt: now),
             cooldown: cooldown,
             recovery: notifyOnRecovery ? recoveryEvent(now) : nil,
             now: now
@@ -226,7 +292,7 @@ public struct SustainedAlertRule: Equatable, Sendable {
     }
 
     private func recoveryEvent(_ now: Date) -> AlertEvent {
-        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
+        AlertEvent(ruleID: "\(id).recovered", providerID: providerID, target: .providerMetric(providerID: providerID, metricID: metricID), phase: .recovered, title: "\(title) recovered", message: recoveryMessage ?? "Back to normal.", severity: .info, triggeredAt: now)
     }
 }
 

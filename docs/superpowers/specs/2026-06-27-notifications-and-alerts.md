@@ -11,6 +11,7 @@ Post-read action: implement generic, entity-targeted alerting and notification d
 - Resolve alert events to `EntityID`s through a generic bridge so Attention, menu bar headlines, popovers, and notifications all target the same entities.
 - Replace menu-bar-local notification delivery with an injectable service that can be tested without live `UserNotifications`.
 - Make `AlertPolicy` genuinely generic, or split the latency-specific parts into typed policy data so the generic settings renderer can expose alert behavior for any measurable entity.
+- Reuse the existing entity `Severity` taxonomy for alert severity. If a distinct delivery severity is ever needed, it must be mapped to and from `Severity` in one explicit adapter.
 - Preserve and generalize the pingscope semantics that matter: cooldowns, recovery notifications, permission handling, and test notifications.
 - Keep integration-specific diagnosis logic at the integration boundary. The UI layer should consume resolved entity alerts, not ping rule/provider strings.
 
@@ -82,7 +83,7 @@ public struct AlertEvent: Equatable, Identifiable, Sendable {
     public var phase: AlertEventPhase
     public var title: String
     public var message: String
-    public var severity: AlertSeverity
+    public var severity: Severity
     public var triggeredAt: Date
 }
 
@@ -136,7 +137,7 @@ public struct NotificationIntent: Equatable, Identifiable, Sendable {
     public var id: String
     public var title: String
     public var body: String
-    public var severity: AlertSeverity
+    public var severity: Severity
     public var entityIDs: Set<EntityID>
     public var phase: AlertEventPhase
     public var triggeredAt: Date
@@ -232,6 +233,11 @@ Recovery events should set:
 ### 5. Attention Promotion
 
 After alert events resolve to entity IDs, slot surface building should pass only candidate-local alerting IDs into the per-slot `AttentionEngine`.
+
+Delivery and promotion intentionally differ:
+
+- Notification delivery is global. A resolved alert event produces one notification intent for its resolved entity set, independent of how many slots might show those entities.
+- Attention promotion is per-slot. Each `SlotSurfaceCoordinator` intersects resolved entity IDs with that slot's candidates before passing `alertingIDs` into that slot's `AttentionEngine`.
 
 Flow:
 

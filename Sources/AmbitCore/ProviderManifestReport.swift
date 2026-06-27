@@ -58,7 +58,7 @@ public enum ProviderManifestReport {
     }
 
     private static func alertLine(_ alert: ProviderManifest.Alert) -> String {
-        "  \(alert.id): \(alert.title) (\(alert.metricID) \(alert.kind.reportText), \(alert.severity.rawValue))"
+        "  \(alert.id): \(alert.title) (\(alert.metricID) \(alert.kind.reportText), \(alert.severity.reportText))"
     }
 
     private static func commandLine(_ command: ProviderManifest.Command) -> String {
@@ -69,6 +69,18 @@ public enum ProviderManifestReport {
         }
         details.append(command.endpoint == nil ? "metadata only" : "executable")
         return "  \(command.id): \(command.label) (\(details.joined(separator: ", ")))"
+    }
+}
+
+private extension Severity {
+    var reportText: String {
+        switch self {
+        case .normal: return "info"
+        case .elevated: return "warning"
+        case .degraded: return "degraded"
+        case .alerting: return "alerting"
+        case .down: return "critical"
+        }
     }
 }
 

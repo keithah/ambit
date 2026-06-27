@@ -67,7 +67,7 @@ public struct PingAlertMonitor: Sendable {
         let key = String(describing: diagnosis.verdict)
         if key == lastVerdictKey { diagnosisStreak += 1 } else { diagnosisStreak = 1; lastVerdictKey = key }
 
-        let chosen: (type: String, title: String, severity: AlertSeverity)
+        let chosen: (type: String, title: String, severity: Severity)
         if case .partialDegradation = diagnosis.verdict {
             // Opt-in, streak-gated; emit the specific pathDegraded alert (not the down-verdict
             // confidence downgrade).
@@ -86,7 +86,7 @@ public struct PingAlertMonitor: Sendable {
         return AlertEvent(ruleID: "ping.\(chosen.type)", providerID: "ping.network", title: chosen.title, message: diagnosis.detail, severity: chosen.severity, triggeredAt: now)
     }
 
-    private static func specific(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> (type: String, title: String, severity: AlertSeverity)? {
+    private static func specific(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> (type: String, title: String, severity: Severity)? {
         switch verdict {
         case .allReachable, .noData, .monitoringStalled: return nil   // stalled monitoring is not an outage — never alert
         case .localNetworkDown: return ("localNetworkDown", "Local network down", .critical)
