@@ -141,7 +141,14 @@ aggregator/viewport, never the coordinator.
   and available for other history-backed entities through Available Items; it follows the focused ping host.
   Added generic `HistoryExport` (CSV/JSON/Text) plus the History settings pane for entity/slot target, range,
   retention label, export, and clear.
-- Current master: **567 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+- **Core hardening Phase 1 complete** — prerequisite hardening for multi-host ping parity and overlay work:
+  per-slot `AttentionEngine` state via `SlotAttentionEngines`; pure primary/readout selection extracted into
+  Core as `SlotReadoutSelector`; `MenuBarStatusItemCoordinator` reconciles status items from `$slots` at runtime;
+  `SlotSurfaceCoordinator` owns slot surface assembly; `PingDiagnosisCoordinator` isolates ping diagnosis and
+  alert-ID mapping; `MenuBarGlyph.primaryText` replaces ping-specific naming; obsolete
+  `GraphGeometry.points(...)` was removed; and history retention labels now derive from
+  `HistoryService.retentionInterval`.
+- Current master: **578 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, and generic history export.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
@@ -153,7 +160,7 @@ aggregator/viewport, never the coordinator.
 ## 6. Roadmap (presentation program)
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
-  Fidelity ✓.
+  Fidelity ✓, Core hardening Phase 1 ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
