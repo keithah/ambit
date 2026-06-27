@@ -3,12 +3,24 @@ import AmbitCore
 
 public struct GraphLine: Identifiable, Equatable {
     public var id: String
+    public var entityID: EntityID?
     public var color: Color
     public var samples: [Sample]
-    public init(id: String, color: Color, samples: [Sample]) {
+    public var isPrimary: Bool
+    public init(id: String, entityID: EntityID? = nil, color: Color, samples: [Sample], isPrimary: Bool = false) {
         self.id = id
+        self.entityID = entityID
         self.color = color
         self.samples = samples
+        self.isPrimary = isPrimary
+    }
+
+    var strokeWidth: CGFloat {
+        isPrimary ? 2.2 : 1.35
+    }
+
+    var opacity: Double {
+        isPrimary ? 1.0 : 0.48
     }
 }
 
@@ -24,10 +36,14 @@ public struct HistoryGraphCard: View {
     let deviceClass: DeviceClass?
     let unit: String?
     let summary: [GraphSummaryItem]
+    static let legendVisibleEntryLimit = 4
     var hasDrawableSeries: Bool {
         lines.contains { line in
             line.samples.filter { $0.ok && $0.value != nil }.count > 1
         }
+    }
+    var visibleLegendLines: [GraphLine] {
+        Array(lines.filter { !$0.samples.isEmpty }.prefix(Self.legendVisibleEntryLimit))
     }
 
     public init(
@@ -86,11 +102,16 @@ public struct HistoryGraphCard: View {
             }
             if showLegend {
                 HStack(spacing: 12) {
-                    ForEach(lines) { line in
+                    ForEach(visibleLegendLines) { line in
                         HStack(spacing: 5) {
                             Circle().fill(line.color).frame(width: 8, height: 8)
-                            Text(line.id).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            Text(line.id)
+                                .font(.system(size: 11.5, weight: line.isPrimary ? .semibold : .regular))
+                                .foregroundStyle(line.isPrimary ? .primary : .secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
+                        .frame(minWidth: 0)
                     }
                 }
             }
@@ -141,7 +162,8 @@ public struct HistoryGraphCard: View {
             let plotPadding: CGFloat = showsAxes ? 6 : 0
             for (lineIndex, line) in lines.enumerated() where line.samples.count > 1 {
                 let geometry = GraphGeometry.series(samples: line.samples, in: size, axisMax: axisMax, plotVerticalPadding: plotPadding)
-                if let failureStyle = GraphFailureMarkStyle.style(isMultiLine: isMultiLine, isPrimaryLine: lineIndex == 0) {
+                let isPrimaryLine = line.isPrimary || (!lines.contains(where: \.isPrimary) && lineIndex == 0)
+                if let failureStyle = GraphFailureMarkStyle.style(isMultiLine: isMultiLine, isPrimaryLine: isPrimaryLine) {
                     for x in geometry.failureXPositions {
                         let endpoints = GraphGeometry.failureMarkEndpoints(x: x, in: size, plotVerticalPadding: plotPadding)
                         var failure = Path()
@@ -159,7 +181,9 @@ public struct HistoryGraphCard: View {
                     for (index, point) in segment.enumerated() {
                         if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
                     }
-                    context.stroke(path, with: .color(line.color), lineWidth: 1.8)
+                    context.opacity = line.opacity
+                    context.stroke(path, with: .color(line.color), lineWidth: line.strokeWidth)
+                    context.opacity = 1
                 }
             }
         }

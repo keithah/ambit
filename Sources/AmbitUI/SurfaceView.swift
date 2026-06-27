@@ -8,13 +8,16 @@ public struct SurfaceData {
     public var descriptors: [EntityID: EntityDescriptor]
     public var states: [EntityID: EntityState]
     public var series: [EntityID: [Sample]]
+    public var primaryEntityID: EntityID?
 
     public init(descriptors: [EntityID: EntityDescriptor] = [:],
                 states: [EntityID: EntityState] = [:],
-                series: [EntityID: [Sample]] = [:]) {
+                series: [EntityID: [Sample]] = [:],
+                primaryEntityID: EntityID? = nil) {
         self.descriptors = descriptors
         self.states = states
         self.series = series
+        self.primaryEntityID = primaryEntityID
     }
 
     public func readout(_ id: EntityID) -> EntityReadout {
@@ -25,8 +28,15 @@ public struct SurfaceData {
     public func title(_ id: EntityID) -> String { descriptors[id]?.name ?? id.rawValue }
     public func samples(_ id: EntityID) -> [Sample] { series[id] ?? [] }
     public func graphLines(_ ids: [EntityID]) -> [GraphLine] {
-        ids.enumerated().map { index, id in
-            GraphLine(id: title(id), color: Theme.lineColor(index), samples: samples(id))
+        let emphasizedID = primaryEntityID ?? ids.first
+        return ids.enumerated().map { index, id in
+            GraphLine(
+                id: title(id),
+                entityID: id,
+                color: Theme.lineColor(index),
+                samples: samples(id),
+                isPrimary: id == emphasizedID
+            )
         }
     }
 

@@ -133,9 +133,16 @@ final class SlotSurfaceCoordinator {
         )
         let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
 
+        let data = SurfaceData(
+            descriptors: descriptors,
+            states: states,
+            series: series,
+            primaryEntityID: readout.primaryEntityID
+        )
+
         return SlotSurface(
             plan: SurfacePlan(cards: planCards),
-            data: SurfaceData(descriptors: descriptors, states: states, series: series),
+            data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
             hostOptions: hostOptions
@@ -216,9 +223,16 @@ enum StatusSlotSurfaceBuilder {
             attentionEngine: &attentionEngine
         )
 
+        let data = SurfaceData(
+            descriptors: descriptors,
+            states: states,
+            series: series,
+            primaryEntityID: readout.primaryEntityID
+        )
+
         return SlotSurface(
             plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config, slotID: slot.id),
-            data: SurfaceData(descriptors: descriptors, states: states, series: series),
+            data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
             hostOptions: []
