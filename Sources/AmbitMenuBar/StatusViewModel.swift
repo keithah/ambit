@@ -1368,34 +1368,31 @@ struct StatusSlotReadout {
         attentionEngine: inout AttentionEngine
     ) -> StatusSlotReadoutResult {
         switch mode {
-        case .fixed(let id):
-            if let descriptor = descriptors[id] {
-                return StatusSlotReadoutResult(glyph: glyph(descriptor: descriptor, state: states[id]), primaryEntityID: id, selection: AttentionSelection())
-            }
-            return fallbackResult(candidates: candidates, states: states)
-        case .dynamic:
-            let selection = resolveSelection(
+        case .fixed, .dynamic:
+            let resolution = SlotReadoutSelector.resolve(
+                mode: mode,
                 candidates: candidates,
+                states: states,
+                availableEntityIDs: Set(descriptors.keys),
                 alertingIDs: alertingIDs,
                 config: config,
                 now: now,
-                attentionEngine: &attentionEngine
+                attentionEngine: &attentionEngine,
+                surfaceID: surfaceID,
+                capacity: SurfaceCapacity(lanes: 1, overflow: .countBadge)
             )
 
-            let selectedID = activeSelectionID(selection, config: config, alertingIDs: alertingIDs)
-                ?? restingPrimaryID(candidates: candidates, states: states, config: config)
-
             guard
-                let selectedID,
-                let selectedCandidate = candidates.first(where: { $0.descriptor.id == selectedID })
+                let selectedID = resolution.primaryEntityID,
+                let descriptor = descriptors[selectedID] ?? candidates.first(where: { $0.descriptor.id == selectedID })?.descriptor
             else {
-                return fallbackResult(candidates: candidates, states: states, selection: selection)
+                return fallbackResult(candidates: candidates, states: states, selection: resolution.selection)
             }
-            let descriptor = descriptors[selectedID] ?? selectedCandidate.descriptor
+            let selectedState = states[selectedID] ?? candidates.first(where: { $0.descriptor.id == selectedID })?.state
             return StatusSlotReadoutResult(
-                glyph: glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state),
+                glyph: glyph(descriptor: descriptor, state: selectedState),
                 primaryEntityID: selectedID,
-                selection: selection
+                selection: resolution.selection
             )
         }
     }
@@ -1417,54 +1414,6 @@ struct StatusSlotReadout {
             primaryEntityID: fallback.descriptor.id,
             selection: selection
         )
-    }
-
-    private static func activeSelectionID(
-        _ selection: AttentionSelection,
-        config: PresentationConfig,
-        alertingIDs: Set<EntityID>
-    ) -> EntityID? {
-        selection.lanes.first { entity in
-            entity.tier == .alerted ||
-            entity.tier == .surfaced ||
-            entity.reason.severity > .normal ||
-            entity.reason.transitionBoosted ||
-            alertingIDs.contains(entity.id) ||
-            (config.entityOverrides[entity.id]?.pinned ?? false)
-        }?.id
-    }
-
-    private static func restingPrimaryID(
-        candidates: [AttentionCandidate],
-        states: [EntityID: EntityState],
-        config: PresentationConfig
-    ) -> EntityID? {
-        let visible = candidates.enumerated().filter { _, candidate in
-            let override = config.entityOverrides[candidate.descriptor.id]
-            return override?.enabled != false && (override?.visibility ?? candidate.descriptor.defaultVisibility) != .never
-        }
-        return visible.sorted { lhs, rhs in
-            let a = lhs.element
-            let b = rhs.element
-            if a.descriptor.isPrimary != b.descriptor.isPrimary {
-                return a.descriptor.isPrimary && !b.descriptor.isPrimary
-            }
-            let aPriority = a.descriptor.priority ?? 0
-            let bPriority = b.descriptor.priority ?? 0
-            if aPriority != bPriority { return aPriority > bPriority }
-            let aAvailability = availabilityRank(states[a.descriptor.id]?.availability ?? a.state.availability)
-            let bAvailability = availabilityRank(states[b.descriptor.id]?.availability ?? b.state.availability)
-            if aAvailability != bAvailability { return aAvailability > bAvailability }
-            return lhs.offset < rhs.offset
-        }.first?.element.descriptor.id
-    }
-
-    private static func availabilityRank(_ availability: Availability) -> Int {
-        switch availability {
-        case .online: return 2
-        case .stale: return 1
-        case .unavailable: return 0
-        }
     }
 
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
