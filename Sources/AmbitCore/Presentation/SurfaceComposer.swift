@@ -52,7 +52,8 @@ public enum SurfaceComposer {
         descriptors: [EntityDescriptor],
         states: [EntityID: EntityState],
         config: PresentationConfig = .empty,
-        slotID: SlotID? = nil
+        slotID: SlotID? = nil,
+        preferredSampleHistoryEntityID: EntityID? = nil
     ) -> SurfacePlan {
         let visible = descriptors.filter { descriptor in
             if descriptor.category == .config { return false }
@@ -77,7 +78,8 @@ public enum SurfaceComposer {
                 ordered: ordered,
                 states: states,
                 config: config,
-                slotID: slotID
+                slotID: slotID,
+                preferredSampleHistoryEntityID: preferredSampleHistoryEntityID
             ).filter(\.isShown).map(\.card)
             guard !leaves.isEmpty else { continue }
             let children = deduplicatingEponymousTitle(
@@ -95,7 +97,8 @@ public enum SurfaceComposer {
         descriptors: [EntityDescriptor],
         states: [EntityID: EntityState],
         config: PresentationConfig = .empty,
-        slotID: SlotID? = nil
+        slotID: SlotID? = nil,
+        preferredSampleHistoryEntityID: EntityID? = nil
     ) -> [SurfaceItem] {
         let visible = descriptors.filter { descriptor in
             if descriptor.category == .config { return false }
@@ -116,7 +119,8 @@ public enum SurfaceComposer {
                 ordered: ordered,
                 states: states,
                 config: config,
-                slotID: slotID
+                slotID: slotID,
+                preferredSampleHistoryEntityID: preferredSampleHistoryEntityID
             )
         }
     }
@@ -131,7 +135,8 @@ public enum SurfaceComposer {
         ordered: [EntityDescriptor],
         states: [EntityID: EntityState],
         config: PresentationConfig,
-        slotID: SlotID?
+        slotID: SlotID?,
+        preferredSampleHistoryEntityID: EntityID?
     ) -> [SurfaceItem] {
         let override = slotOverride(for: slotID, config: config)
         let baseCards = buildCards(for: ordered, states: states, config: config).map { card -> CardSpec in
@@ -140,7 +145,7 @@ public enum SurfaceComposer {
             card.tableRowLimit = limit
             return card
         }
-        let autoSampleHistoryID = primaryLatencyHistoryEntityID(in: ordered)
+        let autoSampleHistoryID = sampleHistoryEntityID(preferredEntityID: preferredSampleHistoryEntityID, in: ordered)
         let cardsWithDefaultVisibility = baseCards.map { (card: $0, defaultShown: true) }
             + sampleHistoryCards(for: ordered).map { card in
                 (card: card, defaultShown: card.entities.first == autoSampleHistoryID)
@@ -382,9 +387,7 @@ public enum SurfaceComposer {
 
     private static func sampleHistoryCards(for ordered: [EntityDescriptor]) -> [CardSpec] {
         ordered
-            .filter { descriptor in
-                descriptor.stateClass == .measurement && descriptor.kind == .sensor
-            }
+            .filter(isSampleHistoryEligible)
             .map { descriptor in
                 CardSpec(
                     id: "history:\(descriptor.id.rawValue)",
@@ -400,10 +403,22 @@ public enum SurfaceComposer {
     private static func primaryLatencyHistoryEntityID(in ordered: [EntityDescriptor]) -> EntityID? {
         ordered.first { descriptor in
             descriptor.isPrimary
-                && descriptor.kind == .sensor
+                && isSampleHistoryEligible(descriptor)
                 && descriptor.deviceClass == .latency
-                && descriptor.stateClass == .measurement
         }?.id
+    }
+
+    public static func sampleHistoryEntityID(preferredEntityID: EntityID?, in ordered: [EntityDescriptor]) -> EntityID? {
+        if let preferredEntityID,
+           let preferred = ordered.first(where: { $0.id == preferredEntityID }),
+           isSampleHistoryEligible(preferred) {
+            return preferredEntityID
+        }
+        return primaryLatencyHistoryEntityID(in: ordered)
+    }
+
+    private static func isSampleHistoryEligible(_ descriptor: EntityDescriptor) -> Bool {
+        descriptor.stateClass == .measurement && descriptor.kind == .sensor
     }
 
     private static func segmentedRingCard(for group: [EntityDescriptor]) -> CardSpec {

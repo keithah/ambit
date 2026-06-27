@@ -131,7 +131,17 @@ final class SlotSurfaceCoordinator {
             config: config,
             now: now
         )
-        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
+        let sampleHistoryEntityID = SurfaceComposer.sampleHistoryEntityID(
+            preferredEntityID: readout.primaryEntityID,
+            in: detailDescriptors
+        )
+        let planCards = SurfaceComposer.detailPlan(
+            descriptors: detailDescriptors,
+            states: states,
+            config: config,
+            slotID: slot.id,
+            preferredSampleHistoryEntityID: sampleHistoryEntityID
+        ).cards
 
         let data = SurfaceData(
             descriptors: descriptors,

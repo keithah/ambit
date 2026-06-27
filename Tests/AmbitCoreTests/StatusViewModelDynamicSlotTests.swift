@@ -437,6 +437,57 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testCombinedPingSampleHistoryFollowsAttentionSelectedLatencyHost() async {
+        let coordinator = SlotSurfaceCoordinator()
+        var fixtures = pingSurfaceFixtures()
+        fixtures.states[fixtures.latencyIDs[1]] = state(fixtures.latencyIDs[1], value: 240, severity: .degraded)
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[1].rawValue)")
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+    }
+
+    @MainActor
+    func testCombinedPingSampleHistoryFallsBackToRestingLatencyWhenHeadlineIsDiagnostic() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.localNetworkDown),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, DiagnosisEntity.entityID)
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[0].rawValue)")
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[0]])
+    }
+
+    @MainActor
     func testMissingFocusedPingHostFallsBackToAllHostsRendering() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()

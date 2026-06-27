@@ -161,6 +161,35 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(items.map(\.label), ["CPU", "CPU history"])
     }
 
+    func testPreferredSampleHistoryUsesSameIdentityInPlanAndAvailableItems() {
+        let slotID = SlotID(rawValue: "slot.ping")
+        let primary = sensor("primary", .latency, stateClass: .measurement, isPrimary: true)
+        let selected = sensor("selected", .latency, stateClass: .measurement)
+
+        let plan = SurfaceComposer.detailPlan(
+            descriptors: [primary, selected],
+            states: [:],
+            slotID: slotID,
+            preferredSampleHistoryEntityID: selected.id
+        )
+        let items = SurfaceComposer.surfaceItems(
+            descriptors: [primary, selected],
+            states: [:],
+            slotID: slotID,
+            preferredSampleHistoryEntityID: selected.id
+        )
+
+        let history = renderedLeaves(in: plan).first { $0.kind == .sampleHistory }
+        XCTAssertEqual(history?.id, "history:i/p.selected")
+        XCTAssertEqual(history?.entities, [selected.id])
+        XCTAssertEqual(items.filter { $0.id.rawValue.hasPrefix("history:") }.map(\.id.rawValue), [
+            "history:i/p.primary",
+            "history:i/p.selected"
+        ])
+        XCTAssertEqual(items.first { $0.id.rawValue == "history:i/p.selected" }?.isShown, true)
+        XCTAssertEqual(items.first { $0.id.rawValue == "history:i/p.primary" }?.isShown, false)
+    }
+
     func testSingleEponymousChildOmitsRepeatedSectionTitle() {
         let plan = SurfaceComposer.detailPlan(descriptors: [
             sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu")
