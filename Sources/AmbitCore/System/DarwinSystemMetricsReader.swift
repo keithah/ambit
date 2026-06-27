@@ -18,7 +18,8 @@ public struct DarwinSystemMetricsReader: SystemMetricsReading {
             diskVolumes: Self.diskVolumes(),
             networkCounters: Self.networkCounters(),
             battery: Self.batteryMetrics(),
-            processes: []
+            processes: [],
+            uptimeSeconds: Self.uptimeSeconds()
         )
     }
 }
@@ -48,13 +49,47 @@ private extension DarwinSystemMetricsReader {
             loads = Array(loads.prefix(max(Int(loadCount), 0)))
         }
 
+        let coreUsagePercents = Self.coreUsagePercents()
+
         return CPUMetrics(
             userPercent: ((user + nice) / total) * 100,
             systemPercent: (system / total) * 100,
             idlePercent: (idle / total) * 100,
-            coreCount: max(ProcessInfo.processInfo.processorCount, 1),
-            loadAverages: loads
+            coreCount: max(coreUsagePercents.count, ProcessInfo.processInfo.processorCount, 1),
+            loadAverages: loads,
+            coreUsagePercents: coreUsagePercents
         )
+    }
+
+    static func coreUsagePercents() -> [Double] {
+        var processorCount: natural_t = 0
+        var processorInfo: processor_info_array_t?
+        var processorInfoCount: mach_msg_type_number_t = 0
+        let result = host_processor_info(
+            mach_host_self(),
+            PROCESSOR_CPU_LOAD_INFO,
+            &processorCount,
+            &processorInfo,
+            &processorInfoCount
+        )
+        guard result == KERN_SUCCESS, let processorInfo else { return [] }
+        defer {
+            let byteCount = vm_size_t(Int(processorInfoCount) * MemoryLayout<integer_t>.stride)
+            vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: processorInfo)), byteCount)
+        }
+
+        let stride = Int(CPU_STATE_MAX)
+        return (0..<Int(processorCount)).compactMap { index in
+            let base = index * stride
+            guard base + Int(CPU_STATE_MAX) <= Int(processorInfoCount) else { return nil }
+            let user = Double(processorInfo[base + Int(CPU_STATE_USER)])
+            let system = Double(processorInfo[base + Int(CPU_STATE_SYSTEM)])
+            let idle = Double(processorInfo[base + Int(CPU_STATE_IDLE)])
+            let nice = Double(processorInfo[base + Int(CPU_STATE_NICE)])
+            let total = user + system + idle + nice
+            guard total > 0 else { return 0 }
+            return min(max(((user + system + nice) / total) * 100, 0), 100)
+        }
     }
 
     static func memoryMetrics() throws -> MemoryMetrics {
@@ -85,13 +120,21 @@ private extension DarwinSystemMetricsReader {
         let compressed = UInt64(stats.compressor_page_count) * pageSize
         let active = UInt64(stats.active_count) * pageSize
         let inactive = UInt64(stats.inactive_count) * pageSize
+        let free = UInt64(stats.free_count) * pageSize
         let used = min(active + inactive + wired + compressed, totalBytes)
+        let pressurePercent: Double? = totalBytes > 0
+            ? min(max((Double(active + wired + compressed) / Double(totalBytes)) * 100, 0), 100)
+            : nil
 
         return MemoryMetrics(
             usedBytes: used,
             wiredBytes: wired,
             compressedBytes: compressed,
-            totalBytes: totalBytes
+            totalBytes: totalBytes,
+            pressurePercent: pressurePercent,
+            appActiveBytes: active,
+            cachedInactiveBytes: inactive,
+            freeBytes: min(free, totalBytes)
         )
     }
 
@@ -145,6 +188,17 @@ private extension DarwinSystemMetricsReader {
         }
         return byName.values.sorted { $0.interfaceName < $1.interfaceName }
     }
+
+    static func uptimeSeconds() -> TimeInterval? {
+        var bootTime = timeval()
+        var size = MemoryLayout<timeval>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, u_int(mib.count), &bootTime, &size, nil, 0) == 0 else {
+            return nil
+        }
+        let bootTimestamp = TimeInterval(bootTime.tv_sec) + TimeInterval(bootTime.tv_usec) / 1_000_000
+        return max(0, Date().timeIntervalSince1970 - bootTimestamp)
+    }
 }
 #else
 private extension DarwinSystemMetricsReader {
@@ -158,6 +212,7 @@ private extension DarwinSystemMetricsReader {
 
     static func diskVolumes() -> [DiskVolumeMetrics] { [] }
     static func networkCounters() -> [NetworkCounterMetrics] { [] }
+    static func uptimeSeconds() -> TimeInterval? { nil }
 }
 #endif
 

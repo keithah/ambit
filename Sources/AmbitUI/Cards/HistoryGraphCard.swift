@@ -17,16 +17,34 @@ public struct GraphLine: Identifiable, Equatable {
 public struct HistoryGraphCard: View {
     let title: String
     let lines: [GraphLine]
-    let axisMax: Double
+    let axisMax: Double?
     let showLegend: Bool
     let deviceClass: DeviceClass?
     let unit: String?
     let summary: [GraphSummaryItem]
+    var hasDrawableSeries: Bool {
+        lines.contains { line in
+            line.samples.filter { $0.value != nil }.count > 1
+        }
+    }
 
-    public init(title: String, lines: [GraphLine], deviceClass: DeviceClass? = nil, unit: String? = nil, summary: [GraphSummaryItem] = [], axisMax: Double? = nil, showLegend: Bool = false) {
+    public init(
+        title: String,
+        lines: [GraphLine],
+        axis: GraphAxis? = nil,
+        deviceClass: DeviceClass? = nil,
+        unit: String? = nil,
+        summary: [GraphSummaryItem] = [],
+        axisMax: Double? = nil,
+        showLegend: Bool = false
+    ) {
         self.title = title
         self.lines = lines
-        self.axisMax = axisMax ?? GraphGeometry.niceMax(lines.flatMap { $0.samples.compactMap(\.value) })
+        if let axis {
+            self.axisMax = axis.max
+        } else {
+            self.axisMax = axisMax ?? GraphGeometry.niceMax(lines.flatMap { $0.samples.compactMap(\.value) })
+        }
         self.showLegend = showLegend
         self.deviceClass = deviceClass
         self.unit = unit
@@ -34,13 +52,13 @@ public struct HistoryGraphCard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 if !title.isEmpty {
                     Text(title).font(.system(size: 13, weight: .semibold))
                 }
                 Spacer()
-                Text(EntityReadout.format(axisMax, deviceClass: deviceClass, unit: unit)).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Text(axisMax.map { EntityReadout.format($0, deviceClass: deviceClass, unit: unit) } ?? "—").font(.system(size: 10.5, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
             }
             Canvas { context, size in
                 for fraction in [0.0, 0.5, 1.0] {
@@ -50,16 +68,24 @@ public struct HistoryGraphCard: View {
                     grid.addLine(to: CGPoint(x: size.width, y: y))
                     context.stroke(grid, with: .color(.white.opacity(0.07)), lineWidth: 1)
                 }
+                guard hasDrawableSeries, let axisMax, axisMax > 0 else { return }
                 for line in lines where line.samples.count > 1 {
                     let pts = GraphGeometry.points(samples: line.samples, in: size, axisMax: axisMax)
                     var path = Path()
                     for (index, point) in pts.enumerated() {
                         if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
                     }
-                    context.stroke(path, with: .color(line.color), lineWidth: 1.5)
+                    context.stroke(path, with: .color(line.color), lineWidth: 1.8)
                 }
             }
-            .frame(height: 130)
+            .frame(height: 112)
+            .overlay {
+                if !hasDrawableSeries {
+                    Text("No Data")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+            }
             if showLegend {
                 HStack(spacing: 12) {
                     ForEach(lines) { line in
@@ -71,13 +97,13 @@ public struct HistoryGraphCard: View {
                 }
             }
             if !summary.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(stride(from: 0, to: summary.count, by: 3)), id: \.self) { start in
-                        HStack(spacing: 18) {
+                        HStack(spacing: 14) {
                             ForEach(summary[start..<min(start + 3, summary.count)], id: \.label) { item in
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.label).font(.system(size: 11)).foregroundStyle(.secondary)
-                                    Text(item.value).font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                    Text(item.label).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    Text(item.value).font(.system(size: 13.5, weight: .semibold, design: .monospaced))
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -87,6 +113,6 @@ public struct HistoryGraphCard: View {
                 .padding(.top, 2)
             }
         }
-        .padding(.vertical, 4)
+        .cardChrome()
     }
 }

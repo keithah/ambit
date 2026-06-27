@@ -23,7 +23,8 @@ public struct SystemSensorProvider: Provider {
     }
 
     public func entityDescriptors() -> [EntityDescriptor] {
-        temperatureNames.map { name in
+        guard reader.isAvailable else { return [] }
+        return temperatureNames.map { name in
             EntityDescriptor(
                 id: instanceID.entity(metricID(for: name)),
                 instanceID: instanceID,
@@ -36,7 +37,7 @@ public struct SystemSensorProvider: Provider {
                 unit: "C",
                 stateClass: .measurement,
                 metricID: metricID(for: name),
-                defaultVisibility: reader.isAvailable ? .auto : .never
+                defaultVisibility: .auto
             )
         }
     }

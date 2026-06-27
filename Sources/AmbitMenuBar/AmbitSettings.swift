@@ -803,39 +803,69 @@ private enum EntityVisibilityChoice: Hashable, CaseIterable, Identifiable {
 }
 
 private struct SlotsSettingsDetail: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
     let slots: [Slot]
+    @State private var selectedSlotID: SlotID?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Slots").font(.system(size: 22, weight: .bold))
-                    Text("Menu bar surfaces configured for this engine.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Slots").font(.system(size: 22, weight: .bold))
+                Text("Menu bar surfaces configured for this engine.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
 
-                if slots.isEmpty {
-                    Text("No slots configured.")
-                        .foregroundStyle(.secondary)
-                } else {
+            if slots.isEmpty {
+                Text("No slots configured.")
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(slots) { slot in
-                            SlotSettingsRow(slot: slot)
-                            if slot.id != slots.last?.id {
-                                Divider()
+                            Button {
+                                selectedSlotID = slot.id
+                            } label: {
+                                SlotSettingsRow(slot: slot, isSelected: selectedSlotID == slot.id)
                             }
+                            .buttonStyle(.plain)
+                            if slot.id != slots.last?.id { Divider() }
                         }
+                    }
+                    .frame(width: 220)
+
+                    Divider()
+
+                    if let slot = selectedSlot {
+                        SlotItemsEditor(slot: slot)
+                    } else {
+                        Text("Select a slot.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
                 }
             }
-            .padding(22)
+        }
+        .padding(22)
+        .onAppear { selectInitialSlotIfNeeded() }
+        .onChange(of: slots.map(\.id)) { _ in selectInitialSlotIfNeeded() }
+    }
+
+    private var selectedSlot: Slot? {
+        guard let selectedSlotID else { return slots.first }
+        return slots.first { $0.id == selectedSlotID } ?? slots.first
+    }
+
+    private func selectInitialSlotIfNeeded() {
+        if selectedSlotID == nil || slots.contains(where: { $0.id == selectedSlotID }) == false {
+            selectedSlotID = slots.first?.id
         }
     }
 }
 
 private struct SlotSettingsRow: View {
     let slot: Slot
+    var isSelected = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -856,13 +886,188 @@ private struct SlotSettingsRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(.horizontal, 8)
         .padding(.vertical, 10)
+        .background(isSelected ? Color.accentColor.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var readoutLabel: String {
         switch slot.barReadout {
         case .dynamic: return "Dynamic"
         case .fixed(let id): return "Fixed: \(id.rawValue)"
+        }
+    }
+
+    private var selectionLabel: String {
+        switch slot.selection {
+        case .integration(let id): return "Integration: \(id.rawValue)"
+        case .integrations(let ids): return "Integrations: \(ids.count)"
+        case .integrationType(let id): return "Type: \(id.rawValue)"
+        case .capability(let capability): return "Capability: \(capability.rawValue)"
+        case .entities(let ids): return "Entities: \(ids.count)"
+        }
+    }
+}
+
+private struct SlotItemsEditor: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let slot: Slot
+
+    private var items: [SurfaceComposer.SurfaceItem] {
+        viewModel.surfaceItems(for: slot)
+    }
+
+    private var configuredItems: [SurfaceComposer.SurfaceItem] {
+        items.filter(\.isShown)
+    }
+
+    private var availableItems: [SurfaceComposer.SurfaceItem] {
+        items.filter { !$0.isShown }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(slot.title ?? slot.id.rawValue)
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(selectionLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    Stepper("Table rows \(viewModel.slotTableRowLimit(slot.id))", value: tableRowLimit, in: 1...25)
+                        .font(.system(size: 11))
+                    Button("Default") {
+                        viewModel.setSlotTableRowLimit(slot.id, nil)
+                    }
+                    .font(.system(size: 11))
+                }
+                Button("Reset to Auto") {
+                    viewModel.resetSlotSurfaceItems(slot.id)
+                }
+                .font(.system(size: 11))
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                itemColumn(
+                    title: "Configured Dashboard",
+                    emptyText: "No items configured.",
+                    items: configuredItems,
+                    action: configuredAction
+                )
+                itemColumn(
+                    title: "Available Items",
+                    emptyText: "No available items.",
+                    items: availableItems,
+                    action: availableAction
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func itemColumn(
+        title: String,
+        emptyText: String,
+        items: [SurfaceComposer.SurfaceItem],
+        action: @escaping (SurfaceComposer.SurfaceItem) -> AnyView
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    if items.isEmpty {
+                        Text(emptyText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                    } else {
+                        ForEach(items, id: \.id) { item in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.label)
+                                        .font(.system(size: 12.5, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(item.section)
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 8)
+                                action(item)
+                            }
+                            .padding(8)
+                            .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 270)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func configuredAction(_ item: SurfaceComposer.SurfaceItem) -> AnyView {
+        AnyView(
+            HStack(spacing: 4) {
+                Button {
+                    move(item.id, by: -1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .disabled(configuredItems.first?.id == item.id)
+                .help("Move up")
+
+                Button {
+                    move(item.id, by: 1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .disabled(configuredItems.last?.id == item.id)
+                .help("Move down")
+
+                Button {
+                    viewModel.removeSlotSurfaceItem(slot.id, item.id)
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .help("Remove")
+            }
+            .buttonStyle(.borderless)
+        )
+    }
+
+    private func availableAction(_ item: SurfaceComposer.SurfaceItem) -> AnyView {
+        AnyView(
+            Button {
+                viewModel.addSlotSurfaceItem(slot.id, item.id)
+            } label: {
+                Image(systemName: "plus.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Add")
+        )
+    }
+
+    private func move(_ id: SurfaceItemID, by delta: Int) {
+        var ids = configuredItems.map(\.id)
+        guard let index = ids.firstIndex(of: id) else { return }
+        let destination = index + delta
+        guard ids.indices.contains(destination) else { return }
+        ids.swapAt(index, destination)
+        viewModel.setSlotShownItems(slot.id, ids)
+    }
+
+    private var tableRowLimit: Binding<Int> {
+        Binding {
+            viewModel.slotTableRowLimit(slot.id)
+        } set: { limit in
+            viewModel.setSlotTableRowLimit(slot.id, limit)
         }
     }
 

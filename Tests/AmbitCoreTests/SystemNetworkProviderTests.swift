@@ -101,6 +101,37 @@ final class SystemNetworkProviderTests: XCTestCase {
         XCTAssertEqual(table.rows[1].cells["in_bps"], .number(800_000, unit: "bps"))
     }
 
+    func testInterfaceTableHidesZeroTrafficVirtualInterfacesButKeepsPhysicalActiveAndLoopback() async {
+        let provider = SystemNetworkProvider(
+            reader: SequenceNetworkReader(snapshots: [
+                Self.snapshot(counters: [
+                    NetworkCounterMetrics(interfaceName: "en0", bytesIn: 1_000, bytesOut: 1_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "utun4", bytesIn: 5_000, bytesOut: 5_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "utun5", bytesIn: 10_000, bytesOut: 10_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "lo0", bytesIn: 1_000, bytesOut: 1_000, isLoopback: true)
+                ]),
+                Self.snapshot(counters: [
+                    NetworkCounterMetrics(interfaceName: "en0", bytesIn: 1_000, bytesOut: 1_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "utun4", bytesIn: 5_000, bytesOut: 5_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "utun5", bytesIn: 11_000, bytesOut: 12_000, isLoopback: false),
+                    NetworkCounterMetrics(interfaceName: "lo0", bytesIn: 1_000, bytesOut: 1_000, isLoopback: true)
+                ])
+            ]),
+            clock: SequenceClock([
+                Date(timeIntervalSince1970: 10),
+                Date(timeIntervalSince1970: 11)
+            ]).now
+        )
+
+        _ = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+
+        guard case .table(let table) = snapshot.metricValue("interfaces") else {
+            return XCTFail("Expected interfaces table")
+        }
+        XCTAssertEqual(table.rows.map(\.id), ["en0", "utun5", "lo0"])
+    }
+
     func testSystemNetworkDescriptorsRouteToNetworkSection() {
         let provider = SystemNetworkProvider(reader: SequenceNetworkReader(snapshots: []))
 

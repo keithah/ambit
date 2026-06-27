@@ -41,24 +41,27 @@ public struct StatTableCard: View {
         public struct Cell: Equatable {
             public var text: String
             public var tone: DisplayTone
+            public var isSingleLine: Bool
 
-            public init(text: String, tone: DisplayTone = .neutral) {
+            public init(text: String, tone: DisplayTone = .neutral, isSingleLine: Bool = true) {
                 self.text = text
                 self.tone = tone
+                self.isSingleLine = isSingleLine
             }
         }
 
         public var columns: [Column]
         public var rows: [RenderedRow]
+        public static let defaultRowLimit = 5
 
         public init(columns: [Column], rows: [RenderedRow]) {
             self.columns = columns
             self.rows = rows
         }
 
-        public init(table: TableValue) {
+        public init(table: TableValue, rowLimit: Int = defaultRowLimit) {
             self.columns = table.columns.map { Column(id: $0.id, title: $0.title, alignment: $0.alignment) }
-            self.rows = table.rows.map { row in
+            self.rows = table.rows.prefix(max(0, rowLimit)).map { row in
                 RenderedRow(
                     id: row.id,
                     cells: table.columns.map { column in
@@ -106,10 +109,10 @@ public struct StatTableCard: View {
         self.model = nil
     }
 
-    public init(title: String? = nil, table: TableValue) {
+    public init(title: String? = nil, table: TableValue, rowLimit: Int = Model.defaultRowLimit) {
         self.title = title
         self.rows = []
-        self.model = Model(table: table)
+        self.model = Model(table: table, rowLimit: rowLimit)
     }
 
     public var body: some View {
@@ -123,8 +126,7 @@ public struct StatTableCard: View {
                 legacyBody
             }
         }
-        .background(Color(white: 0.085), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08)))
+        .cardChrome()
     }
 
     @ViewBuilder
@@ -146,11 +148,13 @@ public struct StatTableCard: View {
                     Text(cell.text)
                         .font(.system(size: 12.5, design: .monospaced))
                         .foregroundStyle(cell.tone.color)
+                        .lineLimit(cell.isSingleLine ? 1 : nil)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: alignment.swiftUIAlignment)
                 }
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(index.isMultiple(of: 2) ? Color.clear : Color(white: 0.11))
+            .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))
         }
     }
 
@@ -158,11 +162,15 @@ public struct StatTableCard: View {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
             HStack {
                 Text(row.label).font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer()
                 Text(row.value).font(.system(size: 13, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(index.isMultiple(of: 2) ? Color.clear : Color(white: 0.11))
+            .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))
         }
     }
 }

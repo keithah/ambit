@@ -31,6 +31,7 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
     public var defaultGraphRange: GraphRange?
     public var isPrimary: Bool
     public var priority: Int?
+    public var compositionRole: EntityCompositionRole?
 
     public init(
         id: EntityID,
@@ -53,7 +54,8 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         graphStyle: GraphStyle? = nil,
         defaultGraphRange: GraphRange? = nil,
         isPrimary: Bool = false,
-        priority: Int? = nil
+        priority: Int? = nil,
+        compositionRole: EntityCompositionRole? = nil
     ) {
         self.id = id
         self.instanceID = instanceID
@@ -76,6 +78,7 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         self.defaultGraphRange = defaultGraphRange
         self.isPrimary = isPrimary
         self.priority = priority
+        self.compositionRole = compositionRole
     }
 }
 
@@ -143,6 +146,7 @@ public enum DeviceClass: String, Sendable, Codable {
 public enum EntityCategory: String, Sendable, Codable { case primary, diagnostic, config }
 public enum EntityAccess: String, Sendable, Codable { case read, write, readWrite }
 public enum StateClass: String, Sendable, Codable { case measurement, total, totalIncreasing }
+public enum EntityCompositionRole: String, Sendable, Codable { case segment, remainder, total, channel }
 
 public enum EntityValue: Equatable, Sendable, Codable {
     case number(Double)

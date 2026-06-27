@@ -7,6 +7,7 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
     public var networkCounters: [NetworkCounterMetrics]
     public var battery: BatteryMetrics
     public var processes: [ProcessMetrics]
+    public var uptimeSeconds: TimeInterval?
 
     public init(
         cpu: CPUMetrics,
@@ -14,7 +15,8 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
         diskVolumes: [DiskVolumeMetrics] = [],
         networkCounters: [NetworkCounterMetrics] = [],
         battery: BatteryMetrics = BatteryMetrics(percent: 0, isCharging: false, isPresent: false),
-        processes: [ProcessMetrics] = []
+        processes: [ProcessMetrics] = [],
+        uptimeSeconds: TimeInterval? = nil
     ) {
         self.cpu = cpu
         self.memory = memory
@@ -22,6 +24,7 @@ public struct SystemMetricsSnapshot: Equatable, Sendable, Codable {
         self.networkCounters = networkCounters
         self.battery = battery
         self.processes = processes
+        self.uptimeSeconds = uptimeSeconds
     }
 }
 
@@ -31,19 +34,22 @@ public struct CPUMetrics: Equatable, Sendable, Codable {
     public var idlePercent: Double
     public var coreCount: Int
     public var loadAverages: [Double]
+    public var coreUsagePercents: [Double]
 
     public init(
         userPercent: Double,
         systemPercent: Double,
         idlePercent: Double,
         coreCount: Int,
-        loadAverages: [Double] = []
+        loadAverages: [Double] = [],
+        coreUsagePercents: [Double] = []
     ) {
         self.userPercent = userPercent
         self.systemPercent = systemPercent
         self.idlePercent = idlePercent
         self.coreCount = coreCount
         self.loadAverages = loadAverages
+        self.coreUsagePercents = coreUsagePercents
     }
 }
 
@@ -52,12 +58,29 @@ public struct MemoryMetrics: Equatable, Sendable, Codable {
     public var wiredBytes: UInt64
     public var compressedBytes: UInt64
     public var totalBytes: UInt64
+    public var pressurePercent: Double?
+    public var appActiveBytes: UInt64?
+    public var cachedInactiveBytes: UInt64?
+    public var freeBytes: UInt64?
 
-    public init(usedBytes: UInt64, wiredBytes: UInt64, compressedBytes: UInt64, totalBytes: UInt64) {
+    public init(
+        usedBytes: UInt64,
+        wiredBytes: UInt64,
+        compressedBytes: UInt64,
+        totalBytes: UInt64,
+        pressurePercent: Double? = nil,
+        appActiveBytes: UInt64? = nil,
+        cachedInactiveBytes: UInt64? = nil,
+        freeBytes: UInt64? = nil
+    ) {
         self.usedBytes = usedBytes
         self.wiredBytes = wiredBytes
         self.compressedBytes = compressedBytes
         self.totalBytes = totalBytes
+        self.pressurePercent = pressurePercent
+        self.appActiveBytes = appActiveBytes
+        self.cachedInactiveBytes = cachedInactiveBytes
+        self.freeBytes = freeBytes
     }
 }
 

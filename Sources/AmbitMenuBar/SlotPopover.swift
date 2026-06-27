@@ -47,6 +47,10 @@ struct SlotPopover: View {
     let slotID: SlotID
     @EnvironmentObject private var viewModel: StatusViewModel
 
+    nonisolated static func scrollContentIdentity(for slotID: SlotID) -> String {
+        "slot-scroll-\(slotID.rawValue)"
+    }
+
     private var surface: SlotSurface {
         viewModel.slotSurfaces[slotID] ?? .empty
     }
@@ -82,6 +86,7 @@ struct SlotPopover: View {
             ScrollView(.vertical) {
                 SurfaceView(plan: surface.plan, data: surface.data)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .id(Self.scrollContentIdentity(for: slotID))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }

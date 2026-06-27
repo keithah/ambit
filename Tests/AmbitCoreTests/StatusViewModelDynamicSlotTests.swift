@@ -3,6 +3,13 @@ import XCTest
 @testable import AmbitMenuBar
 
 final class StatusViewModelDynamicSlotTests: XCTestCase {
+    func testSlotPopoverScrollIdentityIsStableAcrossSurfaceRefreshes() {
+        let slotID = SlotID(rawValue: "slot.system")
+
+        XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
+        XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
+    }
+
     private let now = Date(timeIntervalSince1970: 20_000)
 
     func testGatewaySeedReconciliationKeepsOnlyCurrentAutoGateway() {
@@ -91,6 +98,28 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         XCTAssertEqual(glyph.latencyText, "250ms")
         XCTAssertEqual(glyph.tone, .warn)
+    }
+
+    func testDynamicReadoutUsesNeutralNoDataForInitialUnavailableValue() {
+        var engine = AttentionEngine()
+        let primary = descriptor("primary", isPrimary: true)
+        let initial = EntityState(id: primary.id, value: nil, availability: .unavailable, severity: .normal)
+
+        let glyph = StatusSlotReadout.resolveGlyph(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: primary, state: initial)
+            ],
+            descriptors: [primary.id: primary],
+            states: [primary.id: initial],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(glyph.latencyText, "No Data")
+        XCTAssertEqual(glyph.tone, .neutral)
     }
 
     func testDynamicReadoutUsesSelectedCandidateStateWhenStateMapIsMissingIt() {
@@ -263,6 +292,124 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.plan.cards.map(\.title), ["CPU", "Disk"])
         XCTAssertEqual(surface.data.descriptors[cpu.id], cpu)
         XCTAssertEqual(surface.data.states[cpu.id], states[cpu.id])
+    }
+
+    func testHealthyGenericSlotUsesRestingPrimaryOverNormalThroughputForGlyphAndSurfaceSelection() {
+        var engine = AttentionEngine()
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        let states: [EntityID: EntityState] = [
+            cpu.id: state(cpu.id, value: 34, severity: .normal),
+            throughput.id: state(throughput.id, value: 77_000, severity: .normal)
+        ]
+
+        let surface = StatusSlotSurfaceBuilder.genericSurface(
+            slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
+            descriptors: [throughput, cpu],
+            states: states,
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, cpu.id)
+        XCTAssertEqual(surface.glyph.latencyText, "34%")
+    }
+
+    func testActiveThroughputOverridesRestingPrimary() {
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        let candidates = [
+            AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+            AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .elevated))
+        ]
+        var engine = AttentionEngine()
+
+        let elevated = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: candidates,
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: candidates[0].state, throughput.id: candidates[1].state],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(elevated.primaryEntityID, throughput.id)
+
+        var pinnedConfig = PresentationConfig.empty
+        pinnedConfig.entityOverrides[throughput.id] = EntityPresentationOverride(pinned: true)
+        engine = AttentionEngine()
+        let pinned = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [],
+            config: pinnedConfig,
+            now: now,
+            attentionEngine: &engine
+        )
+        XCTAssertEqual(pinned.primaryEntityID, throughput.id)
+
+        engine = AttentionEngine()
+        let alerted = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: [cpu.id: cpu, throughput.id: throughput],
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [throughput.id],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+        XCTAssertEqual(alerted.primaryEntityID, throughput.id)
+    }
+
+    func testBoostedThresholdCrossingOverridesRestingPrimary() {
+        var engine = AttentionEngine()
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        var throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
+        throughput.displayThreshold = DisplayThreshold(comparison: .greaterThan, value: 10_000, consecutive: 1)
+        let descriptors = [cpu.id: cpu, throughput.id: throughput]
+
+        _ = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 5_000, severity: .normal))
+            ],
+            descriptors: descriptors,
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 5_000, severity: .normal)],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        let boosted = StatusSlotReadout.resolveReadout(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: state(cpu.id, value: 34, severity: .normal)),
+                AttentionCandidate(descriptor: throughput, state: state(throughput.id, value: 77_000, severity: .normal))
+            ],
+            descriptors: descriptors,
+            states: [cpu.id: state(cpu.id, value: 34, severity: .normal), throughput.id: state(throughput.id, value: 77_000, severity: .normal)],
+            alertingIDs: [],
+            config: .empty,
+            now: now.addingTimeInterval(1),
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(boosted.primaryEntityID, throughput.id)
+        XCTAssertEqual(boosted.selection.lanes.first?.reason.transitionBoosted, true)
     }
 
     func testPresentationSettingsModelIncludesAllRegistryRecordsAndCurrentSlots() {
@@ -673,6 +820,130 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(Set(invalid.validationErrors.map(\.fieldID)), ["name", "interval", "enabled", "mode"])
     }
 
+    @MainActor
+    func testSlotSurfaceItemsResolveFromComposerAndTrackShownState() {
+        let slot = Slot(id: SlotID(rawValue: "slot.system"), title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal))
+        var config = PresentationConfig.empty
+        config.slots = [slot]
+        config.slotOverrides[slot.id] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "entity:system@local/overview.memory_used_percent")]
+        )
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            isPrimary: true
+        )
+        let memory = EntityDescriptor(
+            id: "system@local/overview.memory_used_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "Memory",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.memory",
+            graphStyle: .progress
+        )
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [ProviderInstanceIDs.systemOverview: [cpu, memory]],
+            states: [
+                cpu.id: EntityState(id: cpu.id, value: .number(20), availability: .online),
+                memory.id: EntityState(id: memory.id, value: .number(55), availability: .online)
+            ],
+            config: config
+        )
+
+        let items = viewModel.surfaceItems(for: slot)
+
+        XCTAssertEqual(items.map(\.id.rawValue), [
+            "entity:system@local/overview.cpu_usage_percent",
+            "entity:system@local/overview.memory_used_percent"
+        ])
+        XCTAssertEqual(items.map(\.label), ["CPU", "Memory"])
+        XCTAssertEqual(items.map(\.section), ["CPU", "Memory"])
+        XCTAssertEqual(items.map(\.isShown), [true, false])
+        XCTAssertEqual(items.map(\.isHidden), [false, true])
+    }
+
+    @MainActor
+    func testSlotItemRemoveAddAndReorderPersistSlotOverride() {
+        let slot = Slot(id: SlotID(rawValue: "slot.system"), title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal))
+        var config = PresentationConfig.empty
+        config.slots = [slot]
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            priority: 2
+        )
+        let pressure = EntityDescriptor(
+            id: "system@local/overview.memory_pressure_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "Memory Pressure",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            priority: 1
+        )
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [ProviderInstanceIDs.systemOverview: [cpu, pressure]],
+            states: [:],
+            config: config
+        )
+        let cpuID = SurfaceItemID(rawValue: "entity:system@local/overview.cpu_usage_percent")
+        let pressureID = SurfaceItemID(rawValue: "entity:system@local/overview.memory_pressure_percent")
+
+        viewModel.removeSlotSurfaceItem(slot.id, cpuID)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id]?.shownItems)
+        XCTAssertEqual(store.config.slotOverrides[slot.id]?.hiddenItems, [cpuID])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [pressureID])
+
+        viewModel.addSlotSurfaceItem(slot.id, cpuID)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [cpuID, pressureID])
+
+        viewModel.setSlotShownItems(slot.id, [pressureID, cpuID])
+
+        XCTAssertEqual(store.config.slotOverrides[slot.id]?.shownItems, [pressureID, cpuID])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [pressureID, cpuID])
+
+        viewModel.resetSlotSurfaceItems(slot.id)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [cpuID, pressureID])
+    }
+
+    @MainActor
+    func testSlotTableRowLimitPersistsAndResetsCleanly() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setSlotTableRowLimit(slotID, 9)
+
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.tableRowLimit, 9)
+
+        viewModel.setSlotTableRowLimit(slotID, nil)
+
+        XCTAssertNil(store.config.slotOverrides[slotID])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),
@@ -687,6 +958,30 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
     private func state(_ id: EntityID, value: Double, severity: Severity) -> EntityState {
         EntityState(id: id, value: .number(value), availability: .online, severity: severity)
+    }
+
+    private func systemMetric(
+        _ key: String,
+        name: String,
+        deviceClass: DeviceClass,
+        instanceID: ProviderInstanceID,
+        isPrimary: Bool = false,
+        priority: Int? = nil
+    ) -> EntityDescriptor {
+        EntityDescriptor(
+            id: EntityID(rawValue: "system@local/\(key)"),
+            instanceID: instanceID,
+            name: name,
+            kind: .sensor,
+            deviceClass: deviceClass,
+            category: .primary,
+            capability: key.contains("network") ? "system.network" : "system.cpu",
+            stateClass: .measurement,
+            defaultVisibility: .auto,
+            graphStyle: deviceClass == .throughput ? .sparkline : .gauge,
+            isPrimary: isPrimary,
+            priority: priority
+        )
     }
 
     private func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {

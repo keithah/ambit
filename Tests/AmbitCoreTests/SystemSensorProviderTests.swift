@@ -2,7 +2,7 @@ import XCTest
 @testable import AmbitCore
 
 final class SystemSensorProviderTests: XCTestCase {
-    func testNoOpSystemSensorReaderProducesUnavailableStatesWithoutThrowing() async {
+    func testNoOpSystemSensorReaderEmitsNoFabricatedSensorOrFanDescriptors() async {
         let sensorProvider = SystemSensorProvider(reader: NoOpSystemSensorReader())
         let fanProvider = SystemFanProvider(reader: NoOpSystemSensorReader())
 
@@ -12,12 +12,10 @@ final class SystemSensorProviderTests: XCTestCase {
         let fanStates = EntityProjection.states(snapshot: fanSnapshot, descriptors: fanProvider.entityDescriptors())
 
         XCTAssertFalse(NoOpSystemSensorReader().isAvailable)
-        XCTAssertEqual(sensorProvider.entityDescriptors().first?.capability, "system.sensors")
-        XCTAssertEqual(fanProvider.entityDescriptors().first?.capability, "system.fans")
-        XCTAssertEqual(sensorProvider.entityDescriptors().first?.defaultVisibility, .never)
-        XCTAssertEqual(fanProvider.entityDescriptors().first?.defaultVisibility, .never)
-        XCTAssertTrue(sensorStates.values.allSatisfy { $0.availability == .unavailable })
-        XCTAssertTrue(fanStates.values.allSatisfy { $0.availability == .unavailable })
+        XCTAssertTrue(sensorProvider.entityDescriptors().isEmpty)
+        XCTAssertTrue(fanProvider.entityDescriptors().isEmpty)
+        XCTAssertTrue(sensorStates.isEmpty)
+        XCTAssertTrue(fanStates.isEmpty)
         XCTAssertNil(sensorSnapshot.error)
         XCTAssertNil(fanSnapshot.error)
     }

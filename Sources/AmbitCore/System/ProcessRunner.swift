@@ -114,10 +114,15 @@ public enum PSProcessParser {
 
         return PSProcessRow(
             pid: pid,
-            name: String(parts[3]),
+            name: displayName(from: String(parts[3])),
             cpuPercent: cpuPercent,
             memoryBytes: residentKilobytes * 1024
         )
+    }
+
+    private static func displayName(from command: String) -> String {
+        let name = URL(fileURLWithPath: command).lastPathComponent
+        return name.isEmpty ? command : name
     }
 }
 

@@ -22,6 +22,12 @@ private extension EntityPresentationOverride {
     }
 }
 
+private extension SlotPresentationOverride {
+    var isEmpty: Bool {
+        shownItems == nil && hiddenItems.isEmpty && tableRowLimit == nil
+    }
+}
+
 private extension Slot {
     func coversIntegrationRecord(_ record: IntegrationInstanceRecord) -> Bool {
         switch selection {
@@ -677,6 +683,74 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
+    func surfaceItems(for slot: Slot) -> [SurfaceComposer.SurfaceItem] {
+        let config = configStore.load()
+        let records = registryRecordsFromPresentationSettings()
+        let descriptors = descriptorsFromPresentationSettings()
+        let states = statesFromPresentationSettings()
+        let resolved = SlotResolver.resolve(
+            slot.selection,
+            descriptors: descriptors.values.flatMap { $0 },
+            records: records
+        )
+        return SurfaceComposer.surfaceItems(
+            descriptors: resolved,
+            states: states,
+            config: config,
+            slotID: slot.id
+        )
+    }
+
+    func setSlotShownItems(_ slotID: SlotID, _ shownItems: [SurfaceItemID]?) {
+        mutateSlotOverride(slotID) { override in
+            override.shownItems = shownItems
+            if shownItems != nil {
+                override.hiddenItems.removeAll()
+            }
+        }
+    }
+
+    func removeSlotSurfaceItem(_ slotID: SlotID, _ itemID: SurfaceItemID) {
+        mutateSlotOverride(slotID) { override in
+            if var shownItems = override.shownItems {
+                shownItems.removeAll { $0 == itemID }
+                override.shownItems = shownItems
+            } else {
+                override.hiddenItems.insert(itemID)
+            }
+        }
+    }
+
+    func addSlotSurfaceItem(_ slotID: SlotID, _ itemID: SurfaceItemID) {
+        mutateSlotOverride(slotID) { override in
+            if var shownItems = override.shownItems {
+                if !shownItems.contains(itemID) {
+                    shownItems.append(itemID)
+                }
+                override.shownItems = shownItems
+            } else {
+                override.hiddenItems.remove(itemID)
+            }
+        }
+    }
+
+    func resetSlotSurfaceItems(_ slotID: SlotID) {
+        var config = configStore.load()
+        config.slotOverrides.removeValue(forKey: slotID)
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    func slotTableRowLimit(_ slotID: SlotID) -> Int {
+        configStore.load().slotOverrides[slotID]?.tableRowLimit ?? StatTableCard.Model.defaultRowLimit
+    }
+
+    func setSlotTableRowLimit(_ slotID: SlotID, _ limit: Int?) {
+        mutateSlotOverride(slotID) { override in
+            override.tableRowLimit = limit.map { max(1, $0) }
+        }
+    }
+
     func saveIntegrationInstanceDraft(_ draft: IntegrationInstanceDraft) throws {
         switch draft.integrationID {
         case IntegrationIDs.ping:
@@ -770,16 +844,24 @@ final class StatusViewModel: ObservableObject {
         rebuildPresentationSettings(config: config)
     }
 
-    private func rebuildPresentationSettings(config: PresentationConfig) {
-        let registryRecords = presentationSettings.integrations.map { group in
-            IntegrationInstanceRecord(
-                id: group.id,
-                integrationID: group.integrationID,
-                displayName: group.displayName,
-                enabled: group.enabled,
-                config: group.configValues
-            )
+    private func mutateSlotOverride(
+        _ id: SlotID,
+        mutate: (inout SlotPresentationOverride) -> Void
+    ) {
+        var config = configStore.load()
+        var override = config.slotOverrides[id] ?? SlotPresentationOverride()
+        mutate(&override)
+        if override.isEmpty {
+            config.slotOverrides.removeValue(forKey: id)
+        } else {
+            config.slotOverrides[id] = override
         }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    private func rebuildPresentationSettings(config: PresentationConfig) {
+        let registryRecords = registryRecordsFromPresentationSettings()
         rebuildPresentationSettings(registryRecords: registryRecords, config: config)
     }
 
@@ -804,6 +886,38 @@ final class StatusViewModel: ObservableObject {
             config: config,
             disabledIntegrationIDs: (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         )
+    }
+
+    private func registryRecordsFromPresentationSettings() -> [IntegrationInstanceRecord] {
+        presentationSettings.integrations.map { group in
+            IntegrationInstanceRecord(
+                id: group.id,
+                integrationID: group.integrationID,
+                displayName: group.displayName,
+                enabled: group.enabled,
+                config: group.configValues
+            )
+        }
+    }
+
+    private func descriptorsFromPresentationSettings() -> [ProviderInstanceID: [EntityDescriptor]] {
+        var descriptors: [ProviderInstanceID: [EntityDescriptor]] = [:]
+        for group in presentationSettings.integrations {
+            for row in group.entities {
+                descriptors[row.descriptor.instanceID, default: []].append(row.descriptor)
+            }
+        }
+        return descriptors
+    }
+
+    private func statesFromPresentationSettings() -> [EntityID: EntityState] {
+        var states: [EntityID: EntityState] = [:]
+        for group in presentationSettings.integrations {
+            for row in group.entities where row.state != nil {
+                states[row.descriptor.id] = row.state
+            }
+        }
+        return states
     }
 
     private func buildSlotSurface(
@@ -844,11 +958,16 @@ final class StatusViewModel: ObservableObject {
         }
 
         if !isPingSlot {
+            let config = configStore.load()
+            let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config, slotID: slot.id)
+            let series = await historySeries(for: plan, now: now)
             return StatusSlotSurfaceBuilder.genericSurface(
                 slot: slot,
                 descriptors: shownResolved,
                 states: allStates,
-                config: configStore.load(),
+                series: series,
+                plan: plan,
+                config: config,
                 now: now,
                 attentionEngine: &attentionEngine
             )
@@ -889,23 +1008,25 @@ final class StatusViewModel: ObservableObject {
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
         let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
-        let glyph = StatusSlotReadout.resolveGlyph(
+        let config = configStore.load()
+        let readout = StatusSlotReadout.resolveReadout(
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
             states: states,
             alertingIDs: alertingIDs,
-            config: configStore.load(),
+            config: config,
             now: now,
             attentionEngine: &attentionEngine
         )
 
-        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states).cards
+        let planCards = SurfaceComposer.detailPlan(descriptors: detailDescriptors, states: states, config: config, slotID: slot.id).cards
 
         return SlotSurface(
             plan: SurfacePlan(cards: planCards),
             data: SurfaceData(descriptors: descriptors, states: states, series: series),
-            glyph: glyph,
+            glyph: readout.glyph,
+            primaryEntityID: readout.primaryEntityID,
             hostOptions: hostOptions
         )
     }
@@ -951,6 +1072,29 @@ final class StatusViewModel: ObservableObject {
             await refreshAlertRules()
             await engine.refresh()
             await refreshPing()
+        }
+    }
+
+    private func historySeries(for plan: SurfacePlan, now: Date) async -> [EntityID: [Sample]] {
+        var result: [EntityID: [Sample]] = [:]
+        for card in Self.graphCards(in: plan.cards) {
+            let range = card.graphRange ?? .m5
+            for id in card.entities {
+                result[id] = await engine.historySamples(id, since: now.addingTimeInterval(-range.seconds))
+            }
+        }
+        return result
+    }
+
+    nonisolated private static func graphCards(in cards: [CardSpec]) -> [CardSpec] {
+        cards.flatMap { card -> [CardSpec] in
+            let children = graphCards(in: card.children)
+            switch card.kind {
+            case .historyGraph, .dualLineGraph:
+                return [card] + children
+            default:
+                return children
+            }
         }
     }
 
@@ -1029,6 +1173,12 @@ final class StatusViewModel: ObservableObject {
     }
 }
 
+struct StatusSlotReadoutResult {
+    var glyph: MenuBarGlyph
+    var primaryEntityID: EntityID?
+    var selection: AttentionSelection
+}
+
 struct StatusSlotReadout {
     private static let surfaceID = SurfaceID(rawValue: "macos.bar")
 
@@ -1058,12 +1208,34 @@ struct StatusSlotReadout {
         now: Date,
         attentionEngine: inout AttentionEngine
     ) -> MenuBarGlyph {
+        resolveReadout(
+            mode: mode,
+            candidates: candidates,
+            descriptors: descriptors,
+            states: states,
+            alertingIDs: alertingIDs,
+            config: config,
+            now: now,
+            attentionEngine: &attentionEngine
+        ).glyph
+    }
+
+    static func resolveReadout(
+        mode: BarReadoutMode,
+        candidates: [AttentionCandidate],
+        descriptors: [EntityID: EntityDescriptor],
+        states: [EntityID: EntityState],
+        alertingIDs: Set<EntityID>,
+        config: PresentationConfig,
+        now: Date,
+        attentionEngine: inout AttentionEngine
+    ) -> StatusSlotReadoutResult {
         switch mode {
         case .fixed(let id):
             if let descriptor = descriptors[id] {
-                return glyph(descriptor: descriptor, state: states[id])
+                return StatusSlotReadoutResult(glyph: glyph(descriptor: descriptor, state: states[id]), primaryEntityID: id, selection: AttentionSelection())
             }
-            return staticFallback(candidates: candidates, states: states)
+            return fallbackResult(candidates: candidates, states: states)
         case .dynamic:
             let selection = resolveSelection(
                 candidates: candidates,
@@ -1072,27 +1244,102 @@ struct StatusSlotReadout {
                 now: now,
                 attentionEngine: &attentionEngine
             )
+
+            let selectedID = activeSelectionID(selection, config: config, alertingIDs: alertingIDs)
+                ?? restingPrimaryID(candidates: candidates, states: states, config: config)
+
             guard
-                let selectedID = selection.lanes.first?.id,
+                let selectedID,
                 let selectedCandidate = candidates.first(where: { $0.descriptor.id == selectedID })
             else {
-                return staticFallback(candidates: candidates, states: states)
+                return fallbackResult(candidates: candidates, states: states, selection: selection)
             }
             let descriptor = descriptors[selectedID] ?? selectedCandidate.descriptor
-            return glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state)
+            return StatusSlotReadoutResult(
+                glyph: glyph(descriptor: descriptor, state: states[selectedID] ?? selectedCandidate.state),
+                primaryEntityID: selectedID,
+                selection: selection
+            )
         }
     }
 
     private static func staticFallback(candidates: [AttentionCandidate], states: [EntityID: EntityState]) -> MenuBarGlyph {
+        fallbackResult(candidates: candidates, states: states).glyph
+    }
+
+    private static func fallbackResult(
+        candidates: [AttentionCandidate],
+        states: [EntityID: EntityState],
+        selection: AttentionSelection = AttentionSelection()
+    ) -> StatusSlotReadoutResult {
         guard let fallback = (candidates.first { $0.descriptor.isPrimary } ?? candidates.first) else {
-            return MenuBarGlyph(latencyText: "--ms", tone: .neutral)
+            return StatusSlotReadoutResult(glyph: noDataGlyph(), primaryEntityID: nil, selection: selection)
         }
-        return glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state)
+        return StatusSlotReadoutResult(
+            glyph: glyph(descriptor: fallback.descriptor, state: states[fallback.descriptor.id] ?? fallback.state),
+            primaryEntityID: fallback.descriptor.id,
+            selection: selection
+        )
+    }
+
+    private static func activeSelectionID(
+        _ selection: AttentionSelection,
+        config: PresentationConfig,
+        alertingIDs: Set<EntityID>
+    ) -> EntityID? {
+        selection.lanes.first { entity in
+            entity.tier == .alerted ||
+            entity.tier == .surfaced ||
+            entity.reason.severity > .normal ||
+            entity.reason.transitionBoosted ||
+            alertingIDs.contains(entity.id) ||
+            (config.entityOverrides[entity.id]?.pinned ?? false)
+        }?.id
+    }
+
+    private static func restingPrimaryID(
+        candidates: [AttentionCandidate],
+        states: [EntityID: EntityState],
+        config: PresentationConfig
+    ) -> EntityID? {
+        let visible = candidates.enumerated().filter { _, candidate in
+            let override = config.entityOverrides[candidate.descriptor.id]
+            return override?.enabled != false && (override?.visibility ?? candidate.descriptor.defaultVisibility) != .never
+        }
+        return visible.sorted { lhs, rhs in
+            let a = lhs.element
+            let b = rhs.element
+            if a.descriptor.isPrimary != b.descriptor.isPrimary {
+                return a.descriptor.isPrimary && !b.descriptor.isPrimary
+            }
+            let aPriority = a.descriptor.priority ?? 0
+            let bPriority = b.descriptor.priority ?? 0
+            if aPriority != bPriority { return aPriority > bPriority }
+            let aAvailability = availabilityRank(states[a.descriptor.id]?.availability ?? a.state.availability)
+            let bAvailability = availabilityRank(states[b.descriptor.id]?.availability ?? b.state.availability)
+            if aAvailability != bAvailability { return aAvailability > bAvailability }
+            return lhs.offset < rhs.offset
+        }.first?.element.descriptor.id
+    }
+
+    private static func availabilityRank(_ availability: Availability) -> Int {
+        switch availability {
+        case .online: return 2
+        case .stale: return 1
+        case .unavailable: return 0
+        }
     }
 
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
+        if let state, state.value == nil, (state.severity ?? .normal) <= .normal {
+            return noDataGlyph()
+        }
         let readout = EntityReadout.make(descriptor: descriptor, state: state)
         return MenuBarGlyph(latencyText: readout.text, tone: LatencyTone(readout.tone))
+    }
+
+    private static func noDataGlyph() -> MenuBarGlyph {
+        MenuBarGlyph(latencyText: "No Data", tone: .neutral)
     }
 }
 
@@ -1101,6 +1348,8 @@ enum StatusSlotSurfaceBuilder {
         slot: Slot,
         descriptors resolved: [EntityDescriptor],
         states allStates: [EntityID: EntityState],
+        series: [EntityID: [Sample]] = [:],
+        plan: SurfacePlan? = nil,
         config: PresentationConfig,
         now: Date,
         attentionEngine: inout AttentionEngine
@@ -1111,7 +1360,7 @@ enum StatusSlotSurfaceBuilder {
             guard let state = states[descriptor.id] else { return nil }
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
-        let glyph = StatusSlotReadout.resolveGlyph(
+        let readout = StatusSlotReadout.resolveReadout(
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
@@ -1123,9 +1372,10 @@ enum StatusSlotSurfaceBuilder {
         )
 
         return SlotSurface(
-            plan: SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config),
-            data: SurfaceData(descriptors: descriptors, states: states),
-            glyph: glyph,
+            plan: plan ?? SurfaceComposer.detailPlan(descriptors: resolved, states: states, config: config, slotID: slot.id),
+            data: SurfaceData(descriptors: descriptors, states: states, series: series),
+            glyph: readout.glyph,
+            primaryEntityID: readout.primaryEntityID,
             hostOptions: []
         )
     }

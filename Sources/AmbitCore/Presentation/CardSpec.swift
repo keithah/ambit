@@ -9,6 +9,10 @@ public enum CardKind: String, Equatable, Sendable, Codable {
     case gauge
     case historyGraph
     case dualLineGraph
+    case segmentedRing
+    case breakdownLegend
+    case coreGrid
+    case cardRow
     case progress
     case statTable
     case control
@@ -30,6 +34,7 @@ public struct CardSpec: Identifiable, Equatable, Sendable {
     public var entities: [EntityID]      // 1 for a gauge, 2 for dual-line, N for a table, 0 for a section
     public var graphStyle: GraphStyle?
     public var graphRange: GraphRange?
+    public var tableRowLimit: Int?
     public var children: [CardSpec]      // populated for .section
     public var role: CardRole
 
@@ -40,6 +45,7 @@ public struct CardSpec: Identifiable, Equatable, Sendable {
         entities: [EntityID] = [],
         graphStyle: GraphStyle? = nil,
         graphRange: GraphRange? = nil,
+        tableRowLimit: Int? = nil,
         children: [CardSpec] = [],
         role: CardRole = .secondary
     ) {
@@ -49,6 +55,7 @@ public struct CardSpec: Identifiable, Equatable, Sendable {
         self.entities = entities
         self.graphStyle = graphStyle
         self.graphRange = graphRange
+        self.tableRowLimit = tableRowLimit
         self.children = children
         self.role = role
     }

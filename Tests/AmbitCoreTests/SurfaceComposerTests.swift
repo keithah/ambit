@@ -5,10 +5,13 @@ final class SurfaceComposerTests: XCTestCase {
     private func sensor(_ key: String, _ deviceClass: DeviceClass?, kind: EntityKind = .sensor,
                         stateClass: StateClass? = nil, graphStyle: GraphStyle? = nil,
                         isPrimary: Bool = false, priority: Int? = nil, category: EntityCategory = .primary,
-                        capability: ProviderCapability? = nil) -> EntityDescriptor {
+                        capability: ProviderCapability? = nil,
+                        compositionRole: EntityCompositionRole? = nil,
+                        unit: String? = nil) -> EntityDescriptor {
         EntityDescriptor(id: EntityID(rawValue: "i/p.\(key)"), instanceID: "i/p", name: key, kind: kind,
-                         deviceClass: deviceClass, category: category, capability: capability, stateClass: stateClass,
-                         graphStyle: graphStyle, isPrimary: isPrimary, priority: priority)
+                         deviceClass: deviceClass, category: category, capability: capability, unit: unit,
+                         stateClass: stateClass, graphStyle: graphStyle, isPrimary: isPrimary, priority: priority,
+                         compositionRole: compositionRole)
     }
 
     // Ported from ProviderMetricSectionTests: grouping by classification, deviceClass wins.
@@ -97,11 +100,53 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertNil(network?.children.first?.title)
     }
 
+    func testComplementaryMeasurementPairProducesDualLineGraph() {
+        let descriptors = [
+            sensor("User", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertEqual(cpu?.children.first?.kind, .dualLineGraph)
+        XCTAssertEqual(cpu?.children.first?.id, "group:system.cpu:percent:none:user-system")
+        XCTAssertEqual(cpu?.children.first?.entities.map(\.rawValue), ["i/p.User", "i/p.System"])
+    }
+
     func testSingleMeasurementSeriesStaysSingleLineWithName() {
         let plan = SurfaceComposer.detailPlan(descriptors: [sensor("lat", .latency, stateClass: .measurement)], states: [:])
         let card = plan.cards.first?.children.first
         XCTAssertEqual(card?.entities.map(\.rawValue), ["i/p.lat"])
         XCTAssertEqual(card?.title, "lat")
+    }
+
+    func testSingleEponymousChildOmitsRepeatedSectionTitle() {
+        let plan = SurfaceComposer.detailPlan(descriptors: [
+            sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu")
+        ], states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertNil(cpu?.children.first?.title)
+    }
+
+    func testEponymousChildTitleIsOmittedInMultiChildSection() {
+        let descriptors = [
+            sensor("User", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, capability: "system.cpu"),
+            sensor("CPU", .percent, graphStyle: .gauge, capability: "system.cpu"),
+            sensor("Top CPU", nil, kind: .table, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.title, "CPU")
+        XCTAssertEqual(cpu?.children.map(\.kind), [.dualLineGraph, .gauge, .statTable])
+        XCTAssertNil(cpu?.children[1].title)
+        XCTAssertEqual(cpu?.children[2].title, "Top CPU")
     }
 
     func testDisabledOverrideDropsEntity() {
@@ -156,6 +201,19 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(card?.entities, [table.id])
     }
 
+    func testSlotTableRowLimitFlowsToStatTableCards() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let table = sensor("Top CPU", nil, kind: .table, capability: "system.cpu")
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(tableRowLimit: 7)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [table], states: [:], config: config, slotID: slotID)
+
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .statTable)
+        XCTAssertEqual(card?.tableRowLimit, 7)
+    }
+
     func testSystemCapabilitiesProduceGenericSectionsInOrder() {
         let descriptors = [
             sensor("fan", nil, capability: "system.fans"),
@@ -194,6 +252,320 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(plan.cards.map(\.title), ["Network", "State"])
         XCTAssertEqual(plan.cards[0].children.first?.entities, [descriptors[0].id])
         XCTAssertEqual(plan.cards[1].children.first?.entities, [descriptors[1].id])
+    }
+
+    func testProgressSiblingComponentsProduceSegmentedRing() {
+        let descriptors = [
+            sensor("App", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 30, capability: "system.memory"),
+            sensor("Wired", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 20, capability: "system.memory"),
+            sensor("Compressed", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 10, capability: "system.memory"),
+            sensor("Free", .dataSize, stateClass: .measurement, graphStyle: .progress, priority: 0, capability: "system.memory")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.enumerated().map { index, descriptor in
+            (descriptor.id, EntityState(id: descriptor.id, value: .number(Double(index + 1)), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let memory = plan.cards.first { $0.title == "Memory" }
+        XCTAssertEqual(memory?.children.count, 2)
+        XCTAssertEqual(memory?.children.map(\.kind), [.segmentedRing, .breakdownLegend])
+        XCTAssertEqual(memory?.children[0].id, "group:system.memory:dataSize:none:segments")
+        XCTAssertEqual(memory?.children[1].id, "group:system.memory:dataSize:none:breakdown")
+        XCTAssertEqual(memory?.children[1].entities.map(\.rawValue), [
+            "i/p.App", "i/p.Wired", "i/p.Compressed", "i/p.Free"
+        ])
+    }
+
+    func testSegmentedRingRequiresAllWholeMembersAvailable() {
+        let descriptors = [
+            sensor("App", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
+            sensor("Wired", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory"),
+            sensor("Compressed", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory")
+        ]
+        let states: [EntityID: EntityState] = [
+            descriptors[0].id: EntityState(id: descriptors[0].id, value: .number(4), availability: .online),
+            descriptors[1].id: EntityState(id: descriptors[1].id, value: nil, availability: .online),
+            descriptors[2].id: EntityState(id: descriptors[2].id, value: .number(1), availability: .unavailable)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let kinds = plan.cards.flatMap(\.children).map(\.kind)
+        XCTAssertFalse(kinds.contains(.segmentedRing))
+        XCTAssertFalse(kinds.contains(.breakdownLegend))
+        XCTAssertEqual(kinds, [.cardRow])
+        XCTAssertEqual(plan.cards.flatMap(\.children).first?.children.map(\.kind), [.progress, .progress, .progress])
+    }
+
+    func testSegmentedRingIDIncludesGroupingDiscriminators() {
+        let descriptors = [
+            sensor("MemoryApp", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("MemoryWired", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("MemoryFree", .dataSize, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "bytes"),
+            sensor("PressureApp", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%"),
+            sensor("PressureWired", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%"),
+            sensor("PressureFree", .percent, stateClass: .measurement, graphStyle: .progress, capability: "system.memory", unit: "%")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(1), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let ids = plan.cards.flatMap(\.children).filter { $0.kind == .segmentedRing }.map(\.id)
+        XCTAssertEqual(ids, [
+            "group:system.memory:dataSize:bytes:segments",
+            "group:system.memory:percent:%:segments"
+        ])
+    }
+
+    func testHomogeneousCoreMetricsProduceCoreGrid() {
+        let descriptors = [
+            sensor("Core 1", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 4, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 2", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 3, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 3", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 2, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 4", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 1, capability: "system.cpu", compositionRole: .channel, unit: "%")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(42), availability: .online))
+        })
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.count, 1)
+        XCTAssertEqual(cpu?.children.first?.kind, .coreGrid)
+        XCTAssertEqual(cpu?.children.first?.id, "group:system.cpu:percent:%:cores")
+        XCTAssertEqual(cpu?.children.first?.entities.map(\.rawValue), [
+            "i/p.Core 1", "i/p.Core 2", "i/p.Core 3", "i/p.Core 4"
+        ])
+    }
+
+    func testNonPercentChannelsStayIndependentUntilGenericAxisModelLands() {
+        let descriptors = [
+            sensor("Fan 1", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel),
+            sensor("Fan 2", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel),
+            sensor("Fan 3", .fan, stateClass: .measurement, graphStyle: .gauge, capability: "system.fans", compositionRole: .channel)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let kinds = plan.cards.flatMap(\.children).map(\.kind)
+        XCTAssertEqual(kinds, [.cardRow])
+        XCTAssertEqual(plan.cards.flatMap(\.children).first?.children.map(\.kind), [.gauge, .gauge, .gauge])
+    }
+
+    func testCoreGridRendersEvenWhenSomeMembersUnavailable() {
+        let descriptors = [
+            sensor("Core 1", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 2", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%"),
+            sensor("Core 3", .percent, stateClass: .measurement, graphStyle: .gauge, capability: "system.cpu", compositionRole: .channel, unit: "%")
+        ]
+        let states: [EntityID: EntityState] = [
+            descriptors[0].id: EntityState(id: descriptors[0].id, value: .number(25), availability: .online),
+            descriptors[1].id: EntityState(id: descriptors[1].id, value: nil, availability: .unavailable),
+            descriptors[2].id: EntityState(id: descriptors[2].id, value: .number(75), availability: .online)
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: states)
+
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .coreGrid)
+        XCTAssertEqual(card?.entities.count, 3)
+    }
+
+    func testSmallBoundedSiblingsGroupIntoCardRowsWithinSection() {
+        let descriptors = [
+            sensor("CPU", .percent, graphStyle: .gauge, isPrimary: true, priority: 4, capability: "system.cpu"),
+            sensor("Pressure", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("Load", .percent, graphStyle: .progress, priority: 2, capability: "system.cpu"),
+            sensor("Memory", .percent, graphStyle: .gauge, priority: 1, capability: "system.memory")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.id, "row:CPU:0")
+        XCTAssertEqual(cpu?.children.first?.entities, [])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), [
+            "card.i/p.CPU", "card.i/p.Pressure", "card.i/p.Load"
+        ])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.kind), [.gauge, .gauge, .progress])
+
+        let memory = plan.cards.first { $0.title == "Memory" }
+        XCTAssertEqual(memory?.children.map(\.kind), [.gauge])
+    }
+
+    func testCardRowLeavesIneligibleCardsFullWidthAndPreservesOrder() {
+        let descriptors = [
+            sensor("Gauge 1", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("History", .latency, stateClass: .measurement, graphStyle: .sparkline, priority: 4, capability: "system.cpu"),
+            sensor("Gauge 2", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("Gauge 3", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 2, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.gauge, .historyGraph, .cardRow])
+        XCTAssertEqual(cpu?.children[0].entities, [descriptors[0].id])
+        XCTAssertEqual(cpu?.children[1].entities, [descriptors[1].id])
+        XCTAssertEqual(cpu?.children[2].children.map(\.id), [
+            "card.i/p.Gauge 2", "card.i/p.Gauge 3"
+        ])
+    }
+
+    func testCardRowCapsAtThreeAndLeavesSingleRemainderFullWidth() {
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu"),
+            sensor("D", .percent, graphStyle: .gauge, priority: 2, capability: "system.cpu")
+        ]
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow, .gauge])
+        XCTAssertEqual(cpu?.children[0].children.count, 3)
+        XCTAssertEqual(cpu?.children[1].entities, [descriptors[3].id])
+    }
+
+    func testSlotCustomizationAutoMinusHiddenFiltersLeafCardsAndRegroupsRows() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "entity:i/p.B")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.id, "row:CPU:0")
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), ["card.i/p.A", "card.i/p.C"])
+    }
+
+    func testSlotCustomizationExplicitShownItemsOrdersLeavesAndSkipsMissingIDs() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            shownItems: [
+                SurfaceItemID(rawValue: "entity:i/p.C"),
+                SurfaceItemID(rawValue: "entity:missing"),
+                SurfaceItemID(rawValue: "entity:i/p.A")
+            ],
+            hiddenItems: [SurfaceItemID(rawValue: "entity:i/p.A")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        let cpu = plan.cards.first { $0.title == "CPU" }
+        XCTAssertEqual(cpu?.children.map(\.kind), [.cardRow])
+        XCTAssertEqual(cpu?.children.first?.children.map(\.id), ["card.i/p.C", "card.i/p.A"])
+    }
+
+    func testSlotCustomizationPureAutoMatchesUncustomizedPlan() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("latency", .latency, stateClass: .measurement, capability: "uplink")
+        ]
+        let auto = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:])
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride()
+
+        let customizedAuto = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        XCTAssertEqual(customizedAuto, auto)
+    }
+
+    func testSlotCustomizationCanHideWholeSection() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, capability: "system.memory")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "section:Memory")]
+        )
+
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+
+        XCTAssertEqual(plan.cards.map(\.title), ["CPU"])
+    }
+
+    func testSurfaceItemsExposeCanonicalIDsLabelsSectionsAndShownState() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("CPU", .percent, stateClass: .measurement, graphStyle: .gauge, priority: 50, capability: "system.cpu"),
+            sensor("User", .percent, stateClass: .measurement, graphStyle: .sparkline, priority: 40, capability: "system.cpu"),
+            sensor("System", .percent, stateClass: .measurement, graphStyle: .sparkline, priority: 30, capability: "system.cpu"),
+            sensor("Core 1", .percent, graphStyle: .gauge, priority: 20, capability: "system.cpu", compositionRole: .channel),
+            sensor("Core 2", .percent, graphStyle: .gauge, priority: 19, capability: "system.cpu", compositionRole: .channel),
+            sensor("Core 3", .percent, graphStyle: .gauge, priority: 18, capability: "system.cpu", compositionRole: .channel),
+            sensor("App/Active", .dataSize, graphStyle: .progress, priority: 30, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Wired", .dataSize, graphStyle: .progress, priority: 20, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Compressed", .dataSize, graphStyle: .progress, priority: 10, capability: "system.memory", compositionRole: .segment, unit: "B"),
+            sensor("Free", .dataSize, graphStyle: .progress, priority: 0, capability: "system.memory", compositionRole: .remainder, unit: "B")
+        ]
+        let states = Dictionary(uniqueKeysWithValues: descriptors.map {
+            ($0.id, EntityState(id: $0.id, value: .number(1), availability: .online))
+        })
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:breakdown")]
+        )
+
+        let items = SurfaceComposer.surfaceItems(descriptors: descriptors, states: states, config: config, slotID: slotID)
+
+        XCTAssertEqual(items.map(\.id.rawValue), [
+            "group:system.cpu:percent:none:cores",
+            "group:system.cpu:percent:none:user-system",
+            "entity:i/p.CPU",
+            "group:system.memory:dataSize:B:segments",
+            "group:system.memory:dataSize:B:breakdown"
+        ])
+        XCTAssertEqual(items.map(\.label), ["CPU Cores", "CPU User/System", "CPU", "Memory breakdown", "Memory breakdown details"])
+        XCTAssertEqual(items.map(\.section), ["CPU", "CPU", "CPU", "Memory", "Memory"])
+        XCTAssertEqual(items.map(\.isShown), [true, true, true, true, false])
+        XCTAssertEqual(items.map(\.isHidden), [false, false, false, false, true])
+    }
+
+    func testSurfaceItemsMatchRenderedLeafIDs() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let descriptors = [
+            sensor("A", .percent, graphStyle: .gauge, priority: 5, capability: "system.cpu"),
+            sensor("B", .percent, graphStyle: .gauge, priority: 4, capability: "system.cpu"),
+            sensor("C", .percent, graphStyle: .gauge, priority: 3, capability: "system.cpu")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            shownItems: [SurfaceItemID(rawValue: "entity:i/p.C"), SurfaceItemID(rawValue: "entity:i/p.A")]
+        )
+
+        let items = SurfaceComposer.surfaceItems(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+        let plan = SurfaceComposer.detailPlan(descriptors: descriptors, states: [:], config: config, slotID: slotID)
+        let renderedIDs = plan.cards.flatMap(\.children).flatMap { card in
+            card.kind == .cardRow ? card.children.map(\.id) : [card.id]
+        }
+
+        XCTAssertEqual(items.filter(\.isShown).map(\.card.id), renderedIDs)
+        XCTAssertEqual(renderedIDs, ["card.i/p.C", "card.i/p.A"])
     }
 
     func testControlsAndConfigExclusionSurviveCapabilitySections() {
