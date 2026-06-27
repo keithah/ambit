@@ -52,21 +52,25 @@ public struct SurfaceItemID: StringIdentifier {
 public struct SlotPresentationOverride: Equatable, Sendable, Codable {
     public var shownItems: [SurfaceItemID]?
     public var hiddenItems: Set<SurfaceItemID>
+    public var tableRowLimit: Int?
 
     public init(
         shownItems: [SurfaceItemID]? = nil,
-        hiddenItems: Set<SurfaceItemID> = []
+        hiddenItems: Set<SurfaceItemID> = [],
+        tableRowLimit: Int? = nil
     ) {
         self.shownItems = shownItems
         self.hiddenItems = hiddenItems
+        self.tableRowLimit = tableRowLimit
     }
 
-    private enum CodingKeys: String, CodingKey { case shownItems, hiddenItems }
+    private enum CodingKeys: String, CodingKey { case shownItems, hiddenItems, tableRowLimit }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         shownItems = try container.decodeIfPresent([SurfaceItemID].self, forKey: .shownItems)
         hiddenItems = try container.decodeIfPresent(Set<SurfaceItemID>.self, forKey: .hiddenItems) ?? []
+        tableRowLimit = try container.decodeIfPresent(Int.self, forKey: .tableRowLimit)
     }
 }
 

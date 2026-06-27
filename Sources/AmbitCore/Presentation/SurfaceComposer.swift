@@ -133,8 +133,13 @@ public enum SurfaceComposer {
         config: PresentationConfig,
         slotID: SlotID?
     ) -> [SurfaceItem] {
-        let leaves = buildCards(for: ordered, states: states, config: config)
         let override = slotOverride(for: slotID, config: config)
+        let leaves = buildCards(for: ordered, states: states, config: config).map { card -> CardSpec in
+            guard card.kind == .statTable, let limit = override?.tableRowLimit else { return card }
+            var card = card
+            card.tableRowLimit = limit
+            return card
+        }
         let sectionHidden = override?.hiddenItems.contains(sectionItemID(for: section)) == true
         let items = leaves.map { card in
             let itemID = surfaceItemID(for: card)

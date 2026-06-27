@@ -22,6 +22,12 @@ private extension EntityPresentationOverride {
     }
 }
 
+private extension SlotPresentationOverride {
+    var isEmpty: Bool {
+        shownItems == nil && hiddenItems.isEmpty && tableRowLimit == nil
+    }
+}
+
 private extension Slot {
     func coversIntegrationRecord(_ record: IntegrationInstanceRecord) -> Bool {
         switch selection {
@@ -677,6 +683,74 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
+    func surfaceItems(for slot: Slot) -> [SurfaceComposer.SurfaceItem] {
+        let config = configStore.load()
+        let records = registryRecordsFromPresentationSettings()
+        let descriptors = descriptorsFromPresentationSettings()
+        let states = statesFromPresentationSettings()
+        let resolved = SlotResolver.resolve(
+            slot.selection,
+            descriptors: descriptors.values.flatMap { $0 },
+            records: records
+        )
+        return SurfaceComposer.surfaceItems(
+            descriptors: resolved,
+            states: states,
+            config: config,
+            slotID: slot.id
+        )
+    }
+
+    func setSlotShownItems(_ slotID: SlotID, _ shownItems: [SurfaceItemID]?) {
+        mutateSlotOverride(slotID) { override in
+            override.shownItems = shownItems
+            if shownItems != nil {
+                override.hiddenItems.removeAll()
+            }
+        }
+    }
+
+    func removeSlotSurfaceItem(_ slotID: SlotID, _ itemID: SurfaceItemID) {
+        mutateSlotOverride(slotID) { override in
+            if var shownItems = override.shownItems {
+                shownItems.removeAll { $0 == itemID }
+                override.shownItems = shownItems
+            } else {
+                override.hiddenItems.insert(itemID)
+            }
+        }
+    }
+
+    func addSlotSurfaceItem(_ slotID: SlotID, _ itemID: SurfaceItemID) {
+        mutateSlotOverride(slotID) { override in
+            if var shownItems = override.shownItems {
+                if !shownItems.contains(itemID) {
+                    shownItems.append(itemID)
+                }
+                override.shownItems = shownItems
+            } else {
+                override.hiddenItems.remove(itemID)
+            }
+        }
+    }
+
+    func resetSlotSurfaceItems(_ slotID: SlotID) {
+        var config = configStore.load()
+        config.slotOverrides.removeValue(forKey: slotID)
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    func slotTableRowLimit(_ slotID: SlotID) -> Int {
+        configStore.load().slotOverrides[slotID]?.tableRowLimit ?? StatTableCard.Model.defaultRowLimit
+    }
+
+    func setSlotTableRowLimit(_ slotID: SlotID, _ limit: Int?) {
+        mutateSlotOverride(slotID) { override in
+            override.tableRowLimit = limit.map { max(1, $0) }
+        }
+    }
+
     func saveIntegrationInstanceDraft(_ draft: IntegrationInstanceDraft) throws {
         switch draft.integrationID {
         case IntegrationIDs.ping:
@@ -770,16 +844,24 @@ final class StatusViewModel: ObservableObject {
         rebuildPresentationSettings(config: config)
     }
 
-    private func rebuildPresentationSettings(config: PresentationConfig) {
-        let registryRecords = presentationSettings.integrations.map { group in
-            IntegrationInstanceRecord(
-                id: group.id,
-                integrationID: group.integrationID,
-                displayName: group.displayName,
-                enabled: group.enabled,
-                config: group.configValues
-            )
+    private func mutateSlotOverride(
+        _ id: SlotID,
+        mutate: (inout SlotPresentationOverride) -> Void
+    ) {
+        var config = configStore.load()
+        var override = config.slotOverrides[id] ?? SlotPresentationOverride()
+        mutate(&override)
+        if override.isEmpty {
+            config.slotOverrides.removeValue(forKey: id)
+        } else {
+            config.slotOverrides[id] = override
         }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    private func rebuildPresentationSettings(config: PresentationConfig) {
+        let registryRecords = registryRecordsFromPresentationSettings()
         rebuildPresentationSettings(registryRecords: registryRecords, config: config)
     }
 
@@ -804,6 +886,38 @@ final class StatusViewModel: ObservableObject {
             config: config,
             disabledIntegrationIDs: (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         )
+    }
+
+    private func registryRecordsFromPresentationSettings() -> [IntegrationInstanceRecord] {
+        presentationSettings.integrations.map { group in
+            IntegrationInstanceRecord(
+                id: group.id,
+                integrationID: group.integrationID,
+                displayName: group.displayName,
+                enabled: group.enabled,
+                config: group.configValues
+            )
+        }
+    }
+
+    private func descriptorsFromPresentationSettings() -> [ProviderInstanceID: [EntityDescriptor]] {
+        var descriptors: [ProviderInstanceID: [EntityDescriptor]] = [:]
+        for group in presentationSettings.integrations {
+            for row in group.entities {
+                descriptors[row.descriptor.instanceID, default: []].append(row.descriptor)
+            }
+        }
+        return descriptors
+    }
+
+    private func statesFromPresentationSettings() -> [EntityID: EntityState] {
+        var states: [EntityID: EntityState] = [:]
+        for group in presentationSettings.integrations {
+            for row in group.entities where row.state != nil {
+                states[row.descriptor.id] = row.state
+            }
+        }
+        return states
     }
 
     private func buildSlotSurface(

@@ -109,10 +109,10 @@ public struct StatTableCard: View {
         self.model = nil
     }
 
-    public init(title: String? = nil, table: TableValue) {
+    public init(title: String? = nil, table: TableValue, rowLimit: Int = Model.defaultRowLimit) {
         self.title = title
         self.rows = []
-        self.model = Model(table: table)
+        self.model = Model(table: table, rowLimit: rowLimit)
     }
 
     public var body: some View {

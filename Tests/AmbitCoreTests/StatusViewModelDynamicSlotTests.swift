@@ -820,6 +820,130 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(Set(invalid.validationErrors.map(\.fieldID)), ["name", "interval", "enabled", "mode"])
     }
 
+    @MainActor
+    func testSlotSurfaceItemsResolveFromComposerAndTrackShownState() {
+        let slot = Slot(id: SlotID(rawValue: "slot.system"), title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal))
+        var config = PresentationConfig.empty
+        config.slots = [slot]
+        config.slotOverrides[slot.id] = SlotPresentationOverride(
+            hiddenItems: [SurfaceItemID(rawValue: "entity:system@local/overview.memory_used_percent")]
+        )
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            isPrimary: true
+        )
+        let memory = EntityDescriptor(
+            id: "system@local/overview.memory_used_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "Memory",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.memory",
+            graphStyle: .progress
+        )
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [ProviderInstanceIDs.systemOverview: [cpu, memory]],
+            states: [
+                cpu.id: EntityState(id: cpu.id, value: .number(20), availability: .online),
+                memory.id: EntityState(id: memory.id, value: .number(55), availability: .online)
+            ],
+            config: config
+        )
+
+        let items = viewModel.surfaceItems(for: slot)
+
+        XCTAssertEqual(items.map(\.id.rawValue), [
+            "entity:system@local/overview.cpu_usage_percent",
+            "entity:system@local/overview.memory_used_percent"
+        ])
+        XCTAssertEqual(items.map(\.label), ["CPU", "Memory"])
+        XCTAssertEqual(items.map(\.section), ["CPU", "Memory"])
+        XCTAssertEqual(items.map(\.isShown), [true, false])
+        XCTAssertEqual(items.map(\.isHidden), [false, true])
+    }
+
+    @MainActor
+    func testSlotItemRemoveAddAndReorderPersistSlotOverride() {
+        let slot = Slot(id: SlotID(rawValue: "slot.system"), title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal))
+        var config = PresentationConfig.empty
+        config.slots = [slot]
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            priority: 2
+        )
+        let pressure = EntityDescriptor(
+            id: "system@local/overview.memory_pressure_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "Memory Pressure",
+            kind: .sensor,
+            deviceClass: .percent,
+            capability: "system.cpu",
+            graphStyle: .gauge,
+            priority: 1
+        )
+        viewModel.presentationSettings = StatusViewModel.presentationSettingsModel(
+            registryRecords: [IntegrationInstanceRecord(id: IntegrationInstanceIDs.systemLocal, integrationID: IntegrationIDs.system, displayName: "System")],
+            descriptors: [ProviderInstanceIDs.systemOverview: [cpu, pressure]],
+            states: [:],
+            config: config
+        )
+        let cpuID = SurfaceItemID(rawValue: "entity:system@local/overview.cpu_usage_percent")
+        let pressureID = SurfaceItemID(rawValue: "entity:system@local/overview.memory_pressure_percent")
+
+        viewModel.removeSlotSurfaceItem(slot.id, cpuID)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id]?.shownItems)
+        XCTAssertEqual(store.config.slotOverrides[slot.id]?.hiddenItems, [cpuID])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [pressureID])
+
+        viewModel.addSlotSurfaceItem(slot.id, cpuID)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [cpuID, pressureID])
+
+        viewModel.setSlotShownItems(slot.id, [pressureID, cpuID])
+
+        XCTAssertEqual(store.config.slotOverrides[slot.id]?.shownItems, [pressureID, cpuID])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [pressureID, cpuID])
+
+        viewModel.resetSlotSurfaceItems(slot.id)
+
+        XCTAssertNil(store.config.slotOverrides[slot.id])
+        XCTAssertEqual(viewModel.surfaceItems(for: slot).filter(\.isShown).map(\.id), [cpuID, pressureID])
+    }
+
+    @MainActor
+    func testSlotTableRowLimitPersistsAndResetsCleanly() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setSlotTableRowLimit(slotID, 9)
+
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.tableRowLimit, 9)
+
+        viewModel.setSlotTableRowLimit(slotID, nil)
+
+        XCTAssertNil(store.config.slotOverrides[slotID])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),

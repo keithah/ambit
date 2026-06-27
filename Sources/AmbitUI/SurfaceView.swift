@@ -113,7 +113,7 @@ public struct CardView: View {
                 let id = primaryID,
                 case .table(let table)? = data.states[id]?.value
             {
-                StatTableCard(title: spec.title, table: table)
+                StatTableCard(title: spec.title, table: table, rowLimit: spec.tableRowLimit ?? StatTableCard.Model.defaultRowLimit)
             } else {
                 StatTableCard(title: spec.title,
                               rows: spec.entities.map { StatTableCard.Row(id: $0.rawValue, label: data.title($0), value: data.readout($0).text) })

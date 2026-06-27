@@ -201,6 +201,19 @@ final class SurfaceComposerTests: XCTestCase {
         XCTAssertEqual(card?.entities, [table.id])
     }
 
+    func testSlotTableRowLimitFlowsToStatTableCards() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let table = sensor("Top CPU", nil, kind: .table, capability: "system.cpu")
+        var config = PresentationConfig.empty
+        config.slotOverrides[slotID] = SlotPresentationOverride(tableRowLimit: 7)
+
+        let plan = SurfaceComposer.detailPlan(descriptors: [table], states: [:], config: config, slotID: slotID)
+
+        let card = plan.cards.flatMap(\.children).first
+        XCTAssertEqual(card?.kind, .statTable)
+        XCTAssertEqual(card?.tableRowLimit, 7)
+    }
+
     func testSystemCapabilitiesProduceGenericSectionsInOrder() {
         let descriptors = [
             sensor("fan", nil, capability: "system.fans"),

@@ -383,6 +383,7 @@ Extend `PresentationConfig` with per-slot customization, for example:
 public struct SlotPresentationOverride: Equatable, Sendable, Codable {
     public var shownItems: [SurfaceItemID]?
     public var hiddenItems: Set<SurfaceItemID>
+    public var tableRowLimit: Int?
 }
 ```
 
@@ -403,6 +404,10 @@ Composer states are exact:
 Entity-level overrides remain the source of truth for generic visibility, pinned state, alert
 policy, thresholds, graph style, and enabled/show. Slot customization answers a narrower
 question: "which cards are on this slot surface, and in what order?"
+
+`tableRowLimit` is the first generic per-slot display knob. It applies to any `.statTable`
+card in that slot through `CardSpec`, defaults to the renderer's compact table limit, and is
+not tied to System/process tables specifically.
 
 ### Composer Behavior
 
@@ -427,6 +432,7 @@ The existing `AmbitSettings` window gets a generic slot editor:
 - Left pane: configured dashboard items for the selected slot, in order.
 - Right pane: Available Items, derived from descriptors and candidate cards not currently shown.
 - Actions: add, remove, move up/down or drag reorder.
+- Display knob: table row limit, applied generically to `.statTable` cards.
 - Persistence: writes `SlotPresentationOverride` through `PresentationConfigStore` and rebuilds
   `PresentationSettingsModel`.
 
