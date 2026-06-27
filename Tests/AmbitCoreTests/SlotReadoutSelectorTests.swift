@@ -55,6 +55,81 @@ final class SlotReadoutSelectorTests: XCTestCase {
         XCTAssertEqual(elevated.primaryEntityID, throughput.id)
     }
 
+    func testHealthyNonPingSlotIgnoresUnavailableNoDataSecondaryForHeadline() {
+        var engine = AttentionEngine()
+        let cpu = descriptor("system.cpu", isPrimary: true, priority: 100)
+        let optionalMetric = descriptor("system.optional", isPrimary: false, priority: 0)
+        let states = [
+            cpu.id: state(cpu.id, value: 14, severity: .normal),
+            optionalMetric.id: EntityState(id: optionalMetric.id, availability: .unavailable, severity: .down)
+        ]
+
+        let result = SlotReadoutSelector.resolve(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: states[cpu.id]!),
+                AttentionCandidate(descriptor: optionalMetric, state: states[optionalMetric.id]!)
+            ],
+            states: states,
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(result.primaryEntityID, cpu.id)
+    }
+
+    func testValuedDownEntityStillOverridesRestingPrimary() {
+        var engine = AttentionEngine()
+        let cpu = descriptor("system.cpu", isPrimary: true, priority: 100)
+        let degraded = descriptor("system.degraded", isPrimary: false, priority: 0)
+        let states = [
+            cpu.id: state(cpu.id, value: 14, severity: .normal),
+            degraded.id: state(degraded.id, value: 1, severity: .down)
+        ]
+
+        let result = SlotReadoutSelector.resolve(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: states[cpu.id]!),
+                AttentionCandidate(descriptor: degraded, state: states[degraded.id]!)
+            ],
+            states: states,
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(result.primaryEntityID, degraded.id)
+    }
+
+    func testNilLatencyDownStillOverridesRestingPrimary() {
+        var engine = AttentionEngine()
+        let cpu = descriptor("system.cpu", isPrimary: true, priority: 100)
+        let latency = descriptor("ping.latency", deviceClass: .latency, isPrimary: false, priority: 0)
+        let states = [
+            cpu.id: state(cpu.id, value: 14, severity: .normal),
+            latency.id: EntityState(id: latency.id, availability: .unavailable, severity: .down)
+        ]
+
+        let result = SlotReadoutSelector.resolve(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: cpu, state: states[cpu.id]!),
+                AttentionCandidate(descriptor: latency, state: states[latency.id]!)
+            ],
+            states: states,
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(result.primaryEntityID, latency.id)
+    }
+
     func testFixedReadoutUsesFixedEntityWhenPresent() {
         var engine = AttentionEngine()
         let fixed = descriptor("fixed")
@@ -113,6 +188,7 @@ final class SlotReadoutSelectorTests: XCTestCase {
 
     private func descriptor(
         _ key: String,
+        deviceClass: DeviceClass = .percent,
         isPrimary: Bool = false,
         priority: Int? = nil,
         visibility: GlanceVisibility = .auto
@@ -122,7 +198,7 @@ final class SlotReadoutSelectorTests: XCTestCase {
             instanceID: ProviderInstanceID(rawValue: "test"),
             name: key,
             kind: .sensor,
-            deviceClass: .percent,
+            deviceClass: deviceClass,
             defaultVisibility: visibility,
             isPrimary: isPrimary,
             priority: priority

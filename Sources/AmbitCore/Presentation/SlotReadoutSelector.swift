@@ -38,7 +38,7 @@ public enum SlotReadoutSelector {
                 now: now
             )[surfaceID] ?? AttentionSelection()
 
-            let selectedID = activeSelectionID(selection, config: config, alertingIDs: alertingIDs)
+            let selectedID = activeSelectionID(selection, candidates: candidates, states: states, config: config, alertingIDs: alertingIDs)
                 ?? restingPrimaryID(candidates: candidates, states: states, config: config)
                 ?? fallbackID(candidates: candidates)
             return SlotReadoutResolution(primaryEntityID: selectedID, selection: selection)
@@ -47,17 +47,34 @@ public enum SlotReadoutSelector {
 
     private static func activeSelectionID(
         _ selection: AttentionSelection,
+        candidates: [AttentionCandidate],
+        states: [EntityID: EntityState],
         config: PresentationConfig,
         alertingIDs: Set<EntityID>
     ) -> EntityID? {
-        selection.lanes.first { entity in
-            entity.tier == .alerted ||
-            entity.tier == .surfaced ||
-            entity.reason.severity > .normal ||
-            entity.reason.transitionBoosted ||
-            alertingIDs.contains(entity.id) ||
-            (config.entityOverrides[entity.id]?.pinned ?? false)
+        let descriptors = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.descriptor) })
+        let candidateStates = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.state) })
+        return selection.lanes.first { entity in
+            let isAlerted = entity.tier == .alerted || alertingIDs.contains(entity.id)
+            let isPinned = config.entityOverrides[entity.id]?.pinned ?? false
+            if isAlerted || isPinned || entity.reason.transitionBoosted { return true }
+            guard entity.tier == .surfaced || entity.reason.severity > .normal else { return false }
+            let descriptor = descriptors[entity.id]
+            let state = states[entity.id] ?? candidateStates[entity.id]
+            if state?.availability == .unavailable, state?.value == nil, entity.reason.severity == .down {
+                return descriptor.map(nilUnavailableCanHeadline) ?? false
+            }
+            return true
         }?.id
+    }
+
+    private static func nilUnavailableCanHeadline(_ descriptor: EntityDescriptor) -> Bool {
+        switch descriptor.deviceClass {
+        case .latency, .connectivity:
+            return true
+        case .battery, .count, .dataSize, .duration, .fan, .percent, .power, .temperature, .throughput, .none:
+            return false
+        }
     }
 
     private static func restingPrimaryID(

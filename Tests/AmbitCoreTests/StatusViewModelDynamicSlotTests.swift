@@ -562,6 +562,29 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.glyph.primaryText, "34%")
     }
 
+    func testHealthyGenericSlotDoesNotShowDownFromUnavailableNoDataSecondary() {
+        var engine = AttentionEngine()
+        let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
+        let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork)
+        let states: [EntityID: EntityState] = [
+            cpu.id: state(cpu.id, value: 14, severity: .normal),
+            throughput.id: EntityState(id: throughput.id, availability: .unavailable, severity: .down)
+        ]
+
+        let surface = StatusSlotSurfaceBuilder.genericSurface(
+            slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
+            descriptors: [throughput, cpu],
+            states: states,
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, cpu.id)
+        XCTAssertEqual(surface.glyph.primaryText, "14%")
+        XCTAssertEqual(surface.glyph.tone, .good)
+    }
+
     func testActiveThroughputOverridesRestingPrimary() {
         let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)
         let throughput = systemMetric("network.throughput_in", name: "Network In", deviceClass: .throughput, instanceID: ProviderInstanceIDs.systemNetwork, isPrimary: true)
