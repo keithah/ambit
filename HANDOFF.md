@@ -84,7 +84,7 @@ when a provider is offline (offline stability). The Metric-based `ProviderDispla
 
 **Presentation (generic, opinionated — the Raycast bet, not HA-style user-composed dashboards):**
 - Card vocabulary (`AmbitUI`): statusRow, gauge/ring, historyGraph (multi-series), dualLineGraph, progress,
-  statTable, control, instanceSelector, section, statusBanner.
+  segmentedRing, breakdownLegend, coreGrid, cardRow, statTable, control, instanceSelector, section, statusBanner.
 - **Slots** unify dedicated vs combined: `SlotSelection = .integration | .integrations | .integrationType
   (all live instances of an integration, dynamic, no membership sync) | .capability | .entities`. The menu bar
   renders one status item per slot (static bar readout in P3; dynamic comes in P4) + a generic `SurfaceView`.
@@ -107,7 +107,7 @@ aggregator/viewport, never the coordinator.
   (host = instance); TCP/UDP/ICMP probes; the shared `HistoryService`; `AlertEngine` upgrade; the macOS UI;
   tier-diagnosis (`NetworkPerspectiveDiagnosis`).
 - **`pingscope → ping` rename** (RESET migration) — merged.
-- **Presentation program: P1, P2, P3, P4, P6, P5 merged.**
+- **Presentation program: P1, P2, P3, P4, P6, P5, and the System dashboard milestone merged.**
   - P1: generic card vocabulary + `SurfaceComposer` (retired old display models).
   - P2: pingscope renders entirely through generic primitives; bespoke Canvas UI deleted. (Recent-samples
     table deferred to P6.)
@@ -123,8 +123,17 @@ aggregator/viewport, never the coordinator.
 - **P5 complete** — merged on master through `d4db185`: generic progressive-disclosure settings renderer;
   `PingSettings.swift` deleted; settings are driven by `IntegrationConfigSchema`, `EntityPresentationOverride`,
   and `PresentationSettingsModel`; there is no bespoke ping settings pane.
-- Current master: **472 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
-  and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, and generic settings.
+- **System dashboard + Available Items complete** — merged on master: iStat-style system dashboard through
+  generic primitives only. Added `segmentedRing`, `breakdownLegend`, `coreGrid`, and `cardRow`; per-metric
+  `GraphAxisResolver`; resting-primary selection shared by the menu bar and popover header; generic graph
+  summaries; scroll preservation; sensor/fan data honesty; short process names + top-N stat tables; honest
+  memory breakdown (`App/Active`, `Wired`, `Compressed`, `Cached/Inactive`, `Free`) summing to physical RAM
+  with the ring center bound to authoritative used%; and per-slot Available Items customization via
+  `SlotPresentationOverride` (`shownItems`, `hiddenItems`, `tableRowLimit`) using the canonical
+  `SurfaceComposer.surfaceItems` API.
+- Current master: **534 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+  and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
+  and a customizable System dashboard.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -133,7 +142,7 @@ aggregator/viewport, never the coordinator.
 
 ## 6. Roadmap (presentation program)
 
-- **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓.
+- **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -146,6 +155,11 @@ aggregator/viewport, never the coordinator.
 - **P5 — Generic progressive-disclosure settings: complete.** `PingSettings.swift` is gone; host config,
   diagnosis sensitivity, entity visibility/pin/show, and advanced per-entity threshold/graph/alert controls
   flow through generic schemas and presentation overrides.
+- **System dashboard + Available Items: complete.** The system slot now reads like an iStat-style dashboard
+  while staying generic: CPU user/system graphs, memory ring + legend, core grid, disk/process/network/battery
+  tables and rows, per-metric graph axes, preserved popover scroll, and per-slot card add/remove/reorder plus
+  table row limit. Public macOS readers now cover uptime, memory pressure, memory breakdown, and per-core CPU.
+  GPU is intentionally omitted because public APIs do not expose a stable generic GPU metric source.
 - **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
   `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
   real packaging.
