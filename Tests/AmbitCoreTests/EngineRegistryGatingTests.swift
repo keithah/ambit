@@ -37,6 +37,47 @@ final class EngineRegistryGatingTests: XCTestCase {
         XCTAssertEqual(Set(after.keys), ["ping@1.1.1.1:443/probe", "ping@192.168.8.1:80/probe"])
     }
 
+    func testEngineRegistersAllEnabledPingHostsFromLiveRegistryShape() async {
+        let records: [IntegrationInstanceRecord] = [
+            IntegrationInstanceRecord(
+                id: "ping@127.0.0.1:22",
+                integrationID: IntegrationIDs.ping,
+                displayName: "Local",
+                origin: .user,
+                config: [
+                    "method": .string("tcp"),
+                    "thresholds": .object(["degradedAt": .number(1_000), "downAfterFailures": .number(2)]),
+                    "displayName": .string("Local"),
+                    "policy": .object([
+                        "notifyOnRecovery": .bool(false),
+                        "enabled": .bool(false),
+                        "highLatencyMs": .number(500),
+                        "cooldown": .number(300),
+                        "highLatencyConsecutive": .number(3)
+                    ]),
+                    "address": .string("127.0.0.1"),
+                    "interval": .number(2),
+                    "port": .number(22),
+                    "timeout": .number(0.25)
+                ]
+            ),
+            .ping(PingHostConfig(displayName: "Cloudflare", address: "1.1.1.1", method: .tcp, port: 443, timeout: 1)),
+            .ping(PingHostConfig(displayName: "Gateway", address: "192.168.8.1", method: .icmp))
+        ]
+        let engine = Engine(settings: AppSettings(), integrationRegistry: InMemoryIntegrationRegistry(records: records))
+
+        let names = await engine.providerDisplayNames()
+
+        XCTAssertEqual(
+            Set(names.keys),
+            [
+                "ping@127.0.0.1:22/probe",
+                "ping@1.1.1.1:443/probe",
+                "ping@192.168.8.1/probe"
+            ]
+        )
+    }
+
     func testEnablingOneIntegrationRegistersOnlyThatOne() async {
         // Only reachability's integration type is enabled (not in the disabled set).
         let registry = InMemoryIntegrationRegistry(
