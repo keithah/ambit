@@ -27,6 +27,7 @@ public actor Engine {
     private let history: HistoryService
     private var descriptorsByInstance: [ProviderInstanceID: [EntityDescriptor]] = [:]
     private var intervalsByInstance: [ProviderInstanceID: TimeInterval] = [:]
+    private var registryProviderSignature: String?
 
     private var snapshot = StatusSnapshot()
     private var providerStates: [ProviderInstanceID: SourceState<ProviderSnapshot>] = [:]
@@ -142,6 +143,7 @@ public actor Engine {
         self.providers = Self.mergedProviders(builtIns: builtInProviders + installed.providers, explicit: providers)
         self.descriptorsByInstance = Self.descriptors(of: self.providers)
         self.intervalsByInstance = Self.intervals(of: self.providers)
+        self.registryProviderSignature = Self.registryProviderSignature(registry: self.registry)
     }
 
     /// Static entity descriptors per provider instance, cached at assembly time and used to
@@ -404,6 +406,7 @@ public actor Engine {
     }
 
     public func refresh() async {
+        rebuildProvidersIfRegistryChanged()
         markRegisteredProvidersLoading()
         publish()
 
@@ -645,6 +648,12 @@ public actor Engine {
         rebuildProviders()
     }
 
+    private func rebuildProvidersIfRegistryChanged() {
+        let current = Self.registryProviderSignature(registry: registry)
+        guard current != registryProviderSignature else { return }
+        rebuildProviders()
+    }
+
     private func rebuildProviders() {
         // For the engine-owned default registry, re-seed so settings-driven gating (EcoFlow)
         // tracks changes. An injected registry is user-authoritative and left untouched.
@@ -659,6 +668,7 @@ public actor Engine {
         )
         descriptorsByInstance = Self.descriptors(of: providers)
         intervalsByInstance = Self.intervals(of: providers)
+        registryProviderSignature = Self.registryProviderSignature(registry: registry)
         let activeInstanceIDs = Set(providers.map(\.instanceID))
         let inactiveInstanceIDs = Set(providerStates.keys)
             .union(snapshot.providers.keys)
@@ -668,6 +678,13 @@ public actor Engine {
             lastRegisteredProviderPolls[instanceID] = nil
             snapshot.providers[instanceID] = nil
         }
+    }
+
+    private static func registryProviderSignature(registry: any IntegrationRegistry) -> String? {
+        guard let active = try? registry.activeInstances() else { return nil }
+        let sorted = active.sorted { $0.id.rawValue < $1.id.rawValue }
+        guard let data = try? JSONEncoder().encode(sorted) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private func loadInstalledManifestProviders() -> [any Provider] {
