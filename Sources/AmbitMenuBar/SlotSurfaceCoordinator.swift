@@ -115,7 +115,7 @@ final class SlotSurfaceCoordinator {
             guard let state = states[descriptor.id] ?? allStates[descriptor.id] else { return nil }
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
-        let alertingIDs = Self.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
+        let alertingIDs = PingDiagnosisCoordinator.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
         let readout = attentionEngines.resolveReadout(
             slotID: slot.id,
             mode: slot.barReadout,
@@ -165,18 +165,6 @@ final class SlotSurfaceCoordinator {
                 return children
             }
         }
-    }
-
-    nonisolated static func alertingEntityIDs(from events: [AlertEvent], candidates: [AttentionCandidate]) -> Set<EntityID> {
-        let candidateIDs = Set(candidates.map(\.descriptor.id))
-        let ids = events.flatMap { event -> [EntityID] in
-            if event.providerID == "ping.network" {
-                return candidateIDs.contains(DiagnosisEntity.entityID) ? [DiagnosisEntity.entityID] : []
-            }
-            let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
-            return candidateIDs.contains(pingLatencyID) ? [pingLatencyID] : []
-        }
-        return Set(ids)
     }
 
     nonisolated static func latencyStateForSurface(id: EntityID, current: EntityState?, samples: [Sample]) -> EntityState? {

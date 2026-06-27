@@ -353,6 +353,32 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(surface.plan.cards.flatMap { $0.children }.first?.kind, .historyGraph)
     }
 
+    @MainActor
+    func testPingDiagnosisCoordinatorBuildsStalledDiagnosisWithSampleAge() async {
+        let coordinator = PingDiagnosisCoordinator()
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443, interval: 1)
+        let record = IntegrationInstanceRecord.ping(host)
+        let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let staleSample = Sample(timestamp: now.addingTimeInterval(-12), value: 9, ok: true)
+        let snapshot = StatusSnapshot(
+            providers: [
+                providerInstance: SourceState(value: ProviderSnapshot(health: .ok))
+            ]
+        )
+
+        let result = await coordinator.evaluate(
+            activeRecords: [record],
+            snapshot: snapshot,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { _, _ in [staleSample] }
+        )
+
+        XCTAssertEqual(result.diagnosis.verdict, .monitoringStalled)
+        XCTAssertEqual(result.diagnosis.detail, "Monitoring paused — data is 12s old.")
+        XCTAssertEqual(result.events, [])
+    }
+
     func testHealthyGenericSlotUsesRestingPrimaryOverNormalThroughputForGlyphAndSurfaceSelection() {
         var engine = AttentionEngine()
         let cpu = systemMetric("overview.cpu_usage_percent", name: "CPU", deviceClass: .percent, instanceID: ProviderInstanceIDs.systemOverview, isPrimary: true, priority: 100)

@@ -78,9 +78,7 @@ final class StatusViewModel: ObservableObject {
     private let configStore: any PresentationConfigStore
     let historyRetentionInterval = HistoryService.defaultRetentionInterval
 
-    private let pingDiagnoser = NetworkPerspectiveDiagnoser()
-    private let pingTierClassifier = NetworkTierClassifier()
-    private var pingAlertMonitor = PingAlertMonitor()
+    private var pingDiagnosisCoordinator = PingDiagnosisCoordinator()
 
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
@@ -556,36 +554,18 @@ final class StatusViewModel: ObservableObject {
         let allRecords = allRegistryRecords.filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
-        pingAlertMonitor.sensitivity = Self.diagnosisSensitivity(from: activeRecords)
 
-        // Active hosts: per-host readout for diagnosis + alert inputs.
-        var diagnosisHosts: [DiagnosisHost] = []
-        var alertHosts: [AlertHost] = []
-        var newestSample: Date?
-        for record in activeRecords {
-            guard let host = PingHostConfig(configObject: record.config) else { continue }
-            let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
-            let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
-            let samples = await engine.historySamples(latencyID, since: now.addingTimeInterval(-pingRange.seconds))
-            let health = HealthStatus(legacy: snapshot.providers[providerInstance]?.value?.health ?? .unknown)
-            // Staleness is evaluated against wall-clock `now` from the last sample — so a stalled
-            // loop (stale data) suppresses fault inference rather than reporting a false "down".
-            let isStale = Staleness.isStale(lastUpdate: samples.last?.timestamp, interval: host.interval, now: now)
-            if let last = samples.last?.timestamp, last > (newestSample ?? .distantPast) { newestSample = last }
-            diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: pingTierClassifier.tier(for: host), status: health, isStale: isStale))
-            alertHosts.append(AlertHost(id: record.id.rawValue, name: record.displayName, status: health,
-                                        notifyOnRecovery: host.policy.notifyOnRecovery, cooldown: host.policy.cooldown))
+        let diagnosisResult = await pingDiagnosisCoordinator.evaluate(
+            activeRecords: activeRecords,
+            snapshot: snapshot,
+            now: now,
+            range: pingRange
+        ) { [engine] id, since in
+            await engine.historySamples(id, since: since)
         }
-
-        // Tier diagnosis + network/host alerts. Enrich a stalled diagnosis with the data age
-        // (the diagnoser stays timestamp-free; the host knows when data last arrived).
-        var diagnosis = pingDiagnoser.diagnose(hosts: diagnosisHosts)
-        if case .monitoringStalled = diagnosis.verdict {
-            let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
-            diagnosis.detail = "Monitoring paused — data is \(age)s old."
-        }
+        let diagnosis = diagnosisResult.diagnosis
         pingDiagnosis = diagnosis
-        let events = pingAlertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
+        let events = diagnosisResult.events
         await alertNotifier.deliver(events)
 
         // Build per-slot surfaces.
@@ -1005,14 +985,6 @@ final class StatusViewModel: ObservableObject {
 
     nonisolated static func latencyStateForSurface(id: EntityID, current: EntityState?, samples: [Sample]) -> EntityState? {
         SlotSurfaceCoordinator.latencyStateForSurface(id: id, current: current, samples: samples)
-    }
-
-    nonisolated private static func diagnosisSensitivity(from records: [IntegrationInstanceRecord]) -> DiagnosisSensitivity {
-        let values = records.compactMap { $0.config["diagnosisSensitivity"]?.stringValue }
-        if values.contains("aggressive") { return .sensitive }
-        if values.contains("standard") { return .balanced }
-        if values.contains("conservative") { return .conservative }
-        return .balanced
     }
 
     private func reloadProvidersAndRefresh() {
