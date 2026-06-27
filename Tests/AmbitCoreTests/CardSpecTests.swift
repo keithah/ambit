@@ -6,9 +6,9 @@ final class CardSpecTests: XCTestCase {
         let kinds: Set<CardKind> = [
             .statusRow, .gauge, .historyGraph, .dualLineGraph, .progress,
             .statTable, .control, .instanceSelector, .section, .statusBanner,
-            .segmentedRing, .breakdownLegend, .coreGrid, .cardRow
+            .segmentedRing, .breakdownLegend, .coreGrid, .cardRow, .sampleHistory
         ]
-        XCTAssertEqual(kinds.count, 14)
+        XCTAssertEqual(kinds.count, 15)
     }
 
     func testSectionCardNestsChildren() {

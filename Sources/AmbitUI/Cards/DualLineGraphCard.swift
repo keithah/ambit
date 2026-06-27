@@ -9,21 +9,23 @@ public struct DualLineGraphCard: View {
     let axis: GraphAxis?
     let deviceClass: DeviceClass?
     let unit: String?
+    let showsAxes: Bool
     var hasDrawableSeries: Bool {
         lines.contains { line in
-            line.samples.filter { $0.value != nil }.count > 1
+            line.samples.filter { $0.ok && $0.value != nil }.count > 1
         }
     }
 
-    public init(title: String, lines: [GraphLine], axis: GraphAxis? = nil, deviceClass: DeviceClass? = nil, unit: String? = nil) {
+    public init(title: String, lines: [GraphLine], axis: GraphAxis? = nil, deviceClass: DeviceClass? = nil, unit: String? = nil, showsAxes: Bool = false) {
         self.title = title
         self.lines = Array(lines.prefix(2))
         self.axis = axis
         self.deviceClass = deviceClass
         self.unit = unit
+        self.showsAxes = showsAxes
     }
 
     public var body: some View {
-        HistoryGraphCard(title: title, lines: lines, axis: axis, deviceClass: deviceClass, unit: unit, showLegend: true)
+        HistoryGraphCard(title: title, lines: lines, axis: axis, deviceClass: deviceClass, unit: unit, showLegend: true, showsAxes: showsAxes)
     }
 }

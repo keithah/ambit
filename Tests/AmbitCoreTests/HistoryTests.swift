@@ -54,4 +54,19 @@ final class HistoryTests: XCTestCase {
         let remaining = await service.samples(id, since: at(-10_000))
         XCTAssertEqual(remaining.map(\.value), [20])
     }
+
+    func testHistoryServiceClearRemovesSubsequentQueryResults() async {
+        let service = HistoryService(store: InMemoryHistoryStore(), retention: 86_400, pruneInterval: 60)
+        let first = EntityID(rawValue: "e1")
+        let second = EntityID(rawValue: "e2")
+        await service.record(ok(10, 0), for: first)
+        await service.record(ok(20, 1), for: second)
+
+        await service.clear()
+
+        let firstSamples = await service.samples(first, since: at(-10_000))
+        let secondSamples = await service.samples(second, since: at(-10_000))
+        XCTAssertEqual(firstSamples, [])
+        XCTAssertEqual(secondSamples, [])
+    }
 }

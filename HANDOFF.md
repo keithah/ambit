@@ -107,7 +107,8 @@ aggregator/viewport, never the coordinator.
   (host = instance); TCP/UDP/ICMP probes; the shared `HistoryService`; `AlertEngine` upgrade; the macOS UI;
   tier-diagnosis (`NetworkPerspectiveDiagnosis`).
 - **`pingscope → ping` rename** (RESET migration) — merged.
-- **Presentation program: P1, P2, P3, P4, P6, P5, and the System dashboard milestone merged.**
+- **Presentation program: P1, P2, P3, P4, P6, P5, the System dashboard milestone, and the History/Graph
+  Fidelity milestone merged.**
   - P1: generic card vocabulary + `SurfaceComposer` (retired old display models).
   - P2: pingscope renders entirely through generic primitives; bespoke Canvas UI deleted. (Recent-samples
     table deferred to P6.)
@@ -131,9 +132,18 @@ aggregator/viewport, never the coordinator.
   with the ring center bound to authoritative used%; and per-slot Available Items customization via
   `SlotPresentationOverride` (`shownItems`, `hiddenItems`, `tableRowLimit`) using the canonical
   `SurfaceComposer.surfaceItems` API.
-- Current master: **534 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+- **History & Graph Fidelity complete** — merged on master: graph rendering now uses honest geometry
+  (`GraphSeriesGeometry` line segments + `failureXPositions`), so `nil` values and `ok == false` samples never
+  plot as zero. Pingscope-style failure bars render generically (`.red.opacity(0.72)` / `1.5` single-line;
+  `.red.opacity(0.55)` / `1.2` multi-line primary series only). Detail graphs support labeled three-tick axes
+  via `GraphAxisTicks` on primary detail cards while dense dashboard graphs stay compact. Added the generic
+  `sampleHistory` card (`history:<entityID>`) with Time / Result / Status rows, auto-shown for primary latency
+  and available for other history-backed entities through Available Items; it follows the focused ping host.
+  Added generic `HistoryExport` (CSV/JSON/Text) plus the History settings pane for entity/slot target, range,
+  retention label, export, and clear.
+- Current master: **567 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
-  and a customizable System dashboard.
+  a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, and generic history export.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -142,7 +152,8 @@ aggregator/viewport, never the coordinator.
 
 ## 6. Roadmap (presentation program)
 
-- **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓.
+- **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
+  Fidelity ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -160,6 +171,10 @@ aggregator/viewport, never the coordinator.
   tables and rows, per-metric graph axes, preserved popover scroll, and per-slot card add/remove/reorder plus
   table row limit. Public macOS readers now cover uptime, memory pressure, memory breakdown, and per-core CPU.
   GPU is intentionally omitted because public APIs do not expose a stable generic GPU metric source.
+- **History & Graph Fidelity: complete.** Ping detail graphs now match the pingscope reference: broken lines
+  across failures, failure bars, labeled three-tick axes, and a generic recent-samples table. System/dashboard
+  graphs remain compact. History export and clear are generic settings actions over any slot or history-backed
+  entity.
 - **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
   `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
   real packaging.
@@ -228,6 +243,7 @@ bug in the core value prop.** This was fixed before P4 and merged as `71b2f81`. 
      always-on box, and phone.
    - **iOS/widgets/Live Activity:** mobile and glanceable surfaces on top of the proven engine primitives.
 2. Keep legacy device integrations disabled until they are rebuilt against the proven generic presentation shape.
-3. Keep using eyeball checkpoints for each milestone; P4, P6, and P5 showed they catch real architecture gaps.
+3. Keep using eyeball checkpoints for each milestone; P4, P6, P5, System dashboard, and History/Graph Fidelity
+   showed they catch real architecture gaps.
 
 Open the design docs in §3 for full detail on anything above — they're current and authoritative.

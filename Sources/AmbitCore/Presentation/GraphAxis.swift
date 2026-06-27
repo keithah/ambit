@@ -39,7 +39,10 @@ public enum GraphAxisResolver {
             return GraphAxis(min: range.min, max: range.max, unitLabel: descriptor.unit, isFixed: true, isEmpty: false)
         }
 
-        var values = samples.compactMap(\.value)
+        var values = samples.compactMap { sample -> Double? in
+            guard sample.ok else { return nil }
+            return sample.value
+        }
         if let currentValue = currentState?.numericValue {
             values.append(currentValue)
         }

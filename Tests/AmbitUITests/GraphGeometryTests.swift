@@ -27,17 +27,68 @@ final class GraphGeometryTests: XCTestCase {
         XCTAssertEqual(pts[1].y, 50, accuracy: 0.001)
     }
 
+    func testSeriesBreaksLineAtNilFailureAndReportsFailureX() {
+        let now = Date(timeIntervalSince1970: 0)
+        let samples = [
+            Sample(timestamp: now, value: 0),
+            Sample(timestamp: now, value: 50),
+            Sample(timestamp: now, value: nil, ok: false),
+            Sample(timestamp: now, value: 100),
+            Sample(timestamp: now, value: 25)
+        ]
+
+        let geometry = GraphGeometry.series(samples: samples, in: CGSize(width: 100, height: 100), axisMax: 100)
+
+        XCTAssertEqual(geometry.segments.count, 2)
+        XCTAssertEqual(geometry.segments[0].map(\.x), [0, 25])
+        XCTAssertEqual(geometry.segments[1].map(\.x), [75, 100])
+        XCTAssertEqual(geometry.failureXPositions, [50])
+        XCTAssertEqual(geometry.segments[0][0].y, 100, accuracy: 0.001)
+        XCTAssertEqual(geometry.segments[0][1].y, 50, accuracy: 0.001)
+        XCTAssertEqual(geometry.segments[1][0].y, 0, accuracy: 0.001)
+    }
+
+    func testSeriesTreatsNonOKValuedSampleAsFailureNotAPlottedPoint() {
+        let now = Date(timeIntervalSince1970: 0)
+        let samples = [
+            Sample(timestamp: now, value: 10, ok: true),
+            Sample(timestamp: now, value: 99, ok: false),
+            Sample(timestamp: now, value: 20, ok: true)
+        ]
+
+        let geometry = GraphGeometry.series(samples: samples, in: CGSize(width: 20, height: 20), axisMax: 100)
+
+        XCTAssertEqual(geometry.segments.count, 2)
+        XCTAssertEqual(geometry.segments[0].count, 1)
+        XCTAssertEqual(geometry.segments[1].count, 1)
+        XCTAssertEqual(geometry.failureXPositions, [10])
+        XCTAssertFalse(geometry.segments.flatMap { $0 }.contains { abs($0.y - 0.2) < 0.001 })
+    }
+
+    func testSeriesUsesPlotVerticalPaddingForValuesAndFailures() {
+        let now = Date(timeIntervalSince1970: 0)
+        let samples = [
+            Sample(timestamp: now, value: 100),
+            Sample(timestamp: now, value: nil, ok: false),
+            Sample(timestamp: now, value: 0)
+        ]
+
+        let geometry = GraphGeometry.series(
+            samples: samples,
+            in: CGSize(width: 100, height: 100),
+            axisMax: 100,
+            plotVerticalPadding: 6
+        )
+
+        XCTAssertEqual(geometry.segments[0][0].y, 6, accuracy: 0.001)
+        XCTAssertEqual(geometry.segments[1][0].y, 94, accuracy: 0.001)
+        XCTAssertEqual(geometry.failureXPositions, [50])
+    }
+
     func testNiceMaxScalesToThroughputMagnitude() {
         // 12 Mbps worth of bits/sec must not fall through to a latency-shaped ceiling.
         XCTAssertEqual(GraphGeometry.niceMax([12_000_000]), 15_000_000)
         XCTAssertEqual(GraphGeometry.niceMax([3]), 3)
         XCTAssertEqual(GraphGeometry.niceMax([45]), 50)
-    }
-
-    func testMissingValueTreatedAsZero() {
-        let now = Date(timeIntervalSince1970: 0)
-        let pts = GraphGeometry.points(samples: [Sample(timestamp: now, value: nil, ok: false), Sample(timestamp: now, value: 100)],
-                                       in: CGSize(width: 10, height: 10), axisMax: 100)
-        XCTAssertEqual(pts[0].y, 10, accuracy: 0.001)  // nil → 0 → bottom
     }
 }

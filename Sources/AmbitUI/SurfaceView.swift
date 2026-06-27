@@ -54,6 +54,14 @@ public struct CardView: View {
 
     private var primaryID: EntityID? { spec.entities.first }
     var resolvedTitle: String? { spec.title }
+    var shouldShowGraphAxes: Bool {
+        switch spec.kind {
+        case .historyGraph, .dualLineGraph:
+            return spec.role == .primary
+        case .statusRow, .gauge, .sampleHistory, .segmentedRing, .breakdownLegend, .coreGrid, .cardRow, .progress, .statTable, .control, .instanceSelector, .section, .statusBanner:
+            return false
+        }
+    }
 
     public var body: some View {
         switch spec.kind {
@@ -95,7 +103,8 @@ public struct CardView: View {
                                  deviceClass: descriptor?.deviceClass,
                                  unit: descriptor?.unit,
                                  summary: summary,
-                                 showLegend: spec.entities.count > 1)
+                                 showLegend: spec.entities.count > 1,
+                                 showsAxes: shouldShowGraphAxes)
             }
         case .dualLineGraph:
             let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
@@ -103,7 +112,23 @@ public struct CardView: View {
                               lines: data.graphLines(spec.entities),
                               axis: data.graphAxis(spec.entities),
                               deviceClass: descriptor?.deviceClass,
-                              unit: descriptor?.unit)
+                              unit: descriptor?.unit,
+                              showsAxes: shouldShowGraphAxes)
+        case .sampleHistory:
+            if let id = primaryID, let descriptor = data.descriptors[id] {
+                let rows = SampleHistoryModel.rows(
+                    samples: data.samples(id),
+                    descriptor: descriptor,
+                    limit: spec.tableRowLimit ?? SampleHistoryCard.Model.defaultRowLimit
+                )
+                SampleHistoryCard(
+                    title: spec.title,
+                    model: SampleHistoryCard.Model(
+                        rows: rows,
+                        emptyMessage: SampleHistoryModel.emptyMessage(rangeLabel: spec.graphRange?.label)
+                    )
+                )
+            }
         case .control:
             if let id = primaryID, let descriptor = data.descriptors[id] {
                 ControlCard(descriptor: descriptor, state: data.states[id])
