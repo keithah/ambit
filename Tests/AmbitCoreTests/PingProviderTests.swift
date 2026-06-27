@@ -116,6 +116,41 @@ final class PingProviderTests: XCTestCase {
         XCTAssertEqual(providers.first?.instanceID, "ping@127.0.0.1:22/probe")
     }
 
+    func testIntegrationBuildsProviderFromLiveLocalhostTCPRegistryShape() {
+        let integration = PingIntegration(probeFactory: { _ in FixedProbe(result: ProbeResult(timestamp: Date(), latencyMs: 5)) })
+        let config: JSONObject = [
+            "method": .string("tcp"),
+            "thresholds": .object([
+                "degradedAt": .number(1_000),
+                "downAfterFailures": .number(2)
+            ]),
+            "displayName": .string("Local"),
+            "policy": .object([
+                "notifyOnRecovery": .bool(false),
+                "enabled": .bool(false),
+                "highLatencyMs": .number(500),
+                "cooldown": .number(300),
+                "highLatencyConsecutive": .number(3)
+            ]),
+            "address": .string("127.0.0.1"),
+            "interval": .number(2),
+            "port": .number(22),
+            "timeout": .number(0.25)
+        ]
+        let record = IntegrationInstanceRecord(
+            id: "ping@127.0.0.1:22",
+            integrationID: IntegrationIDs.ping,
+            displayName: "Local",
+            origin: .user,
+            config: config
+        )
+
+        let providers = integration.makeProviders(instance: record)
+
+        XCTAssertEqual(providers.first?.displayName, "Local")
+        XCTAssertEqual(providers.first?.instanceID, "ping@127.0.0.1:22/probe")
+    }
+
     func testIntegrationReturnsNothingForUndecodableConfig() {
         let integration = PingIntegration()
         let record = IntegrationInstanceRecord(id: "ping@bad", integrationID: IntegrationIDs.ping, displayName: "bad", origin: .user, config: ["nonsense": .bool(true)])
