@@ -64,6 +64,20 @@ final class GraphAxisResolverTests: XCTestCase {
         XCTAssertEqual(currentOnly.isEmpty, false)
     }
 
+    func testFailedSamplesDoNotContributeToAutoAxisBounds() {
+        let descriptor = descriptor(.latency)
+        let samples = [
+            Sample(timestamp: now, value: 25, ok: true),
+            Sample(timestamp: now.addingTimeInterval(1), value: nil, ok: false),
+            Sample(timestamp: now.addingTimeInterval(2), value: 10_000, ok: false)
+        ]
+
+        let resolved = GraphAxisResolver.axis(descriptor: descriptor, samples: samples, currentState: nil)
+
+        XCTAssertEqual(resolved.max, 25)
+        XCTAssertEqual(resolved.isEmpty, false)
+    }
+
     private func axis(for deviceClass: DeviceClass, values: [Double]) -> GraphAxis {
         GraphAxisResolver.axis(descriptor: descriptor(deviceClass), samples: samples(values), currentState: nil)
     }

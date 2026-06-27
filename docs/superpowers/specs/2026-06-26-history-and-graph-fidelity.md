@@ -165,9 +165,11 @@ Rules:
 
 Drive `showsAxes` from the detail surface:
 
-- popover detail graphs set `showsAxes: true`.
-- compact/dashboard graph contexts may keep `false`.
-- No integration-specific switch; this is surface density, not provider identity.
+- `showsAxes` is per-card, not a blanket popover setting.
+- The slot's primary or featured graph gets `showsAxes: true`.
+- Ping's detail graph gets `showsAxes: true` because it is the featured graph in that surface.
+- Dense dashboards with many graphs keep secondary graphs compact (`showsAxes: false`) so a 34pt gutter and right ticks do not crowd the 420pt popover.
+- The rule is generic: surface density + `CardRole.primary`/featured position decides, never integration ID.
 
 Tests:
 
@@ -209,6 +211,7 @@ Binding:
 - Rows are most-recent-first.
 - Default cap is 8, with the same cap plumbing style as stat tables.
 - Empty state says no samples for the selected range.
+- In a multi-entity slot, the table follows the same resolved focus/primary entity used by the graph header and glyph. For a multi-host ping slot this means the focused host when focus is set, otherwise the resolved primary/resting host. The sample table never independently picks a different host.
 
 Row semantics:
 
@@ -238,6 +241,7 @@ Tests:
 - empty state model.
 - SurfaceComposer emits a default sample-history item for a primary latency measurement.
 - Available Items lists sample-history candidates for non-latency measurements without auto-showing them.
+- Multi-host ping focus changes the bound sample-history entity to the same host used by the graph/glyph.
 - Ping surface gains the recent samples card; system remains unchanged unless explicitly customized.
 
 ## Phase C: Generic History Export and Settings Pane
@@ -342,7 +346,7 @@ Tests:
 
 - `nil` and failed samples never become zero.
 - Failed samples are visible as graph bars, table failures, and export rows.
-- Axis bounds ignore failed samples.
+- Axis bounds ignore failed samples, including samples with a numeric value but `ok == false`; failures/timeouts never inflate the max and never force a zero baseline beyond the normal zero-baseline rule.
 - Empty windows render an empty state, not a fabricated max or flat zero line.
 - Metadata is treated as opaque text; card/export code may display it but must not parse provider-specific structure.
 
