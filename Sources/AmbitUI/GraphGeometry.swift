@@ -48,25 +48,6 @@ public enum GraphGeometry {
         return 10 * base
     }
 
-    /// Sample series mapped into a box: x spreads evenly across width, y inverts value/axisMax.
-    /// Missing values render as 0 (bottom), matching the harvested LatencyGraph behavior.
-    public static func points(samples: [Sample], in size: CGSize, axisMax: Double) -> [CGPoint] {
-        guard samples.count > 1, axisMax > 0 else {
-            if samples.count == 1 {
-                let value = samples[0].value ?? 0
-                let y = size.height * (1 - min(value / max(axisMax, 1), 1))
-                return [CGPoint(x: 0, y: y)]
-            }
-            return []
-        }
-        return samples.enumerated().map { index, sample in
-            let x = size.width * Double(index) / Double(samples.count - 1)
-            let value = sample.value ?? 0
-            let y = size.height * (1 - min(value / axisMax, 1))
-            return CGPoint(x: x, y: y)
-        }
-    }
-
     /// Sample series mapped into drawable line segments plus failure markers. Failed samples
     /// (`value == nil` or `ok == false`) split the line and never become zero-valued points.
     public static func series(
