@@ -958,6 +958,92 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertNil(store.config.slotOverrides[slotID])
     }
 
+    func testHistoryExportRowsMapPresentationSettingsDescriptorsAndSamples() {
+        let cpu = systemMetric(
+            "overview.cpu_usage_percent",
+            name: "CPU",
+            deviceClass: .percent,
+            instanceID: ProviderInstanceIDs.systemOverview,
+            isPrimary: true
+        )
+        let status = EntityDescriptor(
+            id: "system@local/overview.status",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "Status",
+            kind: .text,
+            deviceClass: .connectivity
+        )
+        let model = PresentationSettingsModel(
+            integrations: [
+                IntegrationSettingsGroup(
+                    id: IntegrationInstanceIDs.systemLocal,
+                    integrationID: IntegrationIDs.system,
+                    displayName: "System",
+                    enabled: true,
+                    entities: [
+                        EntitySettingsRow(descriptor: cpu, state: nil, override: EntityPresentationOverride(), effectiveVisibility: .auto),
+                        EntitySettingsRow(descriptor: status, state: nil, override: EntityPresentationOverride(), effectiveVisibility: .auto)
+                    ]
+                )
+            ],
+            slots: [Slot(id: "slot.system", selection: .integration(IntegrationInstanceIDs.systemLocal))]
+        )
+
+        let rows = StatusViewModel.historyExportRows(
+            target: .slot("slot.system"),
+            model: model,
+            samplesByEntity: [
+                cpu.id: [Sample(timestamp: now, value: 34, ok: true)],
+                status.id: [Sample(timestamp: now, value: 1, ok: true)]
+            ]
+        )
+
+        XCTAssertEqual(rows.map(\.name), ["CPU"])
+        XCTAssertEqual(rows.map(\.value), [34])
+        XCTAssertEqual(rows.map(\.unit), [nil])
+    }
+
+    func testHistoryExportTargetOptionsExposeSlotsAndMeasurementEntitiesWithoutProviderBranches() {
+        let latency = EntityDescriptor(
+            id: "ping@office/probe.latency_ms",
+            instanceID: "ping@office/probe",
+            name: "office",
+            kind: .sensor,
+            deviceClass: .latency,
+            unit: "ms",
+            stateClass: .measurement,
+            defaultVisibility: .auto,
+            isPrimary: true
+        )
+        let diagnostic = EntityDescriptor(
+            id: "ping@office/diagnosis",
+            instanceID: latency.instanceID,
+            name: "Diagnosis",
+            kind: .text,
+            deviceClass: .connectivity
+        )
+        let model = PresentationSettingsModel(
+            integrations: [
+                IntegrationSettingsGroup(
+                    id: "ping@office",
+                    integrationID: IntegrationIDs.ping,
+                    displayName: "Office",
+                    enabled: true,
+                    entities: [
+                        EntitySettingsRow(descriptor: latency, state: nil, override: EntityPresentationOverride(), effectiveVisibility: .auto),
+                        EntitySettingsRow(descriptor: diagnostic, state: nil, override: EntityPresentationOverride(), effectiveVisibility: .auto)
+                    ]
+                )
+            ],
+            slots: [Slot(id: "slot.ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping))]
+        )
+
+        let options = StatusViewModel.historyExportTargetOptions(model: model)
+
+        XCTAssertEqual(options.map(\.label), ["Ping", "Office - office"])
+        XCTAssertEqual(options.map(\.target), [.slot("slot.ping"), .entity(latency.id)])
+    }
+
     private func descriptor(_ key: String, isPrimary: Bool = false) -> EntityDescriptor {
         EntityDescriptor(
             id: EntityID(rawValue: "ping@\(key)/probe.latency_ms"),

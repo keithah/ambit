@@ -751,6 +751,83 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
+    func historyExportTargetOptions() -> [HistoryExportTargetOption] {
+        Self.historyExportTargetOptions(model: presentationSettings)
+    }
+
+    func historyExportData(
+        target: HistoryExportTarget,
+        range: HistoryExportRange,
+        format: HistoryExportFormat,
+        now: Date = Date()
+    ) async throws -> Data {
+        let model = presentationSettings
+        let descriptors = Self.historyExportDescriptors(model: model)
+        let records = Self.historyExportRecords(model: model)
+        let exportDescriptors = HistoryExport.exportDescriptors(
+            target: target,
+            descriptors: descriptors,
+            slots: model.slots,
+            records: records
+        )
+        let since = now.addingTimeInterval(-Self.historyExportSeconds(for: range))
+        var samplesByEntity: [EntityID: [Sample]] = [:]
+        for descriptor in exportDescriptors {
+            samplesByEntity[descriptor.id] = await engine.historySamples(descriptor.id, since: since)
+        }
+        let rows = HistoryExport.rows(
+            target: target,
+            descriptors: descriptors,
+            slots: model.slots,
+            records: records,
+            samplesByEntity: samplesByEntity
+        )
+        return try HistoryExport.data(rows: rows, format: format)
+    }
+
+    func clearHistory() async {
+        await engine.clearHistory()
+        await refreshPing()
+    }
+
+    nonisolated static func historyExportTargetOptions(model: PresentationSettingsModel) -> [HistoryExportTargetOption] {
+        let slotOptions = model.slots.map { slot in
+            HistoryExportTargetOption(
+                id: "slot:\(slot.id.rawValue)",
+                target: .slot(slot.id),
+                label: slot.title ?? slot.id.rawValue,
+                detail: "Slot"
+            )
+        }
+        let entityOptions = model.integrations.flatMap { group in
+            group.entities
+                .filter { $0.descriptor.stateClass != nil }
+                .map { row in
+                    HistoryExportTargetOption(
+                        id: "entity:\(row.descriptor.id.rawValue)",
+                        target: .entity(row.descriptor.id),
+                        label: "\(group.displayName) - \(row.descriptor.name)",
+                        detail: row.descriptor.deviceClass?.rawValue ?? "Measurement"
+                    )
+                }
+        }
+        return slotOptions + entityOptions
+    }
+
+    nonisolated static func historyExportRows(
+        target: HistoryExportTarget,
+        model: PresentationSettingsModel,
+        samplesByEntity: [EntityID: [Sample]]
+    ) -> [HistoryExportRow] {
+        HistoryExport.rows(
+            target: target,
+            descriptors: historyExportDescriptors(model: model),
+            slots: model.slots,
+            records: historyExportRecords(model: model),
+            samplesByEntity: samplesByEntity
+        )
+    }
+
     func saveIntegrationInstanceDraft(_ draft: IntegrationInstanceDraft) throws {
         switch draft.integrationID {
         case IntegrationIDs.ping:
@@ -1095,6 +1172,31 @@ final class StatusViewModel: ObservableObject {
             default:
                 return children
             }
+        }
+    }
+
+    nonisolated private static func historyExportDescriptors(model: PresentationSettingsModel) -> [EntityDescriptor] {
+        model.integrations.flatMap { group in
+            group.entities.map(\.descriptor)
+        }
+    }
+
+    nonisolated private static func historyExportRecords(model: PresentationSettingsModel) -> [IntegrationInstanceRecord] {
+        model.integrations.map { group in
+            IntegrationInstanceRecord(
+                id: group.id,
+                integrationID: group.integrationID,
+                displayName: group.displayName,
+                enabled: group.enabled,
+                config: group.configValues
+            )
+        }
+    }
+
+    nonisolated private static func historyExportSeconds(for range: HistoryExportRange) -> TimeInterval {
+        switch range {
+        case .graph(let graphRange): return graphRange.seconds
+        case .retention: return 7 * 24 * 60 * 60
         }
     }
 

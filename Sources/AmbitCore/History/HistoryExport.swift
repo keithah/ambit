@@ -31,6 +31,37 @@ public struct HistoryExportRow: Equatable, Sendable, Codable {
     }
 }
 
+public enum HistoryExportTarget: Hashable, Sendable, Codable {
+    case entity(EntityID)
+    case slot(SlotID)
+}
+
+public enum HistoryExportRange: Hashable, Sendable, Codable {
+    case graph(GraphRange)
+    case retention
+
+    public var label: String {
+        switch self {
+        case .graph(let range): return range.label
+        case .retention: return "7 days"
+        }
+    }
+}
+
+public struct HistoryExportTargetOption: Identifiable, Equatable, Sendable {
+    public var id: String
+    public var target: HistoryExportTarget
+    public var label: String
+    public var detail: String
+
+    public init(id: String, target: HistoryExportTarget, label: String, detail: String) {
+        self.id = id
+        self.target = target
+        self.label = label
+        self.detail = detail
+    }
+}
+
 public enum HistoryExportError: Error, Equatable {
     case invalidJSON
 }
@@ -48,6 +79,38 @@ public enum HistoryExport {
                 metadata: sample.metadata
             )
         }
+    }
+
+    public static func rows(
+        target: HistoryExportTarget,
+        descriptors: [EntityDescriptor],
+        slots: [Slot],
+        records: [IntegrationInstanceRecord],
+        samplesByEntity: [EntityID: [Sample]]
+    ) -> [HistoryExportRow] {
+        exportDescriptors(target: target, descriptors: descriptors, slots: slots, records: records)
+            .flatMap { descriptor in
+                rows(descriptor: descriptor, samples: samplesByEntity[descriptor.id] ?? [])
+            }
+    }
+
+    public static func exportDescriptors(
+        target: HistoryExportTarget,
+        descriptors: [EntityDescriptor],
+        slots: [Slot],
+        records: [IntegrationInstanceRecord]
+    ) -> [EntityDescriptor] {
+        let resolved: [EntityDescriptor]
+        switch target {
+        case .entity(let id):
+            resolved = descriptors.filter { $0.id == id }
+        case .slot(let id):
+            guard let slot = slots.first(where: { $0.id == id }) else { return [] }
+            resolved = SlotResolver.resolve(slot.selection, descriptors: descriptors, records: records)
+        }
+        return resolved
+            .filter { $0.stateClass != nil }
+            .sorted { lhs, rhs in lhs.id.rawValue < rhs.id.rawValue }
     }
 
     public static func data(rows: [HistoryExportRow], format: HistoryExportFormat) throws -> Data {
