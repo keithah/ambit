@@ -148,9 +148,22 @@ aggregator/viewport, never the coordinator.
   alert-ID mapping; `MenuBarGlyph.primaryText` replaces ping-specific naming; obsolete
   `GraphGeometry.points(...)` was removed; and history retention labels now derive from
   `HistoryService.retentionInterval`.
-- Current master: **578 tests green** (`swift build` + `swift test` pass). The app runs as **"Ping"**, with ping
+- **Multi-host ping parity complete** — merged on master: the ping slot now supports an **All Hosts** combined
+  multi-series latency graph with deterministic index colors, compact legend, shared axis, and primary-line
+  emphasis. Focused-host mode is driven by `slotFocus`; host switching filters descriptors, series, and
+  recent-sample history to the focused host. `sampleHistory` binds to the selected/headline latency host in
+  combined mode and to the focused host in focused mode, with the same `history:<entityID>` identity used by
+  Available Items. Failure bars remain primary-series-only. The glyph and popover header share the single Core
+  `SlotReadoutSelector` headline. A TCP ping history bug was fixed: registry changes now rebuild providers,
+  record-level display names decode correctly, legacy alert-policy records without `preset` decode, and TCP/UDP
+  hosts record success samples plus `ok=false` failure/timeout samples instead of silently recording nothing.
+  Development registry note: `ping@1.1.1.1:443` (Cloudflare TCP) was injected into `tv.kodi.ambit` as a handy
+  multi-host test target and should be left in place for eyeballs. `ping@127.0.0.1:22` ("Local") is the user's
+  own host with SSH closed and should also be left as-is; it intentionally exercises failing-host rendering.
+- Current master: **597 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
-  a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, and generic history export.
+  a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
+  multi-host ping surfaces.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -160,7 +173,7 @@ aggregator/viewport, never the coordinator.
 ## 6. Roadmap (presentation program)
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
-  Fidelity ✓, Core hardening Phase 1 ✓.
+  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -182,6 +195,11 @@ aggregator/viewport, never the coordinator.
   across failures, failure bars, labeled three-tick axes, and a generic recent-samples table. System/dashboard
   graphs remain compact. History export and clear are generic settings actions over any slot or history-backed
   entity.
+- **Multi-host Ping parity: complete.** The ping slot has the pingscope-style All Hosts view: one multi-series
+  latency graph across enabled hosts, compact legend capped to the visible host labels, deterministic colors,
+  primary-line emphasis, primary-only failure bars, and a host selector that switches to a focused single-host
+  surface. The recent-samples table follows the selected/headline latency entity rather than rendering one table
+  per host. The menu-bar glyph and popover header consume the same `SlotReadoutSelector` result.
 - **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
   `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
   real packaging.
