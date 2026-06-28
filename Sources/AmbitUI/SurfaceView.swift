@@ -154,9 +154,14 @@ public struct CardView: View {
                               rows: spec.entities.map { StatTableCard.Row(id: $0.rawValue, label: data.title($0), value: data.readout($0).text) })
             }
         case .statusBanner:
-            if let id = primaryID {
+            if let id = primaryID, let descriptor = data.descriptors[id] {
                 let r = data.readout(id)
-                StatusBannerCard(title: resolvedTitle, detail: r.text, tone: r.tone)
+                StatusBannerCard(
+                    title: resolvedTitle,
+                    detail: r.text,
+                    tone: r.tone,
+                    isCompactReason: descriptor.category == .diagnostic && r.tone != .neutral && r.tone != .good
+                )
             }
         case .instanceSelector:
             EmptyView()  // bound by the host (needs selection state + action); wired in P3 chrome.
