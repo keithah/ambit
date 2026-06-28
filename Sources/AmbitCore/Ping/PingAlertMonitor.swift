@@ -74,13 +74,13 @@ public struct PingAlertMonitor: Sendable {
         }
         if let event = internetLossSafetyNet(hosts: hosts, now: now) {
             events.append(event)
-        } else if let event = networkAlert(diagnosis, now: now) {
+        } else if let event = networkAlert(diagnosis, hosts: hosts, now: now) {
             events.append(event)
         }
         return events
     }
 
-    private mutating func networkAlert(_ diagnosis: NetworkPerspectiveDiagnosis, now: Date) -> AlertEvent? {
+    private mutating func networkAlert(_ diagnosis: NetworkPerspectiveDiagnosis, hosts: [AlertHost], now: Date) -> AlertEvent? {
         guard let spec = Self.specific(diagnosis.verdict) else {
             diagnosisStreak = 0
             lastVerdictKey = nil
@@ -124,10 +124,24 @@ public struct PingAlertMonitor: Sendable {
             providerID: "ping.network",
             target: .entity(DiagnosisEntity.entityID),
             title: chosen.title,
-            message: diagnosis.detail,
+            message: networkAlertMessage(for: diagnosis, hosts: hosts),
             severity: chosen.severity,
             triggeredAt: now
         )
+    }
+
+    private func networkAlertMessage(for diagnosis: NetworkPerspectiveDiagnosis, hosts: [AlertHost]) -> String {
+        guard case .remoteServiceDown(let hostIDs) = diagnosis.verdict else { return diagnosis.detail }
+        let namesByID = Dictionary(uniqueKeysWithValues: hosts.map { ($0.id, $0.name) })
+        let names = hostIDs.map { namesByID[$0] ?? $0 }
+        guard names.isEmpty == false else { return diagnosis.detail }
+
+        let visible = Array(names.prefix(2))
+        let extra = names.count - visible.count
+        if extra > 0 {
+            return "No response from \(visible.joined(separator: ", ")), +\(extra) more \(extra == 1 ? "host" : "hosts")."
+        }
+        return "No response from \(visible.joined(separator: ", "))."
     }
 
     private mutating func internetLossSafetyNet(hosts: [AlertHost], now: Date) -> AlertEvent? {

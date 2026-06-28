@@ -22,6 +22,9 @@ public enum ProbeFailureReason: String, Codable, Sendable, Equatable {
     case dnsFailure
     case connectionRefused
     case networkUnavailable
+    case hostUnreachable
+    case noRoute
+    case ttlExpired
     case cancelled
     case icmpUnavailable
     case unknown

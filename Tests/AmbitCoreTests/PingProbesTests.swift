@@ -65,6 +65,33 @@ final class PingProbesTests: XCTestCase {
         XCTAssertEqual(result.failureReason, .dnsFailure)
     }
 
+    func testICMPHostUnreachableMapsToHostUnreachable() async {
+        let output = """
+        PING 10.0.0.9 (10.0.0.9): 56 data bytes
+        ping: sendto: Host is down
+        ping: sendto: Host is down
+        """
+        let probe = icmp(["-c 1 -W 2000 10.0.0.9": ProcessResult(exitCode: 2, stdout: output, stderr: "")])
+        let result = await probe.measure(host(.icmp, address: "10.0.0.9"))
+        XCTAssertEqual(result.failureReason, .hostUnreachable)
+    }
+
+    func testICMPNoRouteMapsToNoRoute() async {
+        let probe = icmp(["-c 1 -W 2000 10.0.0.9": ProcessResult(exitCode: 2, stdout: "", stderr: "ping: sendto: No route to host")])
+        let result = await probe.measure(host(.icmp, address: "10.0.0.9"))
+        XCTAssertEqual(result.failureReason, .noRoute)
+    }
+
+    func testICMPTTLExpiredMapsToTTLExpired() async {
+        let output = """
+        36 bytes from 192.0.2.1: Time to live exceeded
+        Vr HL TOS  Len   ID Flg  off TTL Pro  cks      Src      Dst
+        """
+        let probe = icmp(["-c 1 -W 2000 10.0.0.9": ProcessResult(exitCode: 2, stdout: output, stderr: "")])
+        let result = await probe.measure(host(.icmp, address: "10.0.0.9"))
+        XCTAssertEqual(result.failureReason, .ttlExpired)
+    }
+
     func testICMPRespectsTimeoutInWaitArgument() async {
         // host.timeout 0.5s ⇒ -W 500
         let probe = icmp(["-c 1 -W 500 1.1.1.1": ProcessResult(exitCode: 0, stdout: "time=8.0 ms", stderr: "")])

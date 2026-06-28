@@ -178,17 +178,22 @@ aggregator/viewport, never the coordinator.
   suppressed during link drops; network-status transitions, path recovery, internet-loss safety-net alerts, and
   gateway-change notifications are entity-targeted through the generic alert path; notification permission/test/
   settings controls are exposed in Settings; a file-lock single-instance guard and Start-at-Login toggle are in
-  place; and local/private-network targets surface an informational Local Network permission checklist.
+  place; and local/private-network targets surface an informational Local Network permission checklist. Optional
+  Phase G polish is in place: ICMP failures distinguish timeout, host-unreachable, no-route, TTL-expired, and DNS
+  failures where `/sbin/ping` reports enough detail, and remote-service-down notifications summarize affected
+  hosts with a capped `+N more hosts` body.
 - **Generic presentation core is feature-complete for Ping + System.** The full path is now proven end to end:
   `EntityDescriptor`/`EntityState` → `EntityEnricher` → per-slot `AttentionEngine` → `SlotReadoutSelector` →
   `SurfaceComposer` → generic `CardSpec` vocabulary → `AmbitUI`; settings are schema/override-driven
   (`IntegrationConfigSchema`, `EntityPresentationOverride`, `SlotPresentationOverride`,
   `PresentationSettingsModel`); history, export, alerting, Available Items, and overlay reuse the same generic
   primitives.
-- **Manual verification caveats:** notification service + adapter behavior are covered by tests and live
-  alert/attention promotion, and the overlay is covered by pure selection/rendering tests. OS notification
-  banners and overlay-window capture are environment-limited in the ad-hoc dev build — confirm manually.
-- Current master: **656 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+- **Manual verification caveats:** network resilience and the single-instance guard were eyeball-confirmed live;
+  notification service + adapter behavior are covered by tests and live alert/attention promotion; and the
+  overlay is covered by pure selection/rendering tests. App-pane controls and real macOS notification banners
+  remain manual checks in the ad-hoc dev build — use **Send Test Notification** and macOS notification settings
+  to confirm banner delivery. Overlay-window capture is also environment-limited — confirm manually.
+- Current master: **660 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
   multi-host ping surfaces, generic entity-targeted notifications, a generic selected-slot overlay, and
@@ -242,8 +247,9 @@ aggregator/viewport, never the coordinator.
   updates the auto gateway in place, classifies link/no-IP/no-internet states through `NetworkConnectivityStatus`,
   quiesces sleep-bound polls, routes network status/recovery/gateway-change alerts through entity-targeted
   notification delivery, exposes notification permission/test/settings controls, enforces a single running
-  instance with a lockfile, supports Start at Login through `SMAppService`, and surfaces Local Network permission
-  guidance for private/link-local/loopback targets.
+  instance with a lockfile, supports Start at Login through `SMAppService`, surfaces Local Network permission
+  guidance for private/link-local/loopback targets, classifies common ICMP failure modes, and summarizes
+  multi-host remote-service-down notifications with capped affected-host bodies.
 - **Core feature-complete checkpoint:** the four queued core areas are done on top of the earlier System
   dashboard, Available Items, and history/graph-fidelity work: core architecture hardening, multi-host ping
   parity, notifications & alerts, and floating-overlay generalization. Ambit's generic presentation core is ready

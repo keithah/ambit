@@ -97,6 +97,30 @@ final class PingAlertMonitorTests: XCTestCase {
         XCTAssertEqual(events.first?.target, .entity(DiagnosisEntity.entityID))
     }
 
+    func testRemoteServiceDownNotificationSummarizesAdditionalHosts() {
+        var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
+        let hosts = [
+            AlertHost(id: "cf", name: "Cloudflare DNS", status: .degraded, notifyOnRecovery: true, cooldown: 60),
+            AlertHost(id: "gg", name: "Google DNS", status: .degraded, notifyOnRecovery: true, cooldown: 60),
+            AlertHost(id: "svc", name: "Service API", status: .degraded, notifyOnRecovery: true, cooldown: 60)
+        ]
+        let diagnosis = NetworkPerspectiveDiagnosis(
+            scope: .remoteService,
+            verdict: .remoteServiceDown(hostIDs: ["cf", "gg", "svc"]),
+            confidence: .high,
+            faultTier: .remoteService,
+            affectedHostIDs: ["cf", "gg", "svc"],
+            title: "Remote service down",
+            detail: "3/3 remote host(s) unreachable.",
+            tierEvidence: []
+        )
+
+        let events = monitor.evaluate(hosts: hosts, diagnosis: diagnosis, now: at(0))
+
+        XCTAssertEqual(events.map(\.ruleID), ["ping.remoteServiceDown"])
+        XCTAssertEqual(events.first?.message, "No response from Cloudflare DNS, Google DNS, +1 more host.")
+    }
+
     func testPathRecoveredFiresOnlyAfterDeliveredNetworkAlert() {
         var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
         _ = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .high), now: at(0))

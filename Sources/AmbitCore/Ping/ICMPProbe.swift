@@ -39,6 +39,15 @@ public struct ICMPProbe: PingProbe {
         if text.contains("cannot resolve") || text.contains("unknown host") || text.contains("name or service not known") {
             return .dnsFailure
         }
+        if text.contains("time to live exceeded") || text.contains("ttl expired") {
+            return .ttlExpired
+        }
+        if text.contains("no route to host") || text.contains("network is unreachable") {
+            return .noRoute
+        }
+        if text.contains("host is down") || text.contains("host unreachable") || text.contains("host is unreachable") {
+            return .hostUnreachable
+        }
         return .timeout
     }
 
