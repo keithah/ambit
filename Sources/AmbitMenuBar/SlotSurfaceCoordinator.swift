@@ -18,6 +18,7 @@ final class SlotSurfaceCoordinator {
         allStates: [EntityID: EntityState],
         firedAlertEvents: [AlertEvent],
         slotFocus: [SlotID: IntegrationInstanceID],
+        primaryPingInstanceID: IntegrationInstanceID? = nil,
         pingRange: TimeRange,
         config: PresentationConfig,
         now: Date,
@@ -34,6 +35,9 @@ final class SlotSurfaceCoordinator {
         let focusedRecords = requestedFocusID.map { id in resolvedRecords.filter { $0.id == id } } ?? []
         let focusedID = focusedRecords.isEmpty ? nil : requestedFocusID
         let shownRecords = focusedID == nil ? resolvedRecords : focusedRecords
+        let headlineRecordID = focusedID
+            ?? primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
+            ?? resolvedRecords.first?.id
         let shownInstanceIDs = Set(shownRecords.map(\.id))
         let shownResolved = focusedID == nil
             ? resolved
@@ -62,6 +66,7 @@ final class SlotSurfaceCoordinator {
             slot: slot,
             diagnosis: diagnosis,
             shownRecords: shownRecords,
+            headlineRecordID: headlineRecordID,
             shownResolved: shownResolved,
             allDescriptors: allDescriptors,
             allStates: allStates,
@@ -78,6 +83,7 @@ final class SlotSurfaceCoordinator {
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
         shownRecords: [IntegrationInstanceRecord],
+        headlineRecordID: IntegrationInstanceID?,
         shownResolved: [EntityDescriptor],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
         allStates: [EntityID: EntityState],
@@ -91,17 +97,20 @@ final class SlotSurfaceCoordinator {
         var descriptors: [EntityID: EntityDescriptor] = [:]
         var states: [EntityID: EntityState] = [:]
         var series: [EntityID: [Sample]] = [:]
-        var attentionDescriptors = shownResolved
+        var attentionDescriptors: [EntityDescriptor] = []
         var detailDescriptors: [EntityDescriptor] = []
+        var headlineLatencyID: EntityID?
         for record in shownRecords {
             let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
             let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
             guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
             latency.name = record.displayName
-            if shownRecords.count == 1 {
-                latency.isPrimary = true
+            latency.isPrimary = record.id == headlineRecordID
+            if record.id == headlineRecordID {
+                headlineLatencyID = latencyID
             }
             detailDescriptors.append(latency)
+            attentionDescriptors.append(latency)
             descriptors[latencyID] = latency
             let samples = await historySamples(latencyID, now.addingTimeInterval(-pingRange.seconds))
             series[latencyID] = samples
@@ -125,12 +134,16 @@ final class SlotSurfaceCoordinator {
         let alertingIDs = Set(firedAlertEvents.flatMap { event in
             alertTargetResolver.resolve(event, descriptors: candidateDescriptors)
         })
+        var headlineEligibleActiveIDs = Set<EntityID>()
+        if let headlineLatencyID { headlineEligibleActiveIDs.insert(headlineLatencyID) }
+        if descriptors[DiagnosisEntity.entityID] != nil { headlineEligibleActiveIDs.insert(DiagnosisEntity.entityID) }
         let readout = attentionEngines.resolveReadout(
             slotID: slot.id,
             mode: slot.barReadout,
             candidates: candidates,
             descriptors: descriptors,
             states: states,
+            headlineEligibleActiveIDs: headlineEligibleActiveIDs,
             alertingIDs: alertingIDs,
             config: config,
             now: now
@@ -194,6 +207,13 @@ final class SlotSurfaceCoordinator {
     }
 
     nonisolated static func latencyStateForSurface(id: EntityID, current: EntityState?, samples: [Sample]) -> EntityState? {
+        guard !samples.isEmpty else {
+            var state = current ?? EntityState(id: id, availability: .stale)
+            state.value = nil
+            state.availability = .stale
+            state.severity = .normal
+            return state
+        }
         if let current, current.value != nil {
             return current
         }

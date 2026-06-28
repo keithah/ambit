@@ -16,6 +16,7 @@ public enum SlotReadoutSelector {
         candidates: [AttentionCandidate],
         states: [EntityID: EntityState],
         availableEntityIDs: Set<EntityID>? = nil,
+        headlineEligibleActiveIDs: Set<EntityID>? = nil,
         alertingIDs: Set<EntityID>,
         config: PresentationConfig,
         now: Date,
@@ -38,7 +39,14 @@ public enum SlotReadoutSelector {
                 now: now
             )[surfaceID] ?? AttentionSelection()
 
-            let selectedID = activeSelectionID(selection, candidates: candidates, states: states, config: config, alertingIDs: alertingIDs)
+            let selectedID = activeSelectionID(
+                selection,
+                candidates: candidates,
+                states: states,
+                config: config,
+                alertingIDs: alertingIDs,
+                headlineEligibleActiveIDs: headlineEligibleActiveIDs
+            )
                 ?? restingPrimaryID(candidates: candidates, states: states, config: config)
                 ?? fallbackID(candidates: candidates)
             return SlotReadoutResolution(primaryEntityID: selectedID, selection: selection)
@@ -50,11 +58,15 @@ public enum SlotReadoutSelector {
         candidates: [AttentionCandidate],
         states: [EntityID: EntityState],
         config: PresentationConfig,
-        alertingIDs: Set<EntityID>
+        alertingIDs: Set<EntityID>,
+        headlineEligibleActiveIDs: Set<EntityID>?
     ) -> EntityID? {
         let descriptors = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.descriptor) })
         let candidateStates = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.state) })
         return selection.lanes.first { entity in
+            if let headlineEligibleActiveIDs, !headlineEligibleActiveIDs.contains(entity.id) {
+                return false
+            }
             let isAlerted = entity.tier == .alerted || alertingIDs.contains(entity.id)
             let isPinned = config.entityOverrides[entity.id]?.pinned ?? false
             if isAlerted || isPinned || entity.reason.transitionBoosted { return true }

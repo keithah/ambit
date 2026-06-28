@@ -105,6 +105,33 @@ final class SlotReadoutSelectorTests: XCTestCase {
         XCTAssertEqual(result.primaryEntityID, degraded.id)
     }
 
+    func testActiveHeadlineEligibilityLimitsAttentionOverride() {
+        var engine = AttentionEngine()
+        let primary = descriptor("ping.primary", deviceClass: .latency, isPrimary: true, priority: 10)
+        let peer = descriptor("ping.peer", deviceClass: .latency, priority: 0)
+        let states = [
+            primary.id: state(primary.id, value: 12, severity: .normal),
+            peer.id: EntityState(id: peer.id, availability: .unavailable, severity: .down)
+        ]
+
+        let result = SlotReadoutSelector.resolve(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: primary, state: states[primary.id]!),
+                AttentionCandidate(descriptor: peer, state: states[peer.id]!)
+            ],
+            states: states,
+            headlineEligibleActiveIDs: [primary.id],
+            alertingIDs: [peer.id],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(result.primaryEntityID, primary.id)
+        XCTAssertEqual(result.selection.lanes.first?.id, peer.id)
+    }
+
     func testNilLatencyDownStillOverridesRestingPrimary() {
         var engine = AttentionEngine()
         let cpu = descriptor("system.cpu", isPrimary: true, priority: 100)

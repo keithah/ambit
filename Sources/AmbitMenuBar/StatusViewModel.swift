@@ -580,6 +580,7 @@ final class StatusViewModel: ObservableObject {
         let allDescriptors = await engine.entityDescriptors()
         await deliverAlerts(events, descriptors: allDescriptors)
         let allStates = await engine.entityStates(now: now)
+        let primaryPingInstanceID = (try? integrationRegistry.primaryInstanceID()) ?? nil
         presentationSettings = Self.presentationSettingsModel(
             registryRecords: allRegistryRecords,
             descriptors: allDescriptors,
@@ -599,6 +600,7 @@ final class StatusViewModel: ObservableObject {
                 allStates: allStates,
                 firedAlertEvents: events,
                 slotFocus: slotFocus,
+                primaryPingInstanceID: primaryPingInstanceID,
                 pingRange: pingRange,
                 config: configStore.load(),
                 now: now
@@ -1137,6 +1139,7 @@ struct SlotAttentionEngines {
         candidates: [AttentionCandidate],
         descriptors: [EntityID: EntityDescriptor],
         states: [EntityID: EntityState],
+        headlineEligibleActiveIDs: Set<EntityID>? = nil,
         alertingIDs: Set<EntityID>,
         config: PresentationConfig,
         now: Date
@@ -1147,6 +1150,7 @@ struct SlotAttentionEngines {
                 candidates: candidates,
                 descriptors: descriptors,
                 states: states,
+                headlineEligibleActiveIDs: headlineEligibleActiveIDs,
                 alertingIDs: alertingIDs,
                 config: config,
                 now: now,
@@ -1180,6 +1184,7 @@ struct StatusSlotReadout {
         candidates: [AttentionCandidate],
         descriptors: [EntityID: EntityDescriptor],
         states: [EntityID: EntityState],
+        headlineEligibleActiveIDs: Set<EntityID>? = nil,
         alertingIDs: Set<EntityID>,
         config: PresentationConfig,
         now: Date,
@@ -1190,6 +1195,7 @@ struct StatusSlotReadout {
             candidates: candidates,
             descriptors: descriptors,
             states: states,
+            headlineEligibleActiveIDs: headlineEligibleActiveIDs,
             alertingIDs: alertingIDs,
             config: config,
             now: now,
@@ -1202,6 +1208,7 @@ struct StatusSlotReadout {
         candidates: [AttentionCandidate],
         descriptors: [EntityID: EntityDescriptor],
         states: [EntityID: EntityState],
+        headlineEligibleActiveIDs: Set<EntityID>? = nil,
         alertingIDs: Set<EntityID>,
         config: PresentationConfig,
         now: Date,
@@ -1214,6 +1221,7 @@ struct StatusSlotReadout {
                 candidates: candidates,
                 states: states,
                 availableEntityIDs: Set(descriptors.keys),
+                headlineEligibleActiveIDs: headlineEligibleActiveIDs,
                 alertingIDs: alertingIDs,
                 config: config,
                 now: now,
@@ -1258,6 +1266,9 @@ struct StatusSlotReadout {
 
     private static func glyph(descriptor: EntityDescriptor, state: EntityState?) -> MenuBarGlyph {
         if let state, state.value == nil, (state.severity ?? .normal) <= .normal {
+            if descriptor.deviceClass == .latency {
+                return MenuBarGlyph(primaryText: "--ms", tone: .neutral)
+            }
             return noDataGlyph()
         }
         let readout = EntityReadout.make(descriptor: descriptor, state: state)

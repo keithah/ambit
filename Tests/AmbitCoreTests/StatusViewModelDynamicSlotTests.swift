@@ -160,7 +160,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(glyph.primaryText, "No Data")
+        XCTAssertEqual(glyph.primaryText, "--ms")
         XCTAssertEqual(glyph.tone, .neutral)
     }
 
@@ -462,13 +462,44 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(Set(surface.data.series.keys), [fixtures.latencyIDs[1]])
         XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
         XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+        XCTAssertEqual(surface.glyph.primaryText, "24ms")
     }
 
     @MainActor
-    func testCombinedPingSampleHistoryFollowsAttentionSelectedLatencyHost() async {
+    func testAllHostsPingSurfaceUsesDesignatedPrimaryForGlyph() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            primaryPingInstanceID: fixtures.records[1].id,
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+        XCTAssertEqual(surface.glyph.primaryText, "24ms")
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+    }
+
+    @MainActor
+    func testCombinedPingGlyphKeepsPrimaryWhenPeerIsDown() async {
         let coordinator = SlotSurfaceCoordinator()
         var fixtures = pingSurfaceFixtures()
-        fixtures.states[fixtures.latencyIDs[1]] = state(fixtures.latencyIDs[1], value: 240, severity: .degraded)
+        fixtures.states[fixtures.latencyIDs[1]] = EntityState(
+            id: fixtures.latencyIDs[1],
+            availability: .unavailable,
+            severity: .down
+        )
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
@@ -485,9 +516,70 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
         )
 
-        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
-        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[1].rawValue)")
-        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+        XCTAssertEqual(surface.glyph.primaryText, "12ms")
+        XCTAssertEqual(surface.glyph.tone, .good)
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[0].rawValue)")
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[0]])
+    }
+
+    @MainActor
+    func testCombinedPingGlyphShowsDownWhenPrimaryHostIsDown() async {
+        let coordinator = SlotSurfaceCoordinator()
+        var fixtures = pingSurfaceFixtures()
+        fixtures.states[fixtures.latencyIDs[0]] = EntityState(
+            id: fixtures.latencyIDs[0],
+            availability: .unavailable,
+            severity: .down
+        )
+        fixtures.samples[fixtures.latencyIDs[0]] = [
+            Sample(timestamp: now.addingTimeInterval(-1), value: nil, ok: false, metadata: "connectFailed")
+        ]
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+        XCTAssertEqual(surface.glyph.primaryText, "Down")
+        XCTAssertEqual(surface.glyph.tone, .bad)
+    }
+
+    @MainActor
+    func testCombinedPingGlyphShowsStalePrimaryAsDashMsWhenNoSamplesInSelectedRange() async {
+        let coordinator = SlotSurfaceCoordinator()
+        var fixtures = pingSurfaceFixtures()
+        fixtures.samples[fixtures.latencyIDs[0]] = []
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+        XCTAssertEqual(surface.glyph.primaryText, "--ms")
+        XCTAssertEqual(surface.glyph.tone, .neutral)
     }
 
     @MainActor
