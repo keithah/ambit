@@ -102,6 +102,7 @@ final class StatusViewModel: ObservableObject {
     private let alertNotificationService = AlertNotificationService()
     private let notificationDeliverer: any NotificationDelivering
     private let networkChangeSource: (any NetworkChangeSource)?
+    private var networkPathSnapshot: NetworkPathSnapshot = .connected
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -340,6 +341,31 @@ final class StatusViewModel: ObservableObject {
         return host.displayName == "Gateway" && host.method == .icmp && host.port == nil
     }
 
+    nonisolated private static func autoGatewayAddress(in records: [IntegrationInstanceRecord]) -> String? {
+        records.first(where: isAutoSeededGateway)
+            .flatMap { PingHostConfig(configObject: $0.config, displayNameFallback: $0.displayName)?.address }
+    }
+
+    nonisolated static func networkChangeEvent(
+        previousGateway: String?,
+        currentGateway: String?,
+        now: Date = Date()
+    ) -> AlertEvent? {
+        guard let previousGateway,
+              let currentGateway,
+              previousGateway != currentGateway
+        else { return nil }
+        return AlertEvent(
+            ruleID: "network.gateway.changed",
+            providerID: "network.path",
+            target: .entity(DiagnosisEntity.entityID),
+            title: "Network changed",
+            message: "Gateway changed from \(previousGateway) to \(currentGateway).",
+            severity: .info,
+            triggeredAt: now
+        )
+    }
+
     /// Detect the default gateway and add/update the stable auto gateway pingscope host (ICMP —
     /// truest hop latency, no port guessing) via the registry-add + reload path.
     @discardableResult
@@ -389,8 +415,14 @@ final class StatusViewModel: ObservableObject {
         }
     }
 
-    func handleNetworkConfigurationChanged() async {
+    func handleNetworkConfigurationChanged(_ snapshot: NetworkPathSnapshot = .connected) async {
+        networkPathSnapshot = snapshot
+        let previousGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
         await seedGatewayHostIfNeeded()
+        let currentGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
+        if let event = Self.networkChangeEvent(previousGateway: previousGateway, currentGateway: currentGateway) {
+            await deliverAlerts([event], descriptors: await engine.entityDescriptors())
+        }
         await engine.pollNow()
         await refreshPing()
     }
@@ -400,7 +432,7 @@ final class StatusViewModel: ObservableObject {
     }
 
     func handleSystemDidWake() async {
-        await handleNetworkConfigurationChanged()
+        await handleNetworkConfigurationChanged(.connected)
     }
 
     func start() {
@@ -431,8 +463,8 @@ final class StatusViewModel: ObservableObject {
         Task { await engine.start() }
         Task { await refreshAlertRules() }
         Task { await seedGatewayHostIfNeeded() }
-        networkChangeSource?.onChange = { [weak self] in
-            await self?.handleNetworkConfigurationChanged()
+        networkChangeSource?.onChange = { [weak self] snapshot in
+            await self?.handleNetworkConfigurationChanged(snapshot)
         }
         networkChangeSource?.start()
         refreshInstalledProviders()
@@ -681,6 +713,7 @@ final class StatusViewModel: ObservableObject {
         let diagnosisResult = await pingDiagnosisCoordinator.evaluate(
             activeRecords: activeRecords,
             snapshot: snapshot,
+            networkStatus: networkPathSnapshot.connectivityStatus,
             now: now,
             range: pingRange
         ) { [engine] id, since in
@@ -728,7 +761,11 @@ final class StatusViewModel: ObservableObject {
 
     private func deliverAlerts(_ events: [AlertEvent], descriptors: [ProviderInstanceID: [EntityDescriptor]]) async {
         guard !events.isEmpty else { return }
-        let allDescriptors = descriptors.values.flatMap { $0 }
+        var allDescriptors = descriptors.values.flatMap { $0 }
+        if events.contains(where: { $0.target == .entity(DiagnosisEntity.entityID) }),
+           !allDescriptors.contains(where: { $0.id == DiagnosisEntity.entityID }) {
+            allDescriptors.append(DiagnosisEntity.descriptor())
+        }
         let resolved = events.map { event in
             ResolvedAlertEvent(event: event, entityIDs: alertTargetResolver.resolve(event, descriptors: allDescriptors))
         }

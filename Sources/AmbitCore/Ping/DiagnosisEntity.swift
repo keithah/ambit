@@ -8,13 +8,17 @@ public enum DiagnosisEntity {
     public static let instanceID = ProviderInstanceID(rawValue: "ping.summary")
     public static let entityID = EntityID(rawValue: "ping.summary.diagnosis")
 
+    public static func descriptor(title: String = "Network status") -> EntityDescriptor {
+        EntityDescriptor(
+            id: entityID, instanceID: instanceID, name: title,
+            kind: .text, deviceClass: nil, category: .diagnostic, access: .read
+        )
+    }
+
     /// nil when the network is healthy / has no data (banner omitted).
     public static func make(_ diagnosis: NetworkPerspectiveDiagnosis) -> (EntityDescriptor, EntityState)? {
         guard let severity = severity(for: diagnosis.verdict) else { return nil }
-        let descriptor = EntityDescriptor(
-            id: entityID, instanceID: instanceID, name: diagnosis.title,
-            kind: .text, deviceClass: nil, category: .diagnostic, access: .read
-        )
+        let descriptor = descriptor(title: diagnosis.title)
         let state = EntityState(id: entityID, value: .text(diagnosis.detail), availability: .online, severity: severity)
         return (descriptor, state)
     }

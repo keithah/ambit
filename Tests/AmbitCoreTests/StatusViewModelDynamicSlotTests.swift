@@ -190,6 +190,60 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testGatewayAddressChangeDeliversEntityTargetedNetworkChangeNotification() async throws {
+        let gateway = IntegrationInstanceRecord(
+            id: "ping@gateway",
+            integrationID: IntegrationIDs.ping,
+            displayName: "Gateway",
+            enabled: true,
+            origin: .user,
+            config: PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp).asConfigObject()
+        )
+        let registry = InMemoryIntegrationRegistry(records: [gateway])
+        let notifier = RecordingNotificationDeliverer()
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: "192.168.8.1"),
+            configStore: MemoryPresentationConfigStore(),
+            notificationDeliverer: notifier,
+            networkChangeSource: nil
+        )
+
+        await viewModel.handleNetworkConfigurationChanged()
+
+        let delivered = await notifier.deliveredIntents()
+        XCTAssertEqual(delivered.map(\.title), ["Network changed"])
+        XCTAssertEqual(delivered.first?.body, "Gateway changed from 192.168.101.1 to 192.168.8.1.")
+        XCTAssertEqual(delivered.first?.entityIDs, [DiagnosisEntity.entityID])
+    }
+
+    @MainActor
+    func testNetworkChangeSourceFeedsConnectivityStatusIntoPingDiagnosis() async throws {
+        let cloudflare = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        let registry = InMemoryIntegrationRegistry(records: [cloudflare])
+        let networkSource = TestNetworkChangeSource()
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: nil),
+            configStore: MemoryPresentationConfigStore(),
+            notificationDeliverer: NoopNotificationDeliverer(),
+            networkChangeSource: networkSource
+        )
+        viewModel.start()
+
+        await networkSource.trigger(NetworkPathSnapshot(connectivityStatus: .notConnected))
+
+        XCTAssertEqual(viewModel.pingDiagnosis?.verdict, .localNetworkDown)
+        XCTAssertEqual(viewModel.pingDiagnosis?.detail, "No network link.")
+    }
+
+    @MainActor
     func testSystemWakeRedetectsGatewayBeforePolling() async throws {
         let gateway = IntegrationInstanceRecord(
             id: "ping@gateway",
@@ -537,6 +591,33 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(result.diagnosis.verdict, .monitoringStalled)
         XCTAssertEqual(result.diagnosis.detail, "Monitoring paused — data is 12s old.")
         XCTAssertEqual(result.events, [])
+    }
+
+    @MainActor
+    func testPingDiagnosisCoordinatorUsesNetworkConnectivityStatusAndSuppressesHostAlerts() async {
+        let coordinator = PingDiagnosisCoordinator()
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let record = IntegrationInstanceRecord.ping(host)
+        let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let snapshot = StatusSnapshot(
+            providers: [
+                providerInstance: SourceState(value: ProviderSnapshot(health: .down))
+            ]
+        )
+
+        let result = await coordinator.evaluate(
+            activeRecords: [record],
+            snapshot: snapshot,
+            networkStatus: .noInternet,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { [now] _, _ in [Sample(timestamp: now, value: nil, ok: false, metadata: "timeout")] }
+        )
+
+        XCTAssertEqual(result.diagnosis.verdict, .upstreamDown)
+        XCTAssertEqual(result.diagnosis.title, "No internet")
+        XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
+        XCTAssertEqual(result.events.map(\.ruleID), ["ping.internetLoss"])
     }
 
     @MainActor
@@ -2061,7 +2142,7 @@ private final class MutableRouterAddressDiscovery: RouterAddressDiscovery, @unch
 
 @MainActor
 private final class TestNetworkChangeSource: NetworkChangeSource {
-    var onChange: (@MainActor @Sendable () async -> Void)?
+    var onChange: (@MainActor @Sendable (NetworkPathSnapshot) async -> Void)?
     private(set) var started = false
 
     func start() {
@@ -2070,8 +2151,8 @@ private final class TestNetworkChangeSource: NetworkChangeSource {
 
     func cancel() {}
 
-    func trigger() async {
-        await onChange?()
+    func trigger(_ snapshot: NetworkPathSnapshot = .connected) async {
+        await onChange?(snapshot)
     }
 }
 
@@ -2085,4 +2166,24 @@ private struct NoopNotificationDeliverer: NotificationDelivering {
     }
 
     func deliver(_ intent: NotificationIntent) async throws {}
+}
+
+private actor RecordingNotificationDeliverer: NotificationDelivering {
+    private var delivered: [NotificationIntent] = []
+
+    func authorizationStatus() async -> NotificationAuthorizationStatus {
+        .authorized
+    }
+
+    func requestAuthorization() async -> NotificationAuthorizationStatus {
+        .authorized
+    }
+
+    func deliver(_ intent: NotificationIntent) async throws {
+        delivered.append(intent)
+    }
+
+    func deliveredIntents() -> [NotificationIntent] {
+        delivered
+    }
 }

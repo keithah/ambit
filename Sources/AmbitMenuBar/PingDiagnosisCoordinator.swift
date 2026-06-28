@@ -17,6 +17,7 @@ final class PingDiagnosisCoordinator {
     func evaluate(
         activeRecords: [IntegrationInstanceRecord],
         snapshot: StatusSnapshot,
+        networkStatus: NetworkConnectivityStatus = .connected,
         now: Date,
         range: TimeRange,
         historySamples: @escaping HistorySamples
@@ -46,12 +47,13 @@ final class PingDiagnosisCoordinator {
             ))
         }
 
-        var diagnosis = diagnoser.diagnose(hosts: diagnosisHosts)
+        var diagnosis = diagnoser.diagnose(hosts: diagnosisHosts, networkStatus: networkStatus)
         if case .monitoringStalled = diagnosis.verdict {
             let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
             diagnosis.detail = "Monitoring paused — data is \(age)s old."
         }
-        let events = alertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
+        let alertHostsForStatus = networkStatus == .connected ? alertHosts : []
+        let events = alertMonitor.evaluate(hosts: alertHostsForStatus, diagnosis: diagnosis, now: now)
         return PingDiagnosisResult(diagnosis: diagnosis, events: events)
     }
 
