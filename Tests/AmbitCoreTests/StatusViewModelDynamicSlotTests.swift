@@ -4,6 +4,16 @@ import AmbitUI
 @testable import AmbitMenuBar
 
 final class StatusViewModelDynamicSlotTests: XCTestCase {
+    func testStatusGlyphRendererUsesPingscopeDotAndTextGeometry() {
+        let glyph = MenuBarGlyph(primaryText: "22ms", tone: .good)
+        let layout = StatusGlyphRenderer.layout(for: glyph, height: 22)
+
+        XCTAssertEqual(layout.dotY, 12)
+        XCTAssertEqual(layout.textBaselineY, 0)
+        XCTAssertEqual(layout.fontSize, 9.5)
+        XCTAssertEqual(layout.dotDiameter, 8)
+    }
+
     func testOverlaySlotSelectionDefaultsAndReconcilesToAvailableSlots() {
         let ping = Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)
         let system = Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal), barReadout: .dynamic)

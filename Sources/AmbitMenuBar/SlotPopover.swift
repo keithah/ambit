@@ -8,22 +8,41 @@ import SwiftUI
 /// Renders a stacked "dot over latency text" NSImage for any slot's bar readout.
 /// Renamed from PingGlyphRenderer — this type does generic chrome, not Ping-specific UI.
 enum StatusGlyphRenderer {
+    struct Layout: Equatable {
+        var dotX: Double
+        var dotY: Double
+        var dotDiameter: Double
+        var textBaselineY: Double
+        var fontSize: Double
+    }
+
+    static func layout(for glyph: MenuBarGlyph, height: Double) -> Layout {
+        Layout(
+            dotX: (glyph.itemWidth - glyph.dotDiameter) / 2,
+            dotY: height - glyph.dotDiameter - 2,
+            dotDiameter: glyph.dotDiameter,
+            textBaselineY: 0,
+            fontSize: glyph.fontSize
+        )
+    }
+
     static func image(_ glyph: MenuBarGlyph) -> NSImage {
         let width = glyph.itemWidth, height = 22.0
+        let layout = layout(for: glyph, height: height)
         let image = NSImage(size: NSSize(width: width, height: height))
         image.lockFocus()
         let dot = NSBezierPath(ovalIn: NSRect(
-            x: (width - glyph.dotDiameter) / 2,
-            y: height - glyph.dotDiameter - 1,
-            width: glyph.dotDiameter, height: glyph.dotDiameter))
+            x: layout.dotX,
+            y: layout.dotY,
+            width: layout.dotDiameter, height: layout.dotDiameter))
         nsColor(glyph.tone).setFill()
         dot.fill()
         let text = NSAttributedString(string: glyph.primaryText, attributes: [
-            .font: NSFont.systemFont(ofSize: glyph.fontSize, weight: .regular),
+            .font: NSFont.systemFont(ofSize: layout.fontSize, weight: .regular),
             .foregroundColor: NSColor.labelColor
         ])
         let size = text.size()
-        text.draw(at: NSPoint(x: (width - size.width) / 2, y: 0))
+        text.draw(at: NSPoint(x: (width - size.width) / 2, y: layout.textBaselineY))
         image.unlockFocus()
         image.isTemplate = false
         return image
