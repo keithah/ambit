@@ -160,6 +160,33 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(store.config.slotOverrides[slotID]?.primaryInstanceID, IntegrationInstanceID(rawValue: "ping@gateway"))
     }
 
+    @MainActor
+    func testNetworkChangeSourceRedetectsGatewayAndDropsStaleGateway() async throws {
+        let oldGateway = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp))
+        let cloudflare = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443))
+        let registry = InMemoryIntegrationRegistry(records: [cloudflare, oldGateway])
+        let discovery = MutableRouterAddressDiscovery(defaultGateway: nil)
+        let networkSource = TestNetworkChangeSource()
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: discovery,
+            configStore: MemoryPresentationConfigStore(),
+            networkChangeSource: networkSource
+        )
+        viewModel.start()
+
+        discovery.defaultGateway = "192.168.8.1"
+        await networkSource.trigger()
+
+        let records = try registry.instances()
+        XCTAssertTrue(networkSource.started)
+        XCTAssertEqual(records.map(\.id.rawValue), ["ping@1.1.1.1:443", "ping@gateway"])
+        XCTAssertEqual(PingHostConfig(configObject: records[1].config)?.address, "192.168.8.1")
+    }
+
     func testLatencyStateBackfillsNilCurrentValueFromLatestHistorySample() {
         let id = EntityID(rawValue: "ping@8.8.8.8:443/probe.latency_ms")
         let sampleTime = now.addingTimeInterval(5)
@@ -1998,5 +2025,21 @@ private final class MutableRouterAddressDiscovery: RouterAddressDiscovery, @unch
 
     func defaultGatewayHost() async -> String? {
         defaultGateway
+    }
+}
+
+@MainActor
+private final class TestNetworkChangeSource: NetworkChangeSource {
+    var onChange: (@MainActor @Sendable () async -> Void)?
+    private(set) var started = false
+
+    func start() {
+        started = true
+    }
+
+    func cancel() {}
+
+    func trigger() async {
+        await onChange?()
     }
 }

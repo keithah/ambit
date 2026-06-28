@@ -101,6 +101,7 @@ final class StatusViewModel: ObservableObject {
     private let alertTargetResolver = AlertTargetResolver()
     private let alertNotificationService = AlertNotificationService()
     private let notificationDeliverer: any NotificationDelivering
+    private let networkChangeSource: (any NetworkChangeSource)?
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -113,13 +114,15 @@ final class StatusViewModel: ObservableObject {
         integrationRegistry: (any IntegrationRegistry)? = nil,
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
-        notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer()
+        notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
+        networkChangeSource: (any NetworkChangeSource)? = NWPathNetworkChangeSource()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
         let routerPassword = (try? credentialStore.password(account: settings.username)) ?? RouterDefaults.routerPassword
         self.settings = settings
         self.routerPassword = routerPassword
         self.notificationDeliverer = notificationDeliverer
+        self.networkChangeSource = networkChangeSource
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
@@ -152,6 +155,10 @@ final class StatusViewModel: ObservableObject {
     deinit {
         subscriptionTask?.cancel()
         staleTickTask?.cancel()
+        let networkChangeSource = networkChangeSource
+        Task { @MainActor in
+            networkChangeSource?.cancel()
+        }
     }
 
     /// Load persisted slots, then backfill enabled built-in integration slots. `.integrationType`
@@ -416,6 +423,10 @@ final class StatusViewModel: ObservableObject {
         Task { await engine.start() }
         Task { await refreshAlertRules() }
         Task { await seedGatewayHostIfNeeded() }
+        networkChangeSource?.onChange = { [weak self] in
+            await self?.handleNetworkConfigurationChanged()
+        }
+        networkChangeSource?.start()
         refreshInstalledProviders()
         refreshCommandPalette()
     }
