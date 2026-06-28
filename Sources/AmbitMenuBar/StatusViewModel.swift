@@ -2,7 +2,6 @@ import AmbitCore
 import AmbitUI
 import Foundation
 import SwiftUI
-import UserNotifications
 
 enum IntegrationInstanceDraftError: Error, Equatable {
     case unsupportedIntegration(IntegrationID)
@@ -92,7 +91,9 @@ final class StatusViewModel: ObservableObject {
     private let addressDiscovery: any RouterAddressDiscovery
     private var alertEngine = AlertEngine()
     private let slotSurfaceCoordinator = SlotSurfaceCoordinator()
-    private let alertNotifier: AlertNotifier
+    private let alertTargetResolver = AlertTargetResolver()
+    private let alertNotificationService = AlertNotificationService()
+    private let notificationDeliverer: any NotificationDelivering
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -104,13 +105,14 @@ final class StatusViewModel: ObservableObject {
         reachabilityProbe: ReachabilityProbeProtocol = ReachabilityProbe(),
         integrationRegistry: (any IntegrationRegistry)? = nil,
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
-        configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore()
+        configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
+        notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
         let routerPassword = (try? credentialStore.password(account: settings.username)) ?? RouterDefaults.routerPassword
         self.settings = settings
         self.routerPassword = routerPassword
-        self.alertNotifier = AlertNotifier()
+        self.notificationDeliverer = notificationDeliverer
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
@@ -322,7 +324,8 @@ final class StatusViewModel: ObservableObject {
                 await self.refreshPing()
                 await self.refreshModuleUsage()
                 let events = await self.alertEngine.evaluate(snapshot.engineSnapshot)
-                await self.alertNotifier.deliver(events)
+                let descriptors = await self.engine.entityDescriptors()
+                await self.deliverAlerts(events, descriptors: descriptors)
             }
         }
         // Time-driven staleness tick — recomputes staleness/diagnosis against wall-clock `now`
@@ -566,10 +569,10 @@ final class StatusViewModel: ObservableObject {
         let diagnosis = diagnosisResult.diagnosis
         pingDiagnosis = diagnosis
         let events = diagnosisResult.events
-        await alertNotifier.deliver(events)
 
         // Build per-slot surfaces.
         let allDescriptors = await engine.entityDescriptors()
+        await deliverAlerts(events, descriptors: allDescriptors)
         let allStates = await engine.entityStates(now: now)
         presentationSettings = Self.presentationSettingsModel(
             registryRecords: allRegistryRecords,
@@ -599,6 +602,15 @@ final class StatusViewModel: ObservableObject {
             newSurfaces[slot.id] = surface
         }
         slotSurfaces = newSurfaces
+    }
+
+    private func deliverAlerts(_ events: [AlertEvent], descriptors: [ProviderInstanceID: [EntityDescriptor]]) async {
+        guard !events.isEmpty else { return }
+        let allDescriptors = descriptors.values.flatMap { $0 }
+        let resolved = events.map { event in
+            ResolvedAlertEvent(event: event, entityIDs: alertTargetResolver.resolve(event, descriptors: allDescriptors))
+        }
+        _ = await alertNotificationService.deliver(resolved, using: notificationDeliverer)
     }
 
     nonisolated static func presentationSettingsModel(
@@ -1258,24 +1270,6 @@ private extension LatencyTone {
         case .good: self = .good
         case .warn: self = .warn
         case .bad: self = .bad
-        }
-    }
-}
-
-private struct AlertNotifier: Sendable {
-    func deliver(_ events: [AlertEvent]) async {
-        guard !events.isEmpty else { return }
-        let center = UNUserNotificationCenter.current()
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        guard granted else { return }
-
-        for event in events {
-            let content = UNMutableNotificationContent()
-            content.title = event.title
-            content.body = event.message
-            content.sound = event.severity == .critical ? .defaultCritical : .default
-            let request = UNNotificationRequest(identifier: event.id, content: content, trigger: nil)
-            try? await center.add(request)
         }
     }
 }
