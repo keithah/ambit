@@ -28,6 +28,13 @@ final class PingDomainTests: XCTestCase {
         host = host.applying(method: .tcp); XCTAssertEqual(host.port, 443)
     }
 
+    func testLoopbackTargetClassification() {
+        XCTAssertTrue(PingHostConfig(displayName: "Local", address: "127.0.0.1", method: .tcp, port: 22).isLoopbackTarget)
+        XCTAssertTrue(PingHostConfig(displayName: "Localhost", address: "localhost", method: .tcp, port: 22).isLoopbackTarget)
+        XCTAssertTrue(PingHostConfig(displayName: "IPv6", address: "::1", method: .tcp, port: 22).isLoopbackTarget)
+        XCTAssertFalse(PingHostConfig(displayName: "Cloudflare", address: "1.1.1.1", method: .tcp, port: 443).isLoopbackTarget)
+    }
+
     // MARK: TimeoutProbe
 
     private struct DelayProbe: PingProbe {

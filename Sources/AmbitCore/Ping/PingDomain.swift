@@ -78,6 +78,23 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
         self.tier = tier
     }
 
+    public var isLoopbackTarget: Bool {
+        let normalized = address
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            .lowercased()
+        if normalized == "localhost" || normalized == "localhost." { return true }
+        if normalized == "::1" || normalized == "0:0:0:0:0:0:0:1" { return true }
+        let parts = normalized.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count == 4, parts.first == "127" {
+            return parts.allSatisfy { part in
+                guard let octet = Int(part) else { return false }
+                return (0...255).contains(octet)
+            }
+        }
+        return false
+    }
+
     enum CodingKeys: String, CodingKey {
         case displayName, address, method, port, interval, timeout, thresholds, policy, tier
     }

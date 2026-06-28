@@ -38,8 +38,10 @@ final class SlotSurfaceCoordinator {
         }
 
         let override = config.slotOverrides[slot.id]
-        let defaultFocusID = primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
-            ?? resolvedRecords.first?.id
+        let defaultFocusID = Self.defaultPingFocusID(
+            records: resolvedRecords,
+            primaryPingInstanceID: primaryPingInstanceID
+        )
         let requestedFocusID = slotFocus[slot.id] ?? override?.selectedInstanceID
         let validRequestedFocusID = requestedFocusID.flatMap { id in
             resolvedRecords.contains(where: { $0.id == id }) ? id : nil
@@ -50,8 +52,7 @@ final class SlotSurfaceCoordinator {
         let focusedID = focusedRecords.first?.id
         let shownRecords = explicitAllHosts ? resolvedRecords : focusedRecords
         let headlineRecordID = focusedID
-            ?? primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
-            ?? resolvedRecords.first?.id
+            ?? defaultFocusID
         let shownInstanceIDs = Set(shownRecords.map(\.id))
         let shownResolved = focusedID == nil
             ? resolved
@@ -203,6 +204,23 @@ final class SlotSurfaceCoordinator {
     nonisolated private static func pingHostSubtitle(_ record: IntegrationInstanceRecord) -> String? {
         guard let host = PingHostConfig(configObject: record.config, displayNameFallback: record.displayName) else { return nil }
         return "\(host.method.rawValue.uppercased()) \(host.address)"
+    }
+
+    nonisolated private static func defaultPingFocusID(
+        records: [IntegrationInstanceRecord],
+        primaryPingInstanceID: IntegrationInstanceID?
+    ) -> IntegrationInstanceID? {
+        let nonLoopbackRecords = records.filter { !isLoopbackPingRecord($0) }
+        if let primaryPingInstanceID,
+           let primaryRecord = records.first(where: { $0.id == primaryPingInstanceID }),
+           !isLoopbackPingRecord(primaryRecord) || nonLoopbackRecords.isEmpty {
+            return primaryPingInstanceID
+        }
+        return nonLoopbackRecords.first?.id ?? records.first?.id
+    }
+
+    nonisolated private static func isLoopbackPingRecord(_ record: IntegrationInstanceRecord) -> Bool {
+        PingHostConfig(configObject: record.config, displayNameFallback: record.displayName)?.isLoopbackTarget ?? false
     }
 
     static func historySeries(for plan: SurfacePlan, now: Date, historySamples: @escaping HistorySamples) async -> [EntityID: [Sample]] {

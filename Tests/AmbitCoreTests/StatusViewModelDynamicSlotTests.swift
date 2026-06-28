@@ -449,6 +449,113 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testDefaultPingSurfaceSkipsLoopbackWhenNonLoopbackHostExists() async {
+        let coordinator = SlotSurfaceCoordinator()
+        var fixtures = pingSurfaceFixtures(hosts: [
+            PingHostConfig(displayName: "Local", address: "127.0.0.1", method: .tcp, port: 22),
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        ])
+        fixtures.states[fixtures.latencyIDs[0]] = EntityState(
+            id: fixtures.latencyIDs[0],
+            availability: .unavailable,
+            severity: .down
+        )
+        fixtures.samples[fixtures.latencyIDs[0]] = [
+            Sample(timestamp: now.addingTimeInterval(-1), value: nil, ok: false, metadata: "connectionRefused")
+        ]
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[1].id)
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.glyph.primaryText, "24ms")
+        XCTAssertEqual(surface.glyph.tone, .good)
+    }
+
+    @MainActor
+    func testDefaultPingSurfaceFallsBackToFirstHostWhenAllHostsAreLoopback() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures(hosts: [
+            PingHostConfig(displayName: "Localhost", address: "localhost", method: .tcp, port: 22),
+            PingHostConfig(displayName: "IPv6 Local", address: "::1", method: .tcp, port: 22)
+        ])
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: .empty,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[0]])
+    }
+
+    @MainActor
+    func testPersistedLoopbackSelectionOverridesNonLoopbackDefault() async {
+        let coordinator = SlotSurfaceCoordinator()
+        var fixtures = pingSurfaceFixtures(hosts: [
+            PingHostConfig(displayName: "Local", address: "127.0.0.1", method: .tcp, port: 22),
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        ])
+        fixtures.states[fixtures.latencyIDs[0]] = EntityState(
+            id: fixtures.latencyIDs[0],
+            availability: .unavailable,
+            severity: .down
+        )
+        fixtures.samples[fixtures.latencyIDs[0]] = [
+            Sample(timestamp: now.addingTimeInterval(-1), value: nil, ok: false, metadata: "connectionRefused")
+        ]
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(
+            selectedInstanceID: fixtures.records[0].id,
+            showsAllInstances: false
+        )
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: config,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[0]])
+        XCTAssertEqual(surface.glyph.primaryText, "Down")
+        XCTAssertEqual(surface.glyph.tone, .bad)
+    }
+
+    @MainActor
     func testExplicitAllHostsPingSurfaceBuildsCombinedLatencyGraphAndLoadsEverySeries() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
@@ -1621,8 +1728,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         var latencyIDs: [EntityID]
     }
 
-    private func pingSurfaceFixtures() -> PingSurfaceFixtures {
-        let hosts = [
+    private func pingSurfaceFixtures(hosts: [PingHostConfig]? = nil) -> PingSurfaceFixtures {
+        let hosts = hosts ?? [
             PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
             PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
         ]
