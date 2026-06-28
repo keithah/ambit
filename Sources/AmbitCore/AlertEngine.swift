@@ -337,6 +337,7 @@ public actor AlertEngine {
 
 struct AlertRuleState: Sendable {
     var activeRuleIDs: Set<String> = []
+    var notifiedActiveRuleIDs: Set<String> = []
     var sustainedStartByRuleID: [String: Date] = [:]
     var lastMetricValues: [String: MetricValue?] = [:]
     var lastFiredAt: [String: Date] = [:]
@@ -359,10 +360,12 @@ struct AlertRuleState: Sendable {
                 return nil  // still firing, but within cooldown → suppress the notification
             }
             lastFiredAt[ruleID] = now
+            notifiedActiveRuleIDs.insert(ruleID)
             return event
         }
         let wasActive = activeRuleIDs.remove(ruleID) != nil
-        return wasActive ? recovery : nil
+        let wasNotified = notifiedActiveRuleIDs.remove(ruleID) != nil
+        return wasActive && wasNotified ? recovery : nil
     }
 }
 

@@ -89,6 +89,20 @@ final class AlertEngineUpgradeTests: XCTestCase {
         XCTAssertEqual(recovered.map(\.ruleID), ["r.recovered"])
         XCTAssertEqual(recovered.first?.severity, .info)
         XCTAssertEqual(recovered.first?.message, "All good")
+        XCTAssertEqual(recovered.first?.phase, .recovered)
+    }
+
+    func testRecoveryDoesNotEmitAfterCooldownSuppressedActiveAlert() async {
+        let rule = ThresholdAlertRule(id: "r", providerID: "x", metricID: "m", comparison: .greaterThan, threshold: 100, title: "High", message: "hi", cooldown: 60, notifyOnRecovery: true)
+        let engine = AlertEngine(rules: [.threshold(rule)])
+
+        _ = await engine.evaluate(snapshot(150), now: at(0))
+        _ = await engine.evaluate(snapshot(10), now: at(10))
+        let suppressed = await engine.evaluate(snapshot(150), now: at(30))
+        let recoveryAfterSuppressed = await engine.evaluate(snapshot(10), now: at(40))
+
+        XCTAssertTrue(suppressed.isEmpty)
+        XCTAssertTrue(recoveryAfterSuppressed.isEmpty)
     }
 
     func testNoRecoveryWhenDisabled() async {
