@@ -1,5 +1,6 @@
 import XCTest
 @testable import AmbitCore
+import AmbitUI
 @testable import AmbitMenuBar
 
 final class StatusViewModelDynamicSlotTests: XCTestCase {
@@ -36,6 +37,16 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
         XCTAssertEqual(SlotPopover.scrollContentIdentity(for: slotID), "slot-scroll-slot.system")
+    }
+
+    func testSlotPopoverHostSubtitleFollowsSelectedHostOrAllHosts() {
+        let options = [
+            InstanceSelectorCard.Option(id: "ping@1.1.1.1:443", label: "Cloudflare DNS", subtitle: "TCP 1.1.1.1"),
+            InstanceSelectorCard.Option(id: "ping@8.8.8.8:443", label: "Google DNS", subtitle: "TCP 8.8.8.8")
+        ]
+
+        XCTAssertEqual(SlotPopover.hostSubtitle(selectedID: "ping@1.1.1.1:443", options: options), "TCP 1.1.1.1")
+        XCTAssertEqual(SlotPopover.hostSubtitle(selectedID: nil, options: options), "2 enabled hosts")
     }
 
     func testHistoryBackedCardsIncludeSampleHistoryCards() {
@@ -432,6 +443,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(graph?.entities, [fixtures.latencyIDs[0]])
         XCTAssertEqual(Set(surface.data.series.keys), [fixtures.latencyIDs[0]])
         XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertEqual(surface.hostOptions.map(\.subtitle), ["TCP 1.1.1.1", "TCP 8.8.8.8"])
         XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
         XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
     }

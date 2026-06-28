@@ -6,7 +6,12 @@ public struct InstanceSelectorCard: View {
     public struct Option: Identifiable, Equatable {
         public var id: String
         public var label: String
-        public init(id: String, label: String) { self.id = id; self.label = label }
+        public var subtitle: String?
+        public init(id: String, label: String, subtitle: String? = nil) {
+            self.id = id
+            self.label = label
+            self.subtitle = subtitle
+        }
     }
     let options: [Option]
     let selectedID: String?

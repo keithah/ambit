@@ -51,11 +51,16 @@ struct SlotPopover: View {
         "slot-scroll-\(slotID.rawValue)"
     }
 
+    nonisolated static func hostSubtitle(selectedID: String?, options: [InstanceSelectorCard.Option]) -> String {
+        guard let selectedID else { return "\(options.count) enabled hosts" }
+        return options.first(where: { $0.id == selectedID })?.subtitle ?? ""
+    }
+
     private var surface: SlotSurface {
         viewModel.slotSurfaces[slotID] ?? .empty
     }
     private var focus: IntegrationInstanceID? {
-        viewModel.slotFocus[slotID]
+        surface.selectedInstanceID
     }
     /// The range picker drives the global ping window (P3). Show it only on the ping slot so a
     /// future non-ping slot's popover never binds/mutates ping state. Per-slot range is P5.
@@ -98,18 +103,32 @@ struct SlotPopover: View {
     private var header: some View {
         HStack(alignment: .top) {
             if surface.hostOptions.count > 1 {
-                InstanceSelectorCard(
-                    options: surface.hostOptions,
-                    selectedID: focus?.rawValue,
-                    onSelect: { rawID in
-                        viewModel.selectInstance(slotID, rawID.map { IntegrationInstanceID(rawValue: $0) })
-                    },
-                    allLabel: "All Hosts"
-                )
+                VStack(alignment: .leading, spacing: 3) {
+                    InstanceSelectorCard(
+                        options: surface.hostOptions,
+                        selectedID: focus?.rawValue,
+                        onSelect: { rawID in
+                            viewModel.selectInstance(slotID, rawID.map { IntegrationInstanceID(rawValue: $0) })
+                        },
+                        allLabel: "All Hosts"
+                    )
+                    Text(Self.hostSubtitle(selectedID: focus?.rawValue, options: surface.hostOptions))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             } else {
                 // Single host or no options: show the slot title as plain text.
-                Text(viewModel.slots.first(where: { $0.id == slotID })?.title ?? "Ping")
-                    .font(.system(size: 14, weight: .semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(viewModel.slots.first(where: { $0.id == slotID })?.title ?? "Ping")
+                        .font(.system(size: 14, weight: .semibold))
+                    if let subtitle = surface.hostOptions.first?.subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 5) {

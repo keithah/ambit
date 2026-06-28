@@ -29,7 +29,13 @@ final class SlotSurfaceCoordinator {
 
         let resolvedInstanceIDs = Set(resolved.map { $0.instanceID.integrationInstanceID })
         let resolvedRecords = enabledPingRecords.filter { resolvedInstanceIDs.contains($0.id) }
-        let hostOptions = resolvedRecords.map { InstanceSelectorCard.Option(id: $0.id.rawValue, label: $0.displayName) }
+        let hostOptions = resolvedRecords.map { record in
+            InstanceSelectorCard.Option(
+                id: record.id.rawValue,
+                label: record.displayName,
+                subtitle: Self.pingHostSubtitle(record)
+            )
+        }
 
         let override = config.slotOverrides[slot.id]
         let defaultFocusID = primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
@@ -192,6 +198,11 @@ final class SlotSurfaceCoordinator {
             return true
         }
         return false
+    }
+
+    nonisolated private static func pingHostSubtitle(_ record: IntegrationInstanceRecord) -> String? {
+        guard let host = PingHostConfig(configObject: record.config, displayNameFallback: record.displayName) else { return nil }
+        return "\(host.method.rawValue.uppercased()) \(host.address)"
     }
 
     static func historySeries(for plan: SurfacePlan, now: Date, historySamples: @escaping HistorySamples) async -> [EntityID: [Sample]] {
