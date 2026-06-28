@@ -27,6 +27,7 @@ private extension SlotPresentationOverride {
             hiddenItems.isEmpty &&
             tableRowLimit == nil &&
             selectedInstanceID == nil &&
+            primaryInstanceID == nil &&
             showsAllInstances == false
     }
 }
@@ -568,6 +569,13 @@ final class StatusViewModel: ObservableObject {
             slotFocus.removeValue(forKey: slot)
         }
         rebuildPresentationSettings(config: config)
+        Task { await refreshPing() }
+    }
+
+    func setSlotPrimaryInstance(_ slot: SlotID, _ id: IntegrationInstanceID?) {
+        mutateSlotOverride(slot) { override in
+            override.primaryInstanceID = id
+        }
         Task { await refreshPing() }
     }
 

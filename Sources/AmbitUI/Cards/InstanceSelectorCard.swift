@@ -15,13 +15,24 @@ public struct InstanceSelectorCard: View {
     }
     let options: [Option]
     let selectedID: String?
+    let primaryID: String?
     let onSelect: (String?) -> Void
+    let onSetPrimary: ((String) -> Void)?
     let allLabel: String
 
-    public init(options: [Option], selectedID: String?, onSelect: @escaping (String?) -> Void, allLabel: String = "All") {
+    public init(
+        options: [Option],
+        selectedID: String?,
+        primaryID: String? = nil,
+        onSelect: @escaping (String?) -> Void,
+        onSetPrimary: ((String) -> Void)? = nil,
+        allLabel: String = "All"
+    ) {
         self.options = options
         self.selectedID = selectedID
+        self.primaryID = primaryID
         self.onSelect = onSelect
+        self.onSetPrimary = onSetPrimary
         self.allLabel = allLabel
     }
 
@@ -36,6 +47,12 @@ public struct InstanceSelectorCard: View {
             Divider()
             ForEach(options) { option in
                 Button(option.label) { onSelect(option.id) }
+                if let onSetPrimary {
+                    Button(option.id == primaryID ? "Primary Host" : "Set as Primary") {
+                        onSetPrimary(option.id)
+                    }
+                    .disabled(option.id == primaryID)
+                }
             }
         } label: {
             Text(currentLabel).font(.system(size: 14, weight: .semibold))

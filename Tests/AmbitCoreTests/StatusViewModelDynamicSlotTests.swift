@@ -556,6 +556,68 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testDesignatedPrimaryOverridesNonLoopbackDefaultWhenNoSelectionIsPersisted() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(
+            primaryInstanceID: fixtures.records[1].id
+        )
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: config,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[1].id)
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+        XCTAssertEqual(surface.glyph.primaryText, "24ms")
+    }
+
+    @MainActor
+    func testRemovedDesignatedPrimaryReconcilesToNonLoopbackDefault() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures(hosts: [
+            PingHostConfig(displayName: "Local", address: "127.0.0.1", method: .tcp, port: 22),
+            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        ])
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(
+            primaryInstanceID: IntegrationInstanceID(rawValue: "ping@missing")
+        )
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: config,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[1].id)
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+    }
+
+    @MainActor
     func testExplicitAllHostsPingSurfaceBuildsCombinedLatencyGraphAndLoadsEverySeries() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
@@ -1591,6 +1653,22 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertNil(store.config.slotOverrides[slotID]?.selectedInstanceID)
         XCTAssertEqual(store.config.slotOverrides[slotID]?.showsAllInstances, true)
         XCTAssertNil(viewModel.slotFocus[slotID])
+    }
+
+    @MainActor
+    func testSetSlotPrimaryInstancePersistsAndResetsCleanly() {
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+        let slotID = SlotID(rawValue: "ping")
+        let hostID = IntegrationInstanceID(rawValue: "ping@1.1.1.1:443")
+
+        viewModel.setSlotPrimaryInstance(slotID, hostID)
+
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.primaryInstanceID, hostID)
+
+        viewModel.setSlotPrimaryInstance(slotID, nil)
+
+        XCTAssertNil(store.config.slotOverrides[slotID])
     }
 
     func testHistoryExportRowsMapPresentationSettingsDescriptorsAndSamples() {

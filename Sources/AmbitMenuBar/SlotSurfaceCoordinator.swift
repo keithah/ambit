@@ -40,7 +40,7 @@ final class SlotSurfaceCoordinator {
         let override = config.slotOverrides[slot.id]
         let defaultFocusID = Self.defaultPingFocusID(
             records: resolvedRecords,
-            primaryPingInstanceID: primaryPingInstanceID
+            primaryPingInstanceID: override?.primaryInstanceID ?? primaryPingInstanceID
         )
         let requestedFocusID = slotFocus[slot.id] ?? override?.selectedInstanceID
         let validRequestedFocusID = requestedFocusID.flatMap { id in
@@ -190,6 +190,7 @@ final class SlotSurfaceCoordinator {
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
             selectedInstanceID: selectedInstanceID,
+            primaryInstanceID: headlineRecordID,
             hostOptions: hostOptions
         )
     }
@@ -310,6 +311,7 @@ enum StatusSlotSurfaceBuilder {
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
             selectedInstanceID: nil,
+            primaryInstanceID: nil,
             hostOptions: []
         )
     }

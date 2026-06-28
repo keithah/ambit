@@ -107,8 +107,12 @@ struct SlotPopover: View {
                     InstanceSelectorCard(
                         options: surface.hostOptions,
                         selectedID: focus?.rawValue,
+                        primaryID: surface.primaryInstanceID?.rawValue,
                         onSelect: { rawID in
                             viewModel.selectInstance(slotID, rawID.map { IntegrationInstanceID(rawValue: $0) })
+                        },
+                        onSetPrimary: { rawID in
+                            viewModel.setSlotPrimaryInstance(slotID, IntegrationInstanceID(rawValue: rawID))
                         },
                         allLabel: "All Hosts"
                     )

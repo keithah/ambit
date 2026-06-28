@@ -18,6 +18,7 @@ final class PresentationConfigTests: XCTestCase {
             shownItems: [SurfaceItemID(rawValue: "entity:system@local/overview.cpu_usage_percent")],
             hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:segments")],
             selectedInstanceID: IntegrationInstanceID(rawValue: "system@local"),
+            primaryInstanceID: IntegrationInstanceID(rawValue: "system@local"),
             showsAllInstances: false
         )
         let data = try JSONEncoder().encode(c)
@@ -39,6 +40,7 @@ final class PresentationConfigTests: XCTestCase {
         let override = try JSONDecoder().decode(SlotPresentationOverride.self, from: json)
 
         XCTAssertNil(override.selectedInstanceID)
+        XCTAssertNil(override.primaryInstanceID)
         XCTAssertFalse(override.showsAllInstances)
     }
 }
