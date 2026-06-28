@@ -88,8 +88,10 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertTrue(result.changed)
         XCTAssertEqual(result.records.map(\.id.rawValue), [
             "ping@1.1.1.1:443",
-            "ping@192.168.8.1"
+            "ping@gateway"
         ])
+        let gateway = result.records[1]
+        XCTAssertEqual(PingHostConfig(configObject: gateway.config)?.address, "192.168.8.1")
     }
 
     func testGatewaySeedReconciliationAddsCurrentGatewayWhenMissing() {
@@ -103,8 +105,59 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertTrue(result.changed)
         XCTAssertEqual(result.records.map(\.id.rawValue), [
             "ping@1.1.1.1:443",
-            "ping@192.168.8.1"
+            "ping@gateway"
         ])
+    }
+
+    func testGatewaySeedReconciliationUpdatesStableGatewayAddressInPlace() {
+        let gateway = IntegrationInstanceRecord(
+            id: "ping@gateway",
+            integrationID: IntegrationIDs.ping,
+            displayName: "Gateway",
+            enabled: true,
+            origin: .user,
+            config: PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp).asConfigObject()
+        )
+
+        let result = StatusViewModel.reconciledGatewaySeedRecords(
+            [gateway],
+            currentGateway: "192.168.8.1"
+        )
+
+        XCTAssertTrue(result.changed)
+        XCTAssertEqual(result.records.map(\.id.rawValue), ["ping@gateway"])
+        XCTAssertEqual(PingHostConfig(configObject: result.records[0].config)?.address, "192.168.8.1")
+    }
+
+    @MainActor
+    func testGatewayRedetectMigratesPrimaryAndSlotFocusToStableGatewayID() async throws {
+        let oldGateway = IntegrationInstanceRecord.ping(PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp))
+        let registry = InMemoryIntegrationRegistry(records: [oldGateway], primary: oldGateway.id)
+        let slotID = SlotID(rawValue: "ping")
+        var config = PresentationConfig.empty
+        config.slots = [Slot(id: slotID, title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)]
+        config.slotOverrides[slotID] = SlotPresentationOverride(
+            selectedInstanceID: oldGateway.id,
+            primaryInstanceID: oldGateway.id
+        )
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: "192.168.8.1"),
+            configStore: store
+        )
+
+        await viewModel.handleNetworkConfigurationChanged()
+
+        let records = try registry.instances()
+        XCTAssertEqual(records.map(\.id.rawValue), ["ping@gateway"])
+        XCTAssertEqual(PingHostConfig(configObject: records[0].config)?.address, "192.168.8.1")
+        XCTAssertEqual(try registry.primaryInstanceID(), IntegrationInstanceID(rawValue: "ping@gateway"))
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.selectedInstanceID, IntegrationInstanceID(rawValue: "ping@gateway"))
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.primaryInstanceID, IntegrationInstanceID(rawValue: "ping@gateway"))
     }
 
     func testLatencyStateBackfillsNilCurrentValueFromLatestHistorySample() {
@@ -1934,4 +1987,16 @@ private final class MemoryInstalledProviderStore: InstalledProviderStore, @unche
 
 private struct StaticRouterAddressDiscovery: RouterAddressDiscovery {
     func defaultGatewayHost() async -> String? { nil }
+}
+
+private final class MutableRouterAddressDiscovery: RouterAddressDiscovery, @unchecked Sendable {
+    var defaultGateway: String?
+
+    init(defaultGateway: String?) {
+        self.defaultGateway = defaultGateway
+    }
+
+    func defaultGatewayHost() async -> String? {
+        defaultGateway
+    }
 }

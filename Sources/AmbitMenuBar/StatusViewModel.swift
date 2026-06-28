@@ -271,31 +271,58 @@ final class StatusViewModel: ObservableObject {
         _ records: [IntegrationInstanceRecord],
         currentGateway: String
     ) -> (records: [IntegrationInstanceRecord], changed: Bool) {
-        let currentHost = PingHostConfig(displayName: "Gateway", address: currentGateway, method: .icmp)
-        let currentID = currentHost.integrationInstanceID
         var changed = false
         var reconciled: [IntegrationInstanceRecord] = []
-        var hasCurrentGateway = false
+        var insertedGateway = false
 
         for record in records {
             guard Self.isAutoSeededGateway(record) else {
                 reconciled.append(record)
                 continue
             }
-            if record.id == currentID {
-                reconciled.append(record)
-                hasCurrentGateway = true
+            let stableRecord = Self.autoGatewayRecord(currentGateway: currentGateway, preserving: record)
+            if !insertedGateway {
+                reconciled.append(stableRecord)
+                insertedGateway = true
             } else {
+                changed = true
+            }
+            if stableRecord != record {
                 changed = true
             }
         }
 
-        if !hasCurrentGateway {
-            reconciled.append(.ping(currentHost))
+        if !insertedGateway {
+            reconciled.append(Self.autoGatewayRecord(currentGateway: currentGateway, preserving: nil))
             changed = true
         }
 
         return (reconciled, changed)
+    }
+
+    nonisolated static var autoGatewayInstanceID: IntegrationInstanceID {
+        IntegrationInstanceID(rawValue: "ping@gateway")
+    }
+
+    nonisolated private static func autoGatewayRecord(
+        currentGateway: String,
+        preserving existing: IntegrationInstanceRecord?
+    ) -> IntegrationInstanceRecord {
+        var host = existing
+            .flatMap { PingHostConfig(configObject: $0.config, displayNameFallback: $0.displayName) }
+            ?? PingHostConfig(displayName: "Gateway", address: currentGateway, method: .icmp)
+        host.displayName = "Gateway"
+        host.address = currentGateway
+        host.method = .icmp
+        host.port = nil
+        return IntegrationInstanceRecord(
+            id: autoGatewayInstanceID,
+            integrationID: IntegrationIDs.ping,
+            displayName: "Gateway",
+            enabled: existing?.enabled ?? true,
+            origin: existing?.origin ?? .user,
+            config: host.asConfigObject()
+        )
     }
 
     nonisolated private static func isAutoSeededGateway(_ record: IntegrationInstanceRecord) -> Bool {
@@ -306,18 +333,59 @@ final class StatusViewModel: ObservableObject {
         return host.displayName == "Gateway" && host.method == .icmp && host.port == nil
     }
 
-    /// Detect the default gateway and add it as a third pingscope host (ICMP — truest hop
-    /// latency, no port guessing) via the registry-add + reload path. Idempotent: skips if a
-    /// host for that target already exists.
-    private func seedGatewayHostIfNeeded() async {
-        guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return }
+    /// Detect the default gateway and add/update the stable auto gateway pingscope host (ICMP —
+    /// truest hop latency, no port guessing) via the registry-add + reload path.
+    @discardableResult
+    private func seedGatewayHostIfNeeded() async -> Bool {
+        guard let gateway = await addressDiscovery.defaultGatewayHost(), !gateway.isEmpty else { return false }
         let all = (try? integrationRegistry.instances()) ?? []
+        let migratedGatewayIDs = Set(all.filter(Self.isAutoSeededGateway).map(\.id))
+            .subtracting([Self.autoGatewayInstanceID])
         let result = Self.reconciledGatewaySeedRecords(all, currentGateway: gateway)
-        guard result.changed else { return }
+        guard result.changed else { return false }
         try? integrationRegistry.save(result.records)
+        migrateAutoGatewayReferences(from: migratedGatewayIDs)
         await engine.reloadProviders()
         await refreshAlertRules()
         await engine.refresh()
+        return true
+    }
+
+    private func migrateAutoGatewayReferences(from oldIDs: Set<IntegrationInstanceID>) {
+        guard !oldIDs.isEmpty else { return }
+        if let primary = try? integrationRegistry.primaryInstanceID(), oldIDs.contains(primary) {
+            try? integrationRegistry.setPrimaryInstanceID(Self.autoGatewayInstanceID)
+        }
+        var config = configStore.load()
+        var changed = false
+        for (slotID, var override) in config.slotOverrides {
+            if let selected = override.selectedInstanceID, oldIDs.contains(selected) {
+                override.selectedInstanceID = Self.autoGatewayInstanceID
+                changed = true
+            }
+            if let primary = override.primaryInstanceID, oldIDs.contains(primary) {
+                override.primaryInstanceID = Self.autoGatewayInstanceID
+                changed = true
+            }
+            if override.isEmpty {
+                config.slotOverrides.removeValue(forKey: slotID)
+            } else {
+                config.slotOverrides[slotID] = override
+            }
+        }
+        for (slotID, focus) in slotFocus where oldIDs.contains(focus) {
+            slotFocus[slotID] = Self.autoGatewayInstanceID
+        }
+        if changed {
+            configStore.save(config)
+            rebuildPresentationSettings(config: config)
+        }
+    }
+
+    func handleNetworkConfigurationChanged() async {
+        await seedGatewayHostIfNeeded()
+        await engine.pollNow()
+        await refreshPing()
     }
 
     func start() {
