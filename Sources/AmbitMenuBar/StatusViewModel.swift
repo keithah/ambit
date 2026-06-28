@@ -8,6 +8,12 @@ enum IntegrationInstanceDraftError: Error, Equatable {
     case invalidValues
 }
 
+struct LocalNetworkPermissionHintRow: Equatable, Identifiable, Sendable {
+    var id: String { title }
+    var title: String
+    var detail: String
+}
+
 private extension EntityPresentationOverride {
     var isEmpty: Bool {
         visibility == nil &&
@@ -990,6 +996,24 @@ final class StatusViewModel: ObservableObject {
 
     func openNotificationSettings() {
         notificationSettingsOpener.openNotificationSettings()
+    }
+
+    func localNetworkPermissionHints() -> [LocalNetworkPermissionHintRow] {
+        let records = (try? integrationRegistry.instances()) ?? []
+        return Self.localNetworkPermissionHints(records: records)
+    }
+
+    nonisolated static func localNetworkPermissionHints(records: [IntegrationInstanceRecord]) -> [LocalNetworkPermissionHintRow] {
+        records.compactMap { record in
+            guard record.enabled,
+                  let host = PingHostConfig(configObject: record.config, displayNameFallback: record.displayName),
+                  LocalNetworkPrivacyHint.requiresLocalNetworkPermission(host: host.address)
+            else { return nil }
+            return LocalNetworkPermissionHintRow(
+                title: host.displayName,
+                detail: LocalNetworkPrivacyHint.guidance(for: host.displayName, host: host.address)
+            )
+        }
     }
 
     func setStartAtLoginEnabled(_ enabled: Bool) async {

@@ -217,10 +217,37 @@ private struct AppSettingsDetail: View {
                     .foregroundStyle(.secondary)
             }
 
+            localNetworkHints
+
             Spacer()
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var localNetworkHints: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Local Network Access")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            let hints = viewModel.localNetworkPermissionHints()
+            if hints.isEmpty {
+                Text("No local-network targets are configured.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(hints) { hint in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(hint.title)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(hint.detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 
     private var startAtLoginBinding: Binding<Bool> {
