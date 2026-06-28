@@ -81,11 +81,18 @@ private final class MenuBarAppModel: ObservableObject {
             settingsController?.show()
         }
         viewModel.start()
-        // On system wake, kick a fresh poll cycle — a probe in flight at sleep is wedged and the
-        // inter-cycle sleep won't have advanced. (Core stays UI-free; NSWorkspace lives here.)
+        // On sleep, cancel any in-flight bounded cycle; on wake, re-detect the gateway before
+        // kicking a fresh poll. Core stays UI-free; NSWorkspace lives here.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak viewModel] _ in MainActor.assumeIsolated { viewModel?.handleSystemWillSleep() } }
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak viewModel] _ in MainActor.assumeIsolated { viewModel?.kickPoll() } }
+        ) { [weak viewModel] _ in
+            Task { @MainActor in
+                await viewModel?.handleSystemDidWake()
+            }
+        }
         NSApp.setActivationPolicy(.accessory)
     }
 }

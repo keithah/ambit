@@ -314,6 +314,13 @@ public actor Engine {
         sleepTask?.cancel()
     }
 
+    /// Called from the macOS sleep notification path. Cancel the bounded in-flight cycle without
+    /// requesting an immediate replacement cycle; wake will explicitly re-detect network state and
+    /// call `pollNow()`.
+    public func prepareForSleep() {
+        cycleTask?.cancel()
+    }
+
     /// Loop cadence = the fastest registered provider's interval (≥1s floor), so a 2s
     /// pingscope host is polled every 2s even when settings.pollInterval is larger. The
     /// per-provider throttle still gates slower providers to their own intervals.

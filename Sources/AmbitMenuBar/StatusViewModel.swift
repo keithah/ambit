@@ -395,6 +395,14 @@ final class StatusViewModel: ObservableObject {
         await refreshPing()
     }
 
+    func handleSystemWillSleep() {
+        Task { await engine.prepareForSleep() }
+    }
+
+    func handleSystemDidWake() async {
+        await handleNetworkConfigurationChanged()
+    }
+
     func start() {
         guard subscriptionTask == nil else { return }
         subscriptionTask = Task { [weak self] in

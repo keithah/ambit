@@ -147,7 +147,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             installedProviderStore: MemoryInstalledProviderStore(),
             integrationRegistry: registry,
             addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: "192.168.8.1"),
-            configStore: store
+            configStore: store,
+            notificationDeliverer: NoopNotificationDeliverer()
         )
 
         await viewModel.handleNetworkConfigurationChanged()
@@ -174,6 +175,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             integrationRegistry: registry,
             addressDiscovery: discovery,
             configStore: MemoryPresentationConfigStore(),
+            notificationDeliverer: NoopNotificationDeliverer(),
             networkChangeSource: networkSource
         )
         viewModel.start()
@@ -185,6 +187,35 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertTrue(networkSource.started)
         XCTAssertEqual(records.map(\.id.rawValue), ["ping@1.1.1.1:443", "ping@gateway"])
         XCTAssertEqual(PingHostConfig(configObject: records[1].config)?.address, "192.168.8.1")
+    }
+
+    @MainActor
+    func testSystemWakeRedetectsGatewayBeforePolling() async throws {
+        let gateway = IntegrationInstanceRecord(
+            id: "ping@gateway",
+            integrationID: IntegrationIDs.ping,
+            displayName: "Gateway",
+            enabled: true,
+            origin: .user,
+            config: PingHostConfig(displayName: "Gateway", address: "192.168.101.1", method: .icmp).asConfigObject()
+        )
+        let registry = InMemoryIntegrationRegistry(records: [gateway])
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: "192.168.8.1"),
+            configStore: MemoryPresentationConfigStore(),
+            notificationDeliverer: NoopNotificationDeliverer(),
+            networkChangeSource: nil
+        )
+
+        await viewModel.handleSystemDidWake()
+
+        let records = try registry.instances()
+        XCTAssertEqual(records.map(\.id.rawValue), ["ping@gateway"])
+        XCTAssertEqual(PingHostConfig(configObject: records[0].config)?.address, "192.168.8.1")
     }
 
     func testLatencyStateBackfillsNilCurrentValueFromLatestHistorySample() {
@@ -2042,4 +2073,16 @@ private final class TestNetworkChangeSource: NetworkChangeSource {
     func trigger() async {
         await onChange?()
     }
+}
+
+private struct NoopNotificationDeliverer: NotificationDelivering {
+    func authorizationStatus() async -> NotificationAuthorizationStatus {
+        .authorized
+    }
+
+    func requestAuthorization() async -> NotificationAuthorizationStatus {
+        .authorized
+    }
+
+    func deliver(_ intent: NotificationIntent) async throws {}
 }
