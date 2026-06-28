@@ -55,18 +55,6 @@ final class PingDiagnosisCoordinator {
         return PingDiagnosisResult(diagnosis: diagnosis, events: events)
     }
 
-    nonisolated static func alertingEntityIDs(from events: [AlertEvent], candidates: [AttentionCandidate]) -> Set<EntityID> {
-        let candidateIDs = Set(candidates.map(\.descriptor.id))
-        let ids = events.flatMap { event -> [EntityID] in
-            if event.providerID == "ping.network" {
-                return candidateIDs.contains(DiagnosisEntity.entityID) ? [DiagnosisEntity.entityID] : []
-            }
-            let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
-            return candidateIDs.contains(pingLatencyID) ? [pingLatencyID] : []
-        }
-        return Set(ids)
-    }
-
     nonisolated static func diagnosisSensitivity(from records: [IntegrationInstanceRecord]) -> DiagnosisSensitivity {
         let values = records.compactMap { $0.config["diagnosisSensitivity"]?.stringValue }
         if values.contains("aggressive") { return .sensitive }

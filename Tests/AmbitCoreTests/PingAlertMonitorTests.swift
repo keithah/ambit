@@ -21,8 +21,12 @@ final class PingAlertMonitorTests: XCTestCase {
         let recovered = monitor.evaluate(hosts: [host(.healthy)], diagnosis: healthy, now: at(70))
 
         XCTAssertEqual(down.map(\.ruleID), ["ping.hostDown.cf"])
+        XCTAssertEqual(down.first?.target, .entity("cf/probe.latency_ms"))
+        XCTAssertEqual(down.first?.phase, .active)
         XCTAssertTrue(stillDown.isEmpty)                                   // no re-fire while down
         XCTAssertEqual(recovered.map(\.ruleID), ["ping.recovered.cf"])
+        XCTAssertEqual(recovered.first?.target, .entity("cf/probe.latency_ms"))
+        XCTAssertEqual(recovered.first?.phase, .recovered)
         XCTAssertEqual(recovered.first?.severity, .info)
     }
 
@@ -37,6 +41,7 @@ final class PingAlertMonitorTests: XCTestCase {
         var monitor = PingAlertMonitor(sensitivity: .balanced)
         let events = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .high), now: at(0))
         XCTAssertEqual(events.map(\.ruleID), ["ping.upstreamDown"])
+        XCTAssertEqual(events.first?.target, .entity(DiagnosisEntity.entityID))
     }
 
     func testTentativeBalancedFallsBackToInternetLoss() {
@@ -49,6 +54,12 @@ final class PingAlertMonitorTests: XCTestCase {
         var monitor = PingAlertMonitor(sensitivity: .sensitive)
         let events = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .tentative), now: at(0))
         XCTAssertEqual(events.map(\.ruleID), ["ping.upstreamDown"])
+    }
+
+    func testMonitoringStalledNeverAlerts() {
+        var monitor = PingAlertMonitor(sensitivity: .sensitive)
+        let events = monitor.evaluate(hosts: [], diagnosis: diag(.monitoringStalled, .high), now: at(0))
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testTentativeConservativeEmitsNothing() {

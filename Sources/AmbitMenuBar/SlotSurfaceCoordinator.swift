@@ -7,6 +7,7 @@ final class SlotSurfaceCoordinator {
     typealias HistorySamples = (EntityID, Date) async -> [Sample]
 
     private var attentionEngines = SlotAttentionEngines()
+    private let alertTargetResolver = AlertTargetResolver()
 
     func buildSurface(
         slot: Slot,
@@ -120,7 +121,10 @@ final class SlotSurfaceCoordinator {
             guard let state = states[descriptor.id] ?? allStates[descriptor.id] else { return nil }
             return AttentionCandidate(descriptor: descriptor, state: state)
         }
-        let alertingIDs = PingDiagnosisCoordinator.alertingEntityIDs(from: firedAlertEvents, candidates: candidates)
+        let candidateDescriptors = candidates.map(\.descriptor)
+        let alertingIDs = Set(firedAlertEvents.flatMap { event in
+            alertTargetResolver.resolve(event, descriptors: candidateDescriptors)
+        })
         let readout = attentionEngines.resolveReadout(
             slotID: slot.id,
             mode: slot.barReadout,

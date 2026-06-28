@@ -48,10 +48,27 @@ public struct PingAlertMonitor: Sendable {
             lastStatus[host.id] = host.status
             if host.status == .down, previous != nil, previous != .down {
                 if fire("hostDown:\(host.id)", cooldown: host.cooldown, now: now) {
-                    events.append(AlertEvent(ruleID: "ping.hostDown.\(host.id)", providerID: host.id, title: "\(host.name) is down", message: "No response from \(host.name).", severity: .critical, triggeredAt: now))
+                    events.append(AlertEvent(
+                        ruleID: "ping.hostDown.\(host.id)",
+                        providerID: host.id,
+                        target: .entity(Self.latencyEntityID(for: host.id)),
+                        title: "\(host.name) is down",
+                        message: "No response from \(host.name).",
+                        severity: .critical,
+                        triggeredAt: now
+                    ))
                 }
             } else if previous == .down, host.status == .healthy || host.status == .degraded, host.notifyOnRecovery {
-                events.append(AlertEvent(ruleID: "ping.recovered.\(host.id)", providerID: host.id, title: "\(host.name) recovered", message: "\(host.name) is reachable again.", severity: .info, triggeredAt: now))
+                events.append(AlertEvent(
+                    ruleID: "ping.recovered.\(host.id)",
+                    providerID: host.id,
+                    target: .entity(Self.latencyEntityID(for: host.id)),
+                    phase: .recovered,
+                    title: "\(host.name) recovered",
+                    message: "\(host.name) is reachable again.",
+                    severity: .info,
+                    triggeredAt: now
+                ))
             }
         }
         if let event = networkAlert(diagnosis, now: now) { events.append(event) }
@@ -83,7 +100,19 @@ public struct PingAlertMonitor: Sendable {
             }
         }
         guard fire(chosen.type, cooldown: networkCooldown, now: now) else { return nil }
-        return AlertEvent(ruleID: "ping.\(chosen.type)", providerID: "ping.network", title: chosen.title, message: diagnosis.detail, severity: chosen.severity, triggeredAt: now)
+        return AlertEvent(
+            ruleID: "ping.\(chosen.type)",
+            providerID: "ping.network",
+            target: .entity(DiagnosisEntity.entityID),
+            title: chosen.title,
+            message: diagnosis.detail,
+            severity: chosen.severity,
+            triggeredAt: now
+        )
+    }
+
+    private static func latencyEntityID(for hostID: String) -> EntityID {
+        EntityID(rawValue: "\(hostID)/probe.latency_ms")
     }
 
     private static func specific(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> (type: String, title: String, severity: Severity)? {
