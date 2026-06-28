@@ -23,7 +23,13 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "AmbitCheck", dependencies: ["AmbitCore"]),
-        .testTarget(name: "AmbitCoreTests", dependencies: ["AmbitCore", "AmbitMenuBar"]),
+        .testTarget(
+            name: "AmbitCoreTests",
+            dependencies: ["AmbitCore", "AmbitMenuBar"],
+            resources: [
+                .process("Fixtures")
+            ]
+        ),
         .testTarget(name: "AmbitUITests", dependencies: ["AmbitUI", "AmbitCore"])
     ]
 )

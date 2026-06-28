@@ -1,0 +1,419 @@
+[
+  {
+    "events" : [
+      {
+        "message" : "No response from Cloudflare.",
+        "phase" : "active",
+        "providerID" : "cf",
+        "ruleID" : "ping.hostDown.cf",
+        "severity" : "down",
+        "target" : "entity(cf/probe.latency_ms)",
+        "title" : "Cloudflare is down",
+        "triggeredAt" : 1001
+      }
+    ],
+    "id" : "hostDownRecovery.down"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "hostDownRecovery.stillDown"
+  },
+  {
+    "events" : [
+      {
+        "message" : "Cloudflare is reachable again.",
+        "phase" : "recovered",
+        "providerID" : "cf",
+        "ruleID" : "ping.recovered.cf",
+        "severity" : "normal",
+        "target" : "entity(cf/probe.latency_ms)",
+        "title" : "Cloudflare recovered",
+        "triggeredAt" : 1070
+      }
+    ],
+    "id" : "hostDownRecovery.recovered"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "noRecoveryWhenDisabled"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.localNetworkDown",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Local network down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "highConfidence.localNetworkDown"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.ispPathDown",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "ISP path down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "highConfidence.ispPathDown"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.upstreamDown",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Internet unreachable",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "highConfidence.upstreamDown"
+  },
+  {
+    "events" : [
+      {
+        "message" : "No response from cf.",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.remoteServiceDown",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Remote service down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "highConfidence.remoteServiceDown"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "tentative.conservative"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.internetLoss",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Internet problem",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "tentative.balanced"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.upstreamDown",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Internet unreachable",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "tentative.sensitive"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.conservative.first"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.conservative.second"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.conservative.third"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.balanced.first"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.balanced.second"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.pathDegraded",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Upstream degraded",
+        "triggeredAt" : 1002
+      }
+    ],
+    "id" : "pathDegraded.balanced.third"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.sensitive.first"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathDegraded.sensitive.second"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.pathDegraded",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Upstream degraded",
+        "triggeredAt" : 1002
+      }
+    ],
+    "id" : "pathDegraded.sensitive.third"
+  },
+  {
+    "events" : [
+      {
+        "message" : "d",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.upstreamDown",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Internet unreachable",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "networkCooldown.first"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkCooldown.suppressed"
+  },
+  {
+    "events" : [
+      {
+        "message" : "2/2 monitored hosts are unreachable.",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.internetLoss",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Internet problem",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "internetLossSafetyNet"
+  },
+  {
+    "events" : [
+      {
+        "message" : "No response from Cloudflare DNS, Google DNS, +1 more host.",
+        "phase" : "active",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.remoteServiceDown",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Remote service down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "remoteServiceAdditionalHostsCopy"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathRecovered.noPrior"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The monitored network path is reachable again.",
+        "phase" : "recovered",
+        "providerID" : "ping.network",
+        "ruleID" : "ping.pathRecovered",
+        "severity" : "normal",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Network path recovered",
+        "triggeredAt" : 1020
+      }
+    ],
+    "id" : "pathRecovered.afterDelivered"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "pathRecovered.repeated"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The system reports no internet connection.",
+        "phase" : "active",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.noInternet",
+        "severity" : "elevated",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "No internet",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "networkStatus.noInternet.down"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkStatus.noInternet.repeated"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The system network path is connected again.",
+        "phase" : "recovered",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.recovered",
+        "severity" : "normal",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Network path recovered",
+        "triggeredAt" : 1020
+      }
+    ],
+    "id" : "networkStatus.noInternet.recovered"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The network link has no usable IP address.",
+        "phase" : "active",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.noIPAddress",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Local network down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "networkStatus.noIPAddress.down"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkStatus.noIPAddress.repeated"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The system network path is connected again.",
+        "phase" : "recovered",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.recovered",
+        "severity" : "normal",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Network path recovered",
+        "triggeredAt" : 1020
+      }
+    ],
+    "id" : "networkStatus.noIPAddress.recovered"
+  },
+  {
+    "events" : [
+      {
+        "message" : "No network link.",
+        "phase" : "active",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.notConnected",
+        "severity" : "down",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Local network down",
+        "triggeredAt" : 1000
+      }
+    ],
+    "id" : "networkStatus.notConnected.down"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkStatus.notConnected.repeated"
+  },
+  {
+    "events" : [
+      {
+        "message" : "The system network path is connected again.",
+        "phase" : "recovered",
+        "providerID" : "network.path",
+        "ruleID" : "network.status.recovered",
+        "severity" : "normal",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Network path recovered",
+        "triggeredAt" : 1020
+      }
+    ],
+    "id" : "networkStatus.notConnected.recovered"
+  },
+  {
+    "events" : [
+      {
+        "message" : "Gateway changed from 192.168.101.1 to 192.168.8.1.",
+        "phase" : "active",
+        "providerID" : "network.path",
+        "ruleID" : "network.gateway.changed",
+        "severity" : "normal",
+        "target" : "entity(ping.summary.diagnosis)",
+        "title" : "Network changed",
+        "triggeredAt" : 0
+      }
+    ],
+    "id" : "networkChange.gatewayChanged"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkChange.unchanged"
+  }
+]

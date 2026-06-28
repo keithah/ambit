@@ -1,0 +1,75 @@
+{
+  "entityOverrides" : [
+    "ping@gateway/probe.latency_ms",
+    {
+      "enabled" : true,
+      "graphRange" : "m5",
+      "pinned" : true,
+      "visibility" : "always"
+    },
+    "ping@1.1.1.1:443/probe.latency_ms",
+    {
+      "enabled" : true,
+      "graphRange" : "m5",
+      "pinned" : false,
+      "visibility" : "auto"
+    }
+  ],
+  "integrationOverrides" : [
+
+  ],
+  "slotOverrides" : [
+    "system@local",
+    {
+      "hiddenItems" : [
+        "entity:system@local/processes.top_memory"
+      ],
+      "showsAllInstances" : false,
+      "tableRowLimit" : 5
+    },
+    "ping",
+    {
+      "hiddenItems" : [
+        "entity:ping@127.0.0.1:22/probe.latency_ms"
+      ],
+      "primaryInstanceID" : "ping@gateway",
+      "selectedInstanceID" : "ping@1.1.1.1:443",
+      "shownItems" : [
+        "entity:ping@gateway/probe.latency_ms",
+        "history:ping@gateway/probe.latency_ms"
+      ],
+      "showsAllInstances" : false,
+      "tableRowLimit" : 8
+    }
+  ],
+  "slots" : [
+    {
+      "barReadout" : {
+        "dynamic" : {
+
+        }
+      },
+      "id" : "ping",
+      "selection" : {
+        "integrationType" : {
+          "_0" : "ping"
+        }
+      },
+      "title" : "Ping"
+    },
+    {
+      "barReadout" : {
+        "dynamic" : {
+
+        }
+      },
+      "id" : "system@local",
+      "selection" : {
+        "integration" : {
+          "_0" : "system@local"
+        }
+      },
+      "title" : "System"
+    }
+  ]
+}

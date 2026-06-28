@@ -1,0 +1,101 @@
+[
+  {
+    "config" : {
+      "address" : "192.168.8.1",
+      "displayName" : "Gateway",
+      "interval" : 2,
+      "method" : "icmp",
+      "policy" : {
+        "consecutive" : 5,
+        "cooldown" : 300,
+        "enabled" : true,
+        "notifyOnRecovery" : true,
+        "preset" : "balanced",
+        "threshold" : {
+          "comparison" : "greaterThanOrEqual",
+          "value" : 250
+        }
+      },
+      "thresholds" : {
+        "degradedAt" : 100,
+        "downAfterFailures" : 3
+      },
+      "timeout" : 2
+    },
+    "displayName" : "Gateway",
+    "enabled" : true,
+    "id" : "ping@gateway",
+    "integrationID" : "ping",
+    "origin" : "user"
+  },
+  {
+    "config" : {
+      "address" : "1.1.1.1",
+      "displayName" : "Cloudflare DNS",
+      "interval" : 2,
+      "method" : "tcp",
+      "policy" : {
+        "consecutive" : 5,
+        "cooldown" : 300,
+        "enabled" : true,
+        "notifyOnRecovery" : true,
+        "preset" : "balanced",
+        "threshold" : {
+          "comparison" : "greaterThanOrEqual",
+          "value" : 250
+        }
+      },
+      "port" : 443,
+      "thresholds" : {
+        "degradedAt" : 100,
+        "downAfterFailures" : 3
+      },
+      "timeout" : 2
+    },
+    "displayName" : "Cloudflare DNS",
+    "enabled" : true,
+    "id" : "ping@1.1.1.1:443",
+    "integrationID" : "ping",
+    "origin" : "user"
+  },
+  {
+    "config" : {
+      "address" : "127.0.0.1",
+      "displayName" : "Local",
+      "interval" : 2,
+      "method" : "tcp",
+      "policy" : {
+        "consecutive" : 5,
+        "cooldown" : 300,
+        "enabled" : true,
+        "notifyOnRecovery" : true,
+        "preset" : "balanced",
+        "threshold" : {
+          "comparison" : "greaterThanOrEqual",
+          "value" : 250
+        }
+      },
+      "port" : 22,
+      "thresholds" : {
+        "degradedAt" : 100,
+        "downAfterFailures" : 3
+      },
+      "timeout" : 2
+    },
+    "displayName" : "Local",
+    "enabled" : true,
+    "id" : "ping@127.0.0.1:22",
+    "integrationID" : "ping",
+    "origin" : "user"
+  },
+  {
+    "config" : {
+
+    },
+    "displayName" : "System",
+    "enabled" : true,
+    "id" : "system@local",
+    "integrationID" : "system",
+    "origin" : "builtIn"
+  }
+]

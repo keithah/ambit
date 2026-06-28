@@ -1,0 +1,469 @@
+[
+  {
+    "id" : "singleHostDefault",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "card.ping@192.168.8.1/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary",
+          "title" : "Gateway"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "history:ping@192.168.8.1/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        }
+      ],
+      "glyphText" : "3ms",
+      "glyphTone" : "good",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping@192.168.8.1/probe.latency_ms",
+      "primaryInstanceID" : "ping@192.168.8.1",
+      "selectedInstanceID" : "ping@192.168.8.1",
+      "series" : [
+        {
+          "entityID" : "ping@192.168.8.1/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 5,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  },
+  {
+    "id" : "allHostsCombined",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms",
+            "ping@1.1.1.1:443/probe.latency_ms",
+            "ping@127.0.0.1:22/probe.latency_ms"
+          ],
+          "id" : "card.ping@192.168.8.1/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "history:ping@192.168.8.1/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        }
+      ],
+      "glyphText" : "3ms",
+      "glyphTone" : "good",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping@192.168.8.1/probe.latency_ms",
+      "primaryInstanceID" : "ping@192.168.8.1",
+      "series" : [
+        {
+          "entityID" : "ping@1.1.1.1:443/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 26,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        },
+        {
+          "entityID" : "ping@127.0.0.1:22/probe.latency_ms",
+          "failedCount" : 3,
+          "failureXPositions" : [
+            0,
+            50,
+            100
+          ],
+          "metadata" : [
+            "connectionRefused",
+            "timeout"
+          ],
+          "okCount" : 0,
+          "sampleCount" : 3
+        },
+        {
+          "entityID" : "ping@192.168.8.1/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 5,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  },
+  {
+    "id" : "focusedHost",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@1.1.1.1:443/probe.latency_ms"
+          ],
+          "id" : "card.ping@1.1.1.1:443/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary",
+          "title" : "Cloudflare DNS"
+        },
+        {
+          "entities" : [
+            "ping@1.1.1.1:443/probe.latency_ms"
+          ],
+          "id" : "history:ping@1.1.1.1:443/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        }
+      ],
+      "glyphText" : "24ms",
+      "glyphTone" : "good",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping@1.1.1.1:443/probe.latency_ms",
+      "primaryInstanceID" : "ping@1.1.1.1:443",
+      "selectedInstanceID" : "ping@1.1.1.1:443",
+      "series" : [
+        {
+          "entityID" : "ping@1.1.1.1:443/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 26,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  },
+  {
+    "id" : "primaryDown",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "card.ping@192.168.8.1/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary",
+          "title" : "Gateway"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "history:ping@192.168.8.1/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        }
+      ],
+      "glyphText" : "Down",
+      "glyphTone" : "bad",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping@192.168.8.1/probe.latency_ms",
+      "primaryInstanceID" : "ping@192.168.8.1",
+      "selectedInstanceID" : "ping@192.168.8.1",
+      "series" : [
+        {
+          "entityID" : "ping@192.168.8.1/probe.latency_ms",
+          "failedCount" : 2,
+          "failureXPositions" : [
+            50,
+            100
+          ],
+          "metadata" : [
+            "connectFailed",
+            "timeout"
+          ],
+          "okCount" : 1,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  },
+  {
+    "id" : "diagnosisBanner",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "card.ping@192.168.8.1/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary",
+          "title" : "Gateway"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "history:ping@192.168.8.1/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        },
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.State",
+          "kind" : "section",
+          "role" : "secondary",
+          "title" : "State"
+        },
+        {
+          "entities" : [
+            "ping.summary.diagnosis"
+          ],
+          "id" : "card.ping.summary.diagnosis",
+          "kind" : "statusBanner",
+          "role" : "banner",
+          "title" : "Local network down"
+        }
+      ],
+      "glyphText" : "1/1 gateway host(s) unreachable.",
+      "glyphTone" : "bad",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping.summary.diagnosis",
+      "primaryInstanceID" : "ping@192.168.8.1",
+      "selectedInstanceID" : "ping@192.168.8.1",
+      "series" : [
+        {
+          "entityID" : "ping@192.168.8.1/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 5,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  },
+  {
+    "id" : "recovered",
+    "snapshot" : {
+      "cards" : [
+        {
+          "entities" : [
+
+          ],
+          "id" : "section.Network",
+          "kind" : "section",
+          "role" : "primary",
+          "title" : "Network"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "card.ping@192.168.8.1/probe.latency_ms",
+          "kind" : "historyGraph",
+          "role" : "primary",
+          "title" : "Gateway"
+        },
+        {
+          "entities" : [
+            "ping@192.168.8.1/probe.latency_ms"
+          ],
+          "id" : "history:ping@192.168.8.1/probe.latency_ms",
+          "kind" : "sampleHistory",
+          "role" : "secondary"
+        }
+      ],
+      "glyphText" : "3ms",
+      "glyphTone" : "good",
+      "hostOptions" : [
+        {
+          "id" : "ping@192.168.8.1",
+          "label" : "Gateway",
+          "subtitle" : "ICMP 192.168.8.1"
+        },
+        {
+          "id" : "ping@1.1.1.1:443",
+          "label" : "Cloudflare DNS",
+          "subtitle" : "TCP 1.1.1.1"
+        },
+        {
+          "id" : "ping@127.0.0.1:22",
+          "label" : "Local",
+          "subtitle" : "TCP 127.0.0.1"
+        }
+      ],
+      "primaryEntityID" : "ping@192.168.8.1/probe.latency_ms",
+      "primaryInstanceID" : "ping@192.168.8.1",
+      "selectedInstanceID" : "ping@192.168.8.1",
+      "series" : [
+        {
+          "entityID" : "ping@192.168.8.1/probe.latency_ms",
+          "failedCount" : 0,
+          "failureXPositions" : [
+
+          ],
+          "latestValue" : 5,
+          "metadata" : [
+
+          ],
+          "okCount" : 3,
+          "sampleCount" : 3
+        }
+      ]
+    }
+  }
+]
