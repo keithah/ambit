@@ -27,6 +27,14 @@ public struct SurfaceData {
 
     public func title(_ id: EntityID) -> String { descriptors[id]?.name ?? id.rawValue }
     public func samples(_ id: EntityID) -> [Sample] { series[id] ?? [] }
+    public func summaryEntityID(for ids: [EntityID]) -> EntityID? {
+        guard !ids.isEmpty else { return nil }
+        if let primaryEntityID, ids.contains(primaryEntityID) {
+            return primaryEntityID
+        }
+        return ids.count == 1 ? ids[0] : ids.first
+    }
+
     public func graphLines(_ ids: [EntityID]) -> [GraphLine] {
         let emphasizedID = primaryEntityID ?? ids.first
         return ids.enumerated().map { index, id in
@@ -104,9 +112,11 @@ public struct CardView: View {
             if !spec.entities.isEmpty {
                 let descriptor = spec.entities.first.flatMap { data.descriptors[$0] }
                 let lines = data.graphLines(spec.entities)
-                let summary = spec.entities.count == 1
-                    ? GraphSummary.summary(samples: data.samples(spec.entities[0]), deviceClass: descriptor?.deviceClass, unit: descriptor?.unit)
-                    : []
+                let summaryEntityID = data.summaryEntityID(for: spec.entities)
+                let summaryDescriptor = summaryEntityID.flatMap { data.descriptors[$0] } ?? descriptor
+                let summary = summaryEntityID.map {
+                    GraphSummary.summary(samples: data.samples($0), deviceClass: summaryDescriptor?.deviceClass, unit: summaryDescriptor?.unit)
+                } ?? []
                 HistoryGraphCard(title: spec.title ?? "",
                                  lines: lines,
                                  axis: data.graphAxis(spec.entities),

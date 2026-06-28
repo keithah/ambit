@@ -41,4 +41,19 @@ final class SurfaceDataTests: XCTestCase {
         XCTAssertEqual(lines[0].color, Theme.lineColor(0))
         XCTAssertEqual(lines[1].color, Theme.lineColor(1))
     }
+
+    func testMultiSeriesSummaryBindsToPrimaryEntityNotCombinedSamples() {
+        let a = EntityID(rawValue: "i/p.a")
+        let b = EntityID(rawValue: "i/p.b")
+        let data = SurfaceData(
+            descriptors: [:],
+            states: [:],
+            series: [:],
+            primaryEntityID: b
+        )
+
+        XCTAssertEqual(data.summaryEntityID(for: [a, b]), b)
+        XCTAssertEqual(data.summaryEntityID(for: [a]), a)
+        XCTAssertNil(data.summaryEntityID(for: []))
+    }
 }
