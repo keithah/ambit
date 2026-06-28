@@ -75,7 +75,8 @@ public struct PingProvider: Provider {
                 id: EntityProjection.entityID(instance, "latency_ms"), instanceID: instance, name: "Latency",
                 kind: .sensor, deviceClass: .latency, category: .primary, capability: "uplink",
                 access: .read, unit: "ms", stateClass: .measurement, metricID: "latency_ms",
-                isPrimary: true
+                isPrimary: true,
+                monitoring: monitoringMetadata()
             ),
             EntityProjection.healthDescriptor(instanceID: instance),
             config("address", "Address"),
@@ -86,6 +87,32 @@ public struct PingProvider: Provider {
             config("degraded_ms", "Degraded Threshold"),
             config("down_after_failures", "Down After Failures")
         ]
+    }
+
+    private func monitoringMetadata() -> MonitoringMetadata {
+        let derivedRole = AddressClassifier.derivedRole(for: host.address)
+        let explicitRole = host.tier.map(Self.role(for:))
+        return MonitoringMetadata(
+            role: explicitRole ?? derivedRole,
+            perspectiveID: "ping.default",
+            alertKindIDs: ["ping.hostDown"],
+            diagnosticSummary: .member,
+            address: MonitoredAddress(rawValue: host.address),
+            roleAssignment: MonitoringRoleAssignment(
+                explicitRole: explicitRole,
+                derivedRole: derivedRole,
+                source: explicitRole == nil ? .addressClassifier : .explicit
+            )
+        )
+    }
+
+    private static func role(for tier: NetworkTier) -> MonitoringRole {
+        switch tier {
+        case .localGateway: return .localGateway
+        case .ispEdge: return .accessNetwork
+        case .upstream: return .upstreamInternet
+        case .remoteService: return .remoteService
+        }
     }
 }
 

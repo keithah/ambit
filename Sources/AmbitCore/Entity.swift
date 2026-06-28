@@ -32,6 +32,7 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
     public var isPrimary: Bool
     public var priority: Int?
     public var compositionRole: EntityCompositionRole?
+    public var monitoring: MonitoringMetadata?
 
     public init(
         id: EntityID,
@@ -55,7 +56,8 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         defaultGraphRange: GraphRange? = nil,
         isPrimary: Bool = false,
         priority: Int? = nil,
-        compositionRole: EntityCompositionRole? = nil
+        compositionRole: EntityCompositionRole? = nil,
+        monitoring: MonitoringMetadata? = nil
     ) {
         self.id = id
         self.instanceID = instanceID
@@ -79,6 +81,7 @@ public struct EntityDescriptor: Equatable, Identifiable, Sendable {
         self.isPrimary = isPrimary
         self.priority = priority
         self.compositionRole = compositionRole
+        self.monitoring = monitoring
     }
 }
 

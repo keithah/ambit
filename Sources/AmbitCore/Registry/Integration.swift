@@ -20,10 +20,28 @@ public protocol Integration: Sendable {
     /// Alert rules this integration contributes for one configured instance (e.g. pingscope's
     /// per-host high-latency rule from its AlertPolicy). Default: none.
     func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule]
+
+    /// Monitoring perspectives this integration declares for one configured instance. Additive
+    /// Phase-A vocabulary; the live diagnosis engine does not consume this until the cutover.
+    func monitoringPerspectives(
+        instance: IntegrationInstanceRecord,
+        descriptors: [EntityDescriptor],
+        states: [EntityID: EntityState]
+    ) -> [MonitoringPerspective]
+
+    /// Declaration-driven alert kinds contributed by this integration. Additive until the alert
+    /// state-machine cutover.
+    func alertKindDeclarations(instance: IntegrationInstanceRecord) -> [AlertKindDeclaration]
 }
 
 public extension Integration {
     var isMultiInstance: Bool { false }
     var configSchema: IntegrationConfigSchema? { nil }
     func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] { [] }
+    func monitoringPerspectives(
+        instance: IntegrationInstanceRecord,
+        descriptors: [EntityDescriptor],
+        states: [EntityID: EntityState]
+    ) -> [MonitoringPerspective] { [] }
+    func alertKindDeclarations(instance: IntegrationInstanceRecord) -> [AlertKindDeclaration] { [] }
 }
