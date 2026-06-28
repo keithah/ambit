@@ -165,13 +165,25 @@ aggregator/viewport, never the coordinator.
   + `AlertNotificationService` with global delivery; `EntityAlertPolicy` is generic with migration from the
   old latency-shaped policy; recovery notifications only follow a delivered active alert and respect cooldown;
   per-slot attention promotion uses resolved entity IDs; and legacy Starlink/VPN/EcoFlow default rules were
-  removed in favor of integration/manifest-owned targets. N7 caveat: service and adapter behavior are covered
-  by tests and live alert/attention promotion; real macOS banner delivery is environment-limited in the ad-hoc
-  dev bundle, so manual Notification Center inspection is the final OS confirmation.
-- Current master: **611 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+  removed in favor of integration/manifest-owned targets.
+- **Floating overlay generalization complete** — merged on master: the overlay now targets a selected slot
+  instead of `slots.first`; uses the selected slot's `SlotSurface`, `SlotReadoutSelector` result, and generic
+  `SurfaceView` cards; opens the selected slot's popover; and exposes slot/focus menus without integration-id
+  branches. Ping keeps its existing overlay behavior when selected, and System can be selected as a generic
+  overlay surface.
+- **Generic presentation core is feature-complete for Ping + System.** The full path is now proven end to end:
+  `EntityDescriptor`/`EntityState` → `EntityEnricher` → per-slot `AttentionEngine` → `SlotReadoutSelector` →
+  `SurfaceComposer` → generic `CardSpec` vocabulary → `AmbitUI`; settings are schema/override-driven
+  (`IntegrationConfigSchema`, `EntityPresentationOverride`, `SlotPresentationOverride`,
+  `PresentationSettingsModel`); history, export, alerting, Available Items, and overlay reuse the same generic
+  primitives.
+- **Manual verification caveats:** notification service + adapter behavior are covered by tests and live
+  alert/attention promotion, and the overlay is covered by pure selection/rendering tests. OS notification
+  banners and overlay-window capture are environment-limited in the ad-hoc dev build — confirm manually.
+- Current master: **613 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
-  multi-host ping surfaces, and generic entity-targeted notifications.
+  multi-host ping surfaces, generic entity-targeted notifications, and a generic selected-slot overlay.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -181,7 +193,7 @@ aggregator/viewport, never the coordinator.
 ## 6. Roadmap (presentation program)
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
-  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓.
+  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓, Floating Overlay ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -212,9 +224,20 @@ aggregator/viewport, never the coordinator.
   UI-independent service with an injectable macOS adapter; alert policy is device-class-neutral and surfaced
   through the generic advanced settings; recovery/cooldown semantics are phase-based; per-slot attention receives
   resolved candidate-local alert IDs; and legacy disabled-provider default rules are gone.
-- **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
-  `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
-  real packaging.
+- **Floating Overlay: complete.** The floating overlay is a generic selected-slot glance surface. It is no
+  longer Ping-coupled, no longer assumes the first slot, and renders compact cards from the selected slot's
+  existing `SlotSurface`. Slot focus remains generic and appears only when the selected slot exposes focus
+  options.
+- **Core feature-complete checkpoint:** the four queued core areas are done on top of the earlier System
+  dashboard, Available Items, and history/graph-fidelity work: core architecture hardening, multi-host ping
+  parity, notifications & alerts, and floating-overlay generalization. Ambit's generic presentation core is ready
+  for additional integrations without adding bespoke UI.
+- **Dev test artifacts:** `ping@1.1.1.1:443` (Cloudflare TCP) is intentionally present in the `tv.kodi.ambit`
+  registry for multi-host eyeballs. `ping@127.0.0.1:22` ("Local") is the user's pre-existing failing host
+  (SSH closed) and intentionally exercises down/failure rendering.
+- **Remaining major milestones (explicitly deferred, not started):** device integrations rebuilt against the
+  proven shape (`gl.inet` first; needs the secure config field), multi-engine topology (Phase 3), iOS/widgets/
+  Live Activity, and real packaging.
 
 ---
 
