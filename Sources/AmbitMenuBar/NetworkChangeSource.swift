@@ -3,9 +3,28 @@ import Foundation
 import Network
 
 struct NetworkPathSnapshot: Equatable, Sendable {
+    enum Status: Equatable, Sendable {
+        case satisfied
+        case requiresConnection
+        case unsatisfied
+    }
+
     var connectivityStatus: NetworkConnectivityStatus
 
     static let connected = NetworkPathSnapshot(connectivityStatus: .connected)
+
+    static func classify(status: Status, supportsIPv4: Bool, supportsIPv6: Bool) -> NetworkPathSnapshot {
+        switch status {
+        case .satisfied:
+            return supportsIPv4 || supportsIPv6
+                ? .connected
+                : NetworkPathSnapshot(connectivityStatus: .noIPAddress)
+        case .requiresConnection:
+            return NetworkPathSnapshot(connectivityStatus: .noInternet)
+        case .unsatisfied:
+            return NetworkPathSnapshot(connectivityStatus: .notConnected)
+        }
+    }
 }
 
 @MainActor
@@ -42,15 +61,17 @@ final class NWPathNetworkChangeSource: NetworkChangeSource {
     }
 
     nonisolated private static func snapshot(from path: NWPath) -> NetworkPathSnapshot {
+        let status: NetworkPathSnapshot.Status
         switch path.status {
         case .satisfied:
-            return .connected
+            status = .satisfied
         case .requiresConnection:
-            return NetworkPathSnapshot(connectivityStatus: .noInternet)
+            status = .requiresConnection
         case .unsatisfied:
-            return NetworkPathSnapshot(connectivityStatus: .notConnected)
+            status = .unsatisfied
         @unknown default:
-            return NetworkPathSnapshot(connectivityStatus: .notConnected)
+            status = .unsatisfied
         }
+        return NetworkPathSnapshot.classify(status: status, supportsIPv4: path.supportsIPv4, supportsIPv6: path.supportsIPv6)
     }
 }

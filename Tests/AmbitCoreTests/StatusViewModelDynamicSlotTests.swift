@@ -620,6 +620,42 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(result.events.map(\.ruleID), ["ping.internetLoss"])
     }
 
+    func testNetworkPathSnapshotClassifiesSatisfiedPathWithoutUsableIPAsNoIPAddress() {
+        let snapshot = NetworkPathSnapshot.classify(status: .satisfied, supportsIPv4: false, supportsIPv6: false)
+
+        XCTAssertEqual(snapshot.connectivityStatus, .noIPAddress)
+    }
+
+    @MainActor
+    func testPingDiagnosisCoordinatorUsesNoIPOverrideRegardlessOfHostSamples() async {
+        let coordinator = PingDiagnosisCoordinator()
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let record = IntegrationInstanceRecord.ping(host)
+        let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let snapshot = StatusSnapshot(
+            providers: [
+                providerInstance: SourceState(value: ProviderSnapshot(
+                    health: .degraded,
+                    metrics: [Metric(id: "latency_ms", label: "Latency", value: .latency(ms: 900))]
+                ))
+            ]
+        )
+
+        let result = await coordinator.evaluate(
+            activeRecords: [record],
+            snapshot: snapshot,
+            networkStatus: .noIPAddress,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { [now] _, _ in [Sample(timestamp: now, value: 900, ok: true)] }
+        )
+
+        XCTAssertEqual(result.diagnosis.verdict, .localNetworkDown)
+        XCTAssertEqual(result.diagnosis.title, "Local network down")
+        XCTAssertEqual(result.diagnosis.detail, "No network link.")
+        XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
+    }
+
     @MainActor
     func testDefaultPingSurfaceFocusesPrimaryHostInsteadOfAllHosts() async {
         let coordinator = SlotSurfaceCoordinator()
