@@ -198,6 +198,10 @@ private struct IntegrationSettingsDetail: View {
 
 private struct AppSettingsDetail: View {
     @EnvironmentObject private var viewModel: StatusViewModel
+    @State private var notificationStatus: NotificationAuthorizationStatus = .unavailable
+    @State private var notificationMessage: String?
+    @State private var isRequestingNotifications = false
+    @State private var isSendingTestNotification = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -208,14 +212,18 @@ private struct AppSettingsDetail: View {
                     .foregroundStyle(.secondary)
             }
 
-            Toggle("Start Ambit at login", isOn: startAtLoginBinding)
-                .toggleStyle(.switch)
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle("Start Ambit at login", isOn: startAtLoginBinding)
+                    .toggleStyle(.switch)
 
-            if let message = viewModel.startAtLoginMessage {
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                if let message = viewModel.startAtLoginMessage {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
             }
+
+            notificationControls
 
             localNetworkHints
 
@@ -223,6 +231,32 @@ private struct AppSettingsDetail: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { refreshNotificationStatus() }
+    }
+
+    private var notificationControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Notifications")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("Status: \(notificationStatus.label)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button("Allow Notifications") { requestNotifications() }
+                    .disabled(isRequestingNotifications || notificationStatus == .authorized || notificationStatus == .provisional)
+                Button("Send Test") { sendTestNotification() }
+                    .disabled(isSendingTestNotification)
+                Button("Open Notification Settings") {
+                    viewModel.openNotificationSettings()
+                }
+            }
+            if let notificationMessage {
+                Text(notificationMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var localNetworkHints: some View {
@@ -247,6 +281,34 @@ private struct AppSettingsDetail: View {
                     }
                 }
             }
+        }
+    }
+
+    private func refreshNotificationStatus() {
+        Task { @MainActor in
+            notificationStatus = await viewModel.notificationAuthorizationStatus()
+        }
+    }
+
+    private func requestNotifications() {
+        isRequestingNotifications = true
+        Task { @MainActor in
+            notificationStatus = await viewModel.requestNotificationAuthorization()
+            isRequestingNotifications = false
+        }
+    }
+
+    private func sendTestNotification() {
+        isSendingTestNotification = true
+        notificationMessage = nil
+        Task { @MainActor in
+            let results = await viewModel.sendTestNotification()
+            isSendingTestNotification = false
+            notificationMessage = results.contains { result in
+                if case .delivered = result { return true }
+                return false
+            } ? "Test notification sent." : "Test notification was not delivered."
+            notificationStatus = await viewModel.notificationAuthorizationStatus()
         }
     }
 
@@ -1010,11 +1072,8 @@ private struct HistorySettingsDetail: View {
     @State private var selectedTargetID: String?
     @State private var selectedRange: HistoryExportRange = .graph(.m5)
     @State private var statusMessage: String?
-    @State private var notificationStatus: NotificationAuthorizationStatus = .unavailable
     @State private var isExporting = false
     @State private var isClearing = false
-    @State private var isRequestingNotifications = false
-    @State private var isSendingTestNotification = false
 
     private var targets: [HistoryExportTargetOption] {
         viewModel.historyExportTargetOptions()
@@ -1086,9 +1145,6 @@ private struct HistorySettingsDetail: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
-
-                    Divider().padding(.vertical, 4)
-                    notificationControls
                 }
             }
             Spacer()
@@ -1097,29 +1153,8 @@ private struct HistorySettingsDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             selectInitialTargetIfNeeded()
-            refreshNotificationStatus()
         }
         .onChange(of: targets.map(\.id)) { _ in selectInitialTargetIfNeeded() }
-    }
-
-    private var notificationControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notifications")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-            Text("Status: \(notificationStatus.label)")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Button("Allow Notifications") { requestNotifications() }
-                    .disabled(isRequestingNotifications || notificationStatus == .authorized || notificationStatus == .provisional)
-                Button("Send Test") { sendTestNotification() }
-                    .disabled(isSendingTestNotification)
-                Button("Open Notification Settings") {
-                    viewModel.openNotificationSettings()
-                }
-            }
-        }
     }
 
     private var selectedTargetIDBinding: Binding<String?> {
@@ -1171,34 +1206,6 @@ private struct HistorySettingsDetail: View {
             await viewModel.clearHistory()
             isClearing = false
             statusMessage = "History cleared."
-        }
-    }
-
-    private func refreshNotificationStatus() {
-        Task { @MainActor in
-            notificationStatus = await viewModel.notificationAuthorizationStatus()
-        }
-    }
-
-    private func requestNotifications() {
-        isRequestingNotifications = true
-        Task { @MainActor in
-            notificationStatus = await viewModel.requestNotificationAuthorization()
-            isRequestingNotifications = false
-        }
-    }
-
-    private func sendTestNotification() {
-        isSendingTestNotification = true
-        statusMessage = nil
-        Task { @MainActor in
-            let results = await viewModel.sendTestNotification()
-            isSendingTestNotification = false
-            statusMessage = results.contains { result in
-                if case .delivered = result { return true }
-                return false
-            } ? "Test notification sent." : "Test notification was not delivered."
-            notificationStatus = await viewModel.notificationAuthorizationStatus()
         }
     }
 
