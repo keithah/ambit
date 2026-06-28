@@ -171,6 +171,14 @@ aggregator/viewport, never the coordinator.
   `SurfaceView` cards; opens the selected slot's popover; and exposes slot/focus menus without integration-id
   branches. Ping keeps its existing overlay behavior when selected, and System can be selected as a generic
   overlay surface.
+- **Network resilience + reliability parity complete** — merged on master: gateway detection now uses a stable
+  auto-gateway instance ID with mutable address and live redetection on `NWPathMonitor` changes and wake;
+  sleep cancels in-flight poll cycles; NWPath-derived connectivity (`connected`, `noInternet`, `noIPAddress`,
+  `notConnected`) feeds `NetworkPerspectiveDiagnoser` so link-state overrides are live; per-host alerts are
+  suppressed during link drops; network-status transitions, path recovery, internet-loss safety-net alerts, and
+  gateway-change notifications are entity-targeted through the generic alert path; notification permission/test/
+  settings controls are exposed in Settings; a file-lock single-instance guard and Start-at-Login toggle are in
+  place; and local/private-network targets surface an informational Local Network permission checklist.
 - **Generic presentation core is feature-complete for Ping + System.** The full path is now proven end to end:
   `EntityDescriptor`/`EntityState` → `EntityEnricher` → per-slot `AttentionEngine` → `SlotReadoutSelector` →
   `SurfaceComposer` → generic `CardSpec` vocabulary → `AmbitUI`; settings are schema/override-driven
@@ -180,10 +188,11 @@ aggregator/viewport, never the coordinator.
 - **Manual verification caveats:** notification service + adapter behavior are covered by tests and live
   alert/attention promotion, and the overlay is covered by pure selection/rendering tests. OS notification
   banners and overlay-window capture are environment-limited in the ad-hoc dev build — confirm manually.
-- Current master: **613 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+- Current master: **656 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
-  multi-host ping surfaces, generic entity-targeted notifications, and a generic selected-slot overlay.
+  multi-host ping surfaces, generic entity-targeted notifications, a generic selected-slot overlay, and
+  pingscope-style network resilience across network switches and sleep/wake.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -193,7 +202,8 @@ aggregator/viewport, never the coordinator.
 ## 6. Roadmap (presentation program)
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
-  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓, Floating Overlay ✓.
+  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓, Floating Overlay ✓,
+  Network resilience + reliability ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -228,6 +238,12 @@ aggregator/viewport, never the coordinator.
   longer Ping-coupled, no longer assumes the first slot, and renders compact cards from the selected slot's
   existing `SlotSurface`. Slot focus remains generic and appears only when the selected slot exposes focus
   options.
+- **Network resilience + reliability: complete.** Ambit now redetects the gateway on path changes and wake,
+  updates the auto gateway in place, classifies link/no-IP/no-internet states through `NetworkConnectivityStatus`,
+  quiesces sleep-bound polls, routes network status/recovery/gateway-change alerts through entity-targeted
+  notification delivery, exposes notification permission/test/settings controls, enforces a single running
+  instance with a lockfile, supports Start at Login through `SMAppService`, and surfaces Local Network permission
+  guidance for private/link-local/loopback targets.
 - **Core feature-complete checkpoint:** the four queued core areas are done on top of the earlier System
   dashboard, Available Items, and history/graph-fidelity work: core architecture hardening, multi-host ping
   parity, notifications & alerts, and floating-overlay generalization. Ambit's generic presentation core is ready
@@ -237,7 +253,8 @@ aggregator/viewport, never the coordinator.
   (SSH closed) and intentionally exercises down/failure rendering.
 - **Remaining major milestones (explicitly deferred, not started):** device integrations rebuilt against the
   proven shape (`gl.inet` first; needs the secure config field), multi-engine topology (Phase 3), iOS/widgets/
-  Live Activity, and real packaging.
+  Live Activity, and real packaging. Sparkle auto-update is explicitly deferred pending infrastructure decisions:
+  feed URL, EdDSA keys, signing/release workflow, and hosting.
 
 ---
 
