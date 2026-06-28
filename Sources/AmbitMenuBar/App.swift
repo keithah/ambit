@@ -65,10 +65,11 @@ private final class MenuBarAppModel: ObservableObject {
         let statusItemCoordinator = MenuBarStatusItemCoordinator(viewModel: viewModel)
         self.statusItemCoordinator = statusItemCoordinator
 
-        // Overlay and settings always target the first (ping) slot's popover.
         let overlayController = OverlayController(
             viewModel: viewModel,
-            onOpenPopover: { [weak statusItemCoordinator] in statusItemCoordinator?.firstController?.showPopover() }
+            onOpenPopover: { [weak statusItemCoordinator] slotID in
+                statusItemCoordinator?.controller(for: slotID)?.showPopover()
+            }
         )
         self.overlayController = overlayController
         let settingsController = SettingsWindowController(viewModel: viewModel)
@@ -126,6 +127,13 @@ private final class MenuBarStatusItemCoordinator {
 
     var firstController: StatusBarController? {
         orderedIDs.compactMap { controllersByID[$0] }.first
+    }
+
+    func controller(for slotID: SlotID?) -> StatusBarController? {
+        if let slotID, let controller = controllersByID[slotID] {
+            return controller
+        }
+        return firstController
     }
 
     private func reconcile(slots: [Slot]) {

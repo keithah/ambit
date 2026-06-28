@@ -3,6 +3,34 @@ import XCTest
 @testable import AmbitMenuBar
 
 final class StatusViewModelDynamicSlotTests: XCTestCase {
+    func testOverlaySlotSelectionDefaultsAndReconcilesToAvailableSlots() {
+        let ping = Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping), barReadout: .dynamic)
+        let system = Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal), barReadout: .dynamic)
+
+        XCTAssertEqual(OverlaySlotSelection.reconciled(nil, slots: [ping, system]), ping.id)
+        XCTAssertEqual(OverlaySlotSelection.reconciled(system.id, slots: [ping, system]), system.id)
+        XCTAssertEqual(OverlaySlotSelection.reconciled("missing", slots: [ping, system]), ping.id)
+        XCTAssertNil(OverlaySlotSelection.reconciled(system.id, slots: []))
+    }
+
+    func testOverlayCompactCardsPreferGraphsThenFallbackToUsefulCards() {
+        let latencyID = EntityID(rawValue: "ping@1.1.1.1/probe.latency_ms")
+        let cpuID = EntityID(rawValue: "system@local/overview.cpu_usage_percent")
+        let graph = CardSpec(id: "graph.latency", kind: .historyGraph, entities: [latencyID])
+        let gauge = CardSpec(id: "gauge.cpu", kind: .gauge, entities: [cpuID])
+        let table = CardSpec(id: "table.processes", kind: .statTable, entities: [EntityID(rawValue: "system@local/processes.top_cpu")])
+
+        let graphPlan = SurfacePlan(cards: [
+            CardSpec(id: "section.network", kind: .section, children: [gauge, graph, table])
+        ])
+        XCTAssertEqual(OverlaySurfaceCards.compactCards(from: graphPlan).map(\.id), ["graph.latency"])
+
+        let fallbackPlan = SurfacePlan(cards: [
+            CardSpec(id: "section.cpu", kind: .section, children: [table, gauge])
+        ])
+        XCTAssertEqual(OverlaySurfaceCards.compactCards(from: fallbackPlan).map(\.id), ["gauge.cpu"])
+    }
+
     func testSlotPopoverScrollIdentityIsStableAcrossSurfaceRefreshes() {
         let slotID = SlotID(rawValue: "slot.system")
 

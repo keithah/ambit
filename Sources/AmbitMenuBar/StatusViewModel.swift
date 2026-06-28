@@ -70,6 +70,8 @@ final class StatusViewModel: ObservableObject {
     @Published var presentationSettings = PresentationSettingsModel(integrations: [], slots: [])
     /// Per-slot focused instance (nil = show all resolved instances for the slot).
     @Published var slotFocus: [SlotID: IntegrationInstanceID] = [:]
+    /// Floating overlay selected slot. Nil reconciles to the first available slot.
+    @Published var overlaySlotID: SlotID?
 
     // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
     // one status item per slot.
@@ -548,6 +550,10 @@ final class StatusViewModel: ObservableObject {
     func selectInstance(_ slot: SlotID, _ id: IntegrationInstanceID?) {
         slotFocus[slot] = id
         Task { await refreshPing() }
+    }
+
+    func selectOverlaySlot(_ slot: SlotID?) {
+        overlaySlotID = OverlaySlotSelection.reconciled(slot, slots: slots)
     }
 
     /// Rebuild diagnosis/alerts, then build per-slot surfaces.
