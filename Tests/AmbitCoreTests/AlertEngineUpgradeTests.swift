@@ -13,12 +13,49 @@ final class AlertEngineUpgradeTests: XCTestCase {
     // MARK: Presets
 
     func testPresetsMapToExpectedPolicies() {
-        XCTAssertEqual(AlertPolicy.preset(.quiet).highLatencyConsecutive, 10)
+        XCTAssertEqual(AlertPolicy.preset(.quiet).consecutive, 10)
         XCTAssertFalse(AlertPolicy.preset(.quiet).notifyOnRecovery)
-        XCTAssertEqual(AlertPolicy.preset(.balanced).highLatencyConsecutive, 5)
+        XCTAssertEqual(AlertPolicy.preset(.balanced).consecutive, 5)
         XCTAssertTrue(AlertPolicy.preset(.balanced).notifyOnRecovery)
-        XCTAssertEqual(AlertPolicy.preset(.verbose).highLatencyConsecutive, 3)
+        XCTAssertEqual(AlertPolicy.preset(.verbose).consecutive, 3)
         XCTAssertEqual(AlertPolicy.preset(.balanced).cooldown, 300)
+    }
+
+    func testLegacyLatencyPolicyJSONDecodesToGenericThresholdPolicy() throws {
+        let data = """
+        {
+          "preset": "custom",
+          "enabled": true,
+          "cooldown": 90,
+          "notifyOnRecovery": false,
+          "highLatencyMs": 500,
+          "highLatencyConsecutive": 3
+        }
+        """.data(using: .utf8)!
+
+        let policy = try JSONDecoder().decode(EntityAlertPolicy.self, from: data)
+
+        XCTAssertEqual(policy.threshold, AlertThreshold(comparison: .greaterThanOrEqual, value: 500))
+        XCTAssertEqual(policy.consecutive, 3)
+        XCTAssertEqual(policy.cooldown, 90)
+        XCTAssertFalse(policy.notifyOnRecovery)
+    }
+
+    func testGenericPolicyEncodesWithoutLatencyFieldNames() throws {
+        let policy = EntityAlertPolicy(
+            preset: .custom,
+            enabled: true,
+            threshold: AlertThreshold(comparison: .lessThan, value: 20),
+            consecutive: 4,
+            cooldown: 120,
+            notifyOnRecovery: true
+        )
+
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(policy)) as? [String: Any]
+
+        XCTAssertNotNil(object?["threshold"])
+        XCTAssertNil(object?["highLatencyMs"])
+        XCTAssertNil(object?["highLatencyConsecutive"])
     }
 
     // MARK: Cooldown

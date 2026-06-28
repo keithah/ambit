@@ -615,12 +615,30 @@ private struct EntitySettingsRowView: View {
             }
             HStack(spacing: 8) {
                 Spacer().frame(width: 90)
+                Picker("Comparison", selection: alertPolicyComparison) {
+                    ForEach(AlertComparisonChoice.allCases) { choice in
+                        Text(choice.label).tag(choice.comparison)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 76)
+                TextField(alertPolicyValuePlaceholder, text: alertPolicyThresholdValue)
+                    .frame(width: 86)
+                Stepper("Sustained \(effectiveAlertPolicy.consecutive)", value: alertPolicyConsecutive, in: 1...100)
+                    .frame(width: 150)
+            }
+            HStack(spacing: 8) {
+                Spacer().frame(width: 90)
                 TextField("Cooldown", text: alertPolicyCooldown)
                     .frame(width: 86)
                 Toggle("Notify on recovery", isOn: alertPolicyNotifyOnRecovery)
                     .toggleStyle(.checkbox)
             }
         }
+    }
+
+    private var alertPolicyValuePlaceholder: String {
+        row.descriptor.unit.map { "Value \($0)" } ?? "Value"
     }
 
     private var thresholdComparison: Binding<AlertComparison> {
@@ -687,6 +705,46 @@ private struct EntitySettingsRowView: View {
             policy.preset = .custom
             viewModel.setEntityAlertPolicy(row.id, policy)
         }
+    }
+
+    private var alertPolicyComparison: Binding<AlertComparison> {
+        Binding {
+            effectiveAlertPolicy.threshold?.comparison ?? .greaterThanOrEqual
+        } set: { comparison in
+            var policy = effectiveAlertPolicy
+            let value = policy.threshold?.value ?? defaultAlertThresholdValue
+            policy.threshold = AlertThreshold(comparison: comparison, value: value)
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private var alertPolicyThresholdValue: Binding<String> {
+        Binding {
+            (effectiveAlertPolicy.threshold?.value ?? defaultAlertThresholdValue).formatted()
+        } set: { value in
+            guard let number = Double(value) else { return }
+            var policy = effectiveAlertPolicy
+            let comparison = policy.threshold?.comparison ?? .greaterThanOrEqual
+            policy.threshold = AlertThreshold(comparison: comparison, value: number)
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private var alertPolicyConsecutive: Binding<Int> {
+        Binding {
+            effectiveAlertPolicy.consecutive
+        } set: { consecutive in
+            var policy = effectiveAlertPolicy
+            policy.consecutive = consecutive
+            policy.preset = .custom
+            viewModel.setEntityAlertPolicy(row.id, policy)
+        }
+    }
+
+    private var defaultAlertThresholdValue: Double {
+        row.descriptor.displayThreshold?.value ?? row.descriptor.range?.max ?? 0
     }
 
     private var alertPolicyCooldown: Binding<String> {

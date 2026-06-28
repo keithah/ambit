@@ -155,15 +155,16 @@ public struct PingIntegration: Integration {
     public func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] {
         guard let host = PingHostConfig(configObject: instance.config, displayNameFallback: instance.displayName), host.policy.enabled else { return [] }
         let providerID = "\(instance.id.rawValue)/probe"   // matches PingProvider.instanceID
+        let threshold = host.policy.threshold ?? AlertThreshold(comparison: .greaterThanOrEqual, value: 250)
         // High latency sustained for N consecutive samples (≈ N × interval).
         return [
             .sustained(SustainedAlertRule(
                 id: "\(instance.id.rawValue).highLatency",
                 providerID: providerID,
                 metricID: "latency_ms",
-                comparison: .greaterThanOrEqual,
-                threshold: host.policy.highLatencyMs,
-                duration: Double(host.policy.highLatencyConsecutive) * host.interval,
+                comparison: threshold.comparison,
+                threshold: threshold.value,
+                duration: Double(host.policy.consecutive) * host.interval,
                 title: "\(host.displayName) latency high",
                 message: "Latency to \(host.displayName) is elevated.",
                 severity: .warning,
