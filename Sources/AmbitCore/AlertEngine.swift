@@ -370,38 +370,7 @@ struct AlertRuleState: Sendable {
 }
 
 public extension AlertRule {
-    static let defaultRules: [AlertRule] = [
-        .threshold(ThresholdAlertRule(
-            id: "starlink.obstruction.high",
-            providerID: ProviderIDs.starlink,
-            metricID: "obstruction_percent",
-            comparison: .greaterThan,
-            threshold: 5,
-            title: "Starlink obstruction high",
-            message: "Starlink obstruction is above 5%.",
-            severity: .warning
-        )),
-        .stateTransition(StateTransitionAlertRule(
-            id: "vpn.disconnected",
-            providerID: ProviderIDs.vpn,
-            metricID: "connected",
-            expectedValue: .bool(false),
-            title: "VPN disconnected",
-            message: "The router VPN is no longer connected.",
-            severity: .warning
-        )),
-        .sustained(SustainedAlertRule(
-            id: "ecoflow.battery.low",
-            providerID: ProviderIDs.ecoflow,
-            metricID: "battery_percent",
-            comparison: .lessThan,
-            threshold: 20,
-            duration: 60,
-            title: "EcoFlow battery low",
-            message: "EcoFlow battery has been below 20%.",
-            severity: .critical
-        ))
-    ]
+    static let defaultRules: [AlertRule] = []
 }
 
 public extension EngineSnapshot {

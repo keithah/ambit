@@ -80,23 +80,17 @@ final class AlertEngineTests: XCTestCase {
         XCTAssertEqual(fourth.count, 0)
     }
 
-    func testDefaultRulesIncludeRealPlatformAlerts() async {
+    func testDefaultRulesDoNotIncludeLegacyDisabledProviderAlerts() async {
         let engine = AlertEngine()
-        var snapshot = EngineSnapshot(providers: [
+        let snapshot = EngineSnapshot(providers: [
             ProviderInstanceIDs.starlink: Self.providerSnapshot(metric: Metric(id: "obstruction_percent", label: "Obstruction", value: .percent(8))),
             ProviderInstanceIDs.vpn: Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(true))),
             ProviderInstanceIDs.ecoflow: Self.providerSnapshot(metric: Metric(id: "battery_percent", label: "Battery", value: .level(18)))
         ])
 
         let first = await engine.evaluate(snapshot, now: Date(timeIntervalSince1970: 0))
-        XCTAssertEqual(first.map { $0.ruleID }, ["starlink.obstruction.high"])
-
-        snapshot.providers[ProviderInstanceIDs.vpn] = Self.providerSnapshot(metric: Metric(id: "connected", label: "Connected", value: .bool(false)))
-        let second = await engine.evaluate(snapshot, now: Date(timeIntervalSince1970: 30))
-        XCTAssertEqual(second.map { $0.ruleID }, ["vpn.disconnected"])
-
-        let third = await engine.evaluate(snapshot, now: Date(timeIntervalSince1970: 60))
-        XCTAssertEqual(third.map { $0.ruleID }, ["ecoflow.battery.low"])
+        XCTAssertTrue(AlertRule.defaultRules.isEmpty)
+        XCTAssertTrue(first.isEmpty)
     }
 
     private func snapshot(providerID: ProviderID, metric: Metric) -> EngineSnapshot {
