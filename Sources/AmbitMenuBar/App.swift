@@ -3,9 +3,19 @@ import Combine
 import AmbitCore
 import SwiftUI
 
+private let ambitSingleInstanceLock = FileAppInstanceLock()
+
 @main
 struct AmbitApp: App {
     @StateObject private var appModel = MenuBarAppModel()
+
+    init() {
+        if ambitSingleInstanceLock.acquire() == false {
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
+    }
 
     var body: some Scene {
         // Settings are shown via a self-managed AppKit window (SettingsWindowController);

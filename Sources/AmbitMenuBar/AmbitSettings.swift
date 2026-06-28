@@ -5,6 +5,7 @@ import SwiftUI
 
 private enum SettingsSelection: Hashable {
     case integration(IntegrationInstanceID)
+    case app
     case slots
     case history
 }
@@ -46,6 +47,12 @@ struct AmbitSettings: View {
                     )
                 }
                 Divider().padding(.vertical, 6)
+                sidebarButton(
+                    title: "App",
+                    subtitle: "Launch and notifications",
+                    systemImage: "app.badge",
+                    selection: .app
+                )
                 sidebarButton(
                     title: "Slots",
                     subtitle: "\(viewModel.presentationSettings.slots.count) configured",
@@ -117,6 +124,8 @@ struct AmbitSettings: View {
             } else {
                 EmptySettingsDetail(title: "Integration", message: "Select an integration.")
             }
+        case .app:
+            AppSettingsDetail()
         case .slots:
             SlotsSettingsDetail(slots: viewModel.presentationSettings.slots)
         case .history:
@@ -182,6 +191,44 @@ private struct IntegrationSettingsDetail: View {
                         Divider()
                     }
                 }
+            }
+        }
+    }
+}
+
+private struct AppSettingsDetail: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("App").font(.system(size: 22, weight: .bold))
+                Text("Launch behavior and system integration.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Toggle("Start Ambit at login", isOn: startAtLoginBinding)
+                .toggleStyle(.switch)
+
+            if let message = viewModel.startAtLoginMessage {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var startAtLoginBinding: Binding<Bool> {
+        Binding {
+            viewModel.startAtLoginEnabled
+        } set: { enabled in
+            Task { @MainActor in
+                await viewModel.setStartAtLoginEnabled(enabled)
             }
         }
     }

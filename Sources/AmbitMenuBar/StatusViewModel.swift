@@ -77,6 +77,8 @@ final class StatusViewModel: ObservableObject {
     @Published var slotFocus: [SlotID: IntegrationInstanceID] = [:]
     /// Floating overlay selected slot. Nil reconciles to the first available slot.
     @Published var overlaySlotID: SlotID?
+    @Published var startAtLoginEnabled = false
+    @Published var startAtLoginMessage: String?
 
     // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
     // one status item per slot.
@@ -102,6 +104,7 @@ final class StatusViewModel: ObservableObject {
     private let alertNotificationService = AlertNotificationService()
     private let notificationDeliverer: any NotificationDelivering
     private let notificationSettingsOpener: any NotificationSettingsOpening
+    private let startAtLoginCoordinator: StartAtLoginCoordinator
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
     private var networkStatusAlertMonitor = NetworkStatusAlertMonitor()
@@ -119,6 +122,7 @@ final class StatusViewModel: ObservableObject {
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
         notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
         notificationSettingsOpener: any NotificationSettingsOpening = MacNotificationSettingsOpener(),
+        startAtLoginCoordinator: StartAtLoginCoordinator = StartAtLoginCoordinator(),
         networkChangeSource: (any NetworkChangeSource)? = NWPathNetworkChangeSource()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
@@ -127,11 +131,13 @@ final class StatusViewModel: ObservableObject {
         self.routerPassword = routerPassword
         self.notificationDeliverer = notificationDeliverer
         self.notificationSettingsOpener = notificationSettingsOpener
+        self.startAtLoginCoordinator = startAtLoginCoordinator
         self.networkChangeSource = networkChangeSource
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
         self.configStore = configStore
+        self.startAtLoginEnabled = startAtLoginCoordinator.isEnabled()
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         Self.migrateRetiredPingscopeRecords(integrationRegistry)
@@ -984,6 +990,18 @@ final class StatusViewModel: ObservableObject {
 
     func openNotificationSettings() {
         notificationSettingsOpener.openNotificationSettings()
+    }
+
+    func setStartAtLoginEnabled(_ enabled: Bool) async {
+        let result = await startAtLoginCoordinator.setEnabled(enabled)
+        switch result {
+        case .applied(let value):
+            startAtLoginEnabled = value
+            startAtLoginMessage = nil
+        case .failed(let rolledBackTo, let message):
+            startAtLoginEnabled = rolledBackTo
+            startAtLoginMessage = message
+        }
     }
 
     nonisolated static func historyExportTargetOptions(model: PresentationSettingsModel) -> [HistoryExportTargetOption] {
