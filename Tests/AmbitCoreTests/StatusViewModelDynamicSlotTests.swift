@@ -408,7 +408,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    func testAllHostsPingSurfaceBuildsCombinedLatencyGraphAndLoadsEverySeries() async {
+    func testDefaultPingSurfaceFocusesPrimaryHostInsteadOfAllHosts() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
 
@@ -429,9 +429,41 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let graph = surface.firstCard(kind: .historyGraph)
         XCTAssertEqual(graph?.role, .primary)
+        XCTAssertEqual(graph?.entities, [fixtures.latencyIDs[0]])
+        XCTAssertEqual(Set(surface.data.series.keys), [fixtures.latencyIDs[0]])
+        XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+    }
+
+    @MainActor
+    func testExplicitAllHostsPingSurfaceBuildsCombinedLatencyGraphAndLoadsEverySeries() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(showsAllInstances: true)
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: config,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        let graph = surface.firstCard(kind: .historyGraph)
+        XCTAssertEqual(graph?.role, .primary)
         XCTAssertEqual(graph?.entities, fixtures.latencyIDs)
         XCTAssertEqual(Set(surface.data.series.keys), Set(fixtures.latencyIDs))
         XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertNil(surface.selectedInstanceID)
         XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
     }
 
@@ -487,8 +519,39 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         )
 
         XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[1])
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[1].id)
         XCTAssertEqual(surface.glyph.primaryText, "24ms")
         XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[1]])
+    }
+
+    @MainActor
+    func testMissingPersistedPingFocusFallsBackToPrimaryFocusedSurface() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(
+            selectedInstanceID: IntegrationInstanceID(rawValue: "ping@missing"),
+            showsAllInstances: false
+        )
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            enabledPingRecords: fixtures.records,
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            pingRange: .fiveMinutes,
+            config: config,
+            now: now,
+            historySamples: { id, _ in fixtures.samples[id] ?? [] }
+        )
+
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[0]])
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
     }
 
     @MainActor
@@ -608,7 +671,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    func testMissingFocusedPingHostFallsBackToAllHostsRendering() async {
+    func testMissingFocusedPingHostFallsBackToPrimaryFocusedRendering() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
 
@@ -627,9 +690,10 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
         )
 
-        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, fixtures.latencyIDs)
-        XCTAssertEqual(Set(surface.data.series.keys), Set(fixtures.latencyIDs))
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.entities, [fixtures.latencyIDs[0]])
+        XCTAssertEqual(Set(surface.data.series.keys), [fixtures.latencyIDs[0]])
         XCTAssertEqual(surface.hostOptions.map(\.label), ["Cloudflare DNS", "Google DNS"])
+        XCTAssertEqual(surface.selectedInstanceID, fixtures.records[0].id)
     }
 
     @MainActor
@@ -1381,6 +1445,33 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         viewModel.setSlotTableRowLimit(slotID, nil)
 
         XCTAssertNil(store.config.slotOverrides[slotID])
+    }
+
+    @MainActor
+    func testSelectInstancePersistsFocusedHostForSlot() {
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+        let slotID = SlotID(rawValue: "ping")
+        let hostID = IntegrationInstanceID(rawValue: "ping@1.1.1.1:443")
+
+        viewModel.selectInstance(slotID, hostID)
+
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.selectedInstanceID, hostID)
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.showsAllInstances, false)
+        XCTAssertEqual(viewModel.slotFocus[slotID], hostID)
+    }
+
+    @MainActor
+    func testSelectInstanceNilPersistsExplicitAllHostsMode() {
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+        let slotID = SlotID(rawValue: "ping")
+
+        viewModel.selectInstance(slotID, nil)
+
+        XCTAssertNil(store.config.slotOverrides[slotID]?.selectedInstanceID)
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.showsAllInstances, true)
+        XCTAssertNil(viewModel.slotFocus[slotID])
     }
 
     func testHistoryExportRowsMapPresentationSettingsDescriptorsAndSamples() {

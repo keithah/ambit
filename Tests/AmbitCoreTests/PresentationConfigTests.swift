@@ -16,7 +16,9 @@ final class PresentationConfigTests: XCTestCase {
         )
         c.slotOverrides[SlotID(rawValue: "slot.system")] = SlotPresentationOverride(
             shownItems: [SurfaceItemID(rawValue: "entity:system@local/overview.cpu_usage_percent")],
-            hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:segments")]
+            hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:segments")],
+            selectedInstanceID: IntegrationInstanceID(rawValue: "system@local"),
+            showsAllInstances: false
         )
         let data = try JSONEncoder().encode(c)
         let decoded = try JSONDecoder().decode(PresentationConfig.self, from: data)
@@ -29,5 +31,14 @@ final class PresentationConfigTests: XCTestCase {
         let decoded = try JSONDecoder().decode(PresentationConfig.self, from: json)
 
         XCTAssertTrue(decoded.slotOverrides.isEmpty)
+    }
+
+    func testSlotPresentationOverrideDecodesFocusDefaults() throws {
+        let json = #"{"shownItems":[]}"#.data(using: .utf8)!
+
+        let override = try JSONDecoder().decode(SlotPresentationOverride.self, from: json)
+
+        XCTAssertNil(override.selectedInstanceID)
+        XCTAssertFalse(override.showsAllInstances)
     }
 }

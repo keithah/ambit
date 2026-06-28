@@ -31,10 +31,18 @@ final class SlotSurfaceCoordinator {
         let resolvedRecords = enabledPingRecords.filter { resolvedInstanceIDs.contains($0.id) }
         let hostOptions = resolvedRecords.map { InstanceSelectorCard.Option(id: $0.id.rawValue, label: $0.displayName) }
 
-        let requestedFocusID = slotFocus[slot.id]
-        let focusedRecords = requestedFocusID.map { id in resolvedRecords.filter { $0.id == id } } ?? []
-        let focusedID = focusedRecords.isEmpty ? nil : requestedFocusID
-        let shownRecords = focusedID == nil ? resolvedRecords : focusedRecords
+        let override = config.slotOverrides[slot.id]
+        let defaultFocusID = primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
+            ?? resolvedRecords.first?.id
+        let requestedFocusID = slotFocus[slot.id] ?? override?.selectedInstanceID
+        let validRequestedFocusID = requestedFocusID.flatMap { id in
+            resolvedRecords.contains(where: { $0.id == id }) ? id : nil
+        }
+        let explicitAllHosts = override?.showsAllInstances == true
+        let candidateFocusID = explicitAllHosts ? nil : (validRequestedFocusID ?? defaultFocusID)
+        let focusedRecords = candidateFocusID.map { id in resolvedRecords.filter { $0.id == id } } ?? []
+        let focusedID = focusedRecords.first?.id
+        let shownRecords = explicitAllHosts ? resolvedRecords : focusedRecords
         let headlineRecordID = focusedID
             ?? primaryPingInstanceID.flatMap { id in resolvedRecords.contains(where: { $0.id == id }) ? id : nil }
             ?? resolvedRecords.first?.id
@@ -72,6 +80,7 @@ final class SlotSurfaceCoordinator {
             allStates: allStates,
             firedAlertEvents: firedAlertEvents,
             hostOptions: hostOptions,
+            selectedInstanceID: focusedID,
             pingRange: pingRange,
             config: config,
             now: now,
@@ -89,6 +98,7 @@ final class SlotSurfaceCoordinator {
         allStates: [EntityID: EntityState],
         firedAlertEvents: [AlertEvent],
         hostOptions: [InstanceSelectorCard.Option],
+        selectedInstanceID: IntegrationInstanceID?,
         pingRange: TimeRange,
         config: PresentationConfig,
         now: Date,
@@ -172,6 +182,7 @@ final class SlotSurfaceCoordinator {
             data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
+            selectedInstanceID: selectedInstanceID,
             hostOptions: hostOptions
         )
     }
@@ -269,6 +280,7 @@ enum StatusSlotSurfaceBuilder {
             data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
+            selectedInstanceID: nil,
             hostOptions: []
         )
     }

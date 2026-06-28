@@ -7,6 +7,7 @@ struct SlotSurface {
     var data: SurfaceData
     var glyph: MenuBarGlyph
     var primaryEntityID: EntityID?
+    var selectedInstanceID: IntegrationInstanceID?
     /// Options for the InstanceSelectorCard. Only shown when count > 1.
     var hostOptions: [InstanceSelectorCard.Option]
 
@@ -15,6 +16,7 @@ struct SlotSurface {
         data: SurfaceData(),
         glyph: MenuBarGlyph(primaryText: "No Data", tone: .neutral),
         primaryEntityID: nil,
+        selectedInstanceID: nil,
         hostOptions: []
     )
 }

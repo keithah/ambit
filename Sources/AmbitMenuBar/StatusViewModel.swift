@@ -23,7 +23,11 @@ private extension EntityPresentationOverride {
 
 private extension SlotPresentationOverride {
     var isEmpty: Bool {
-        shownItems == nil && hiddenItems.isEmpty && tableRowLimit == nil
+        shownItems == nil &&
+            hiddenItems.isEmpty &&
+            tableRowLimit == nil &&
+            selectedInstanceID == nil &&
+            showsAllInstances == false
     }
 }
 
@@ -546,9 +550,24 @@ final class StatusViewModel: ObservableObject {
         Task { await refreshPing() }
     }
 
-    /// Set or clear the per-slot focus. Clears focus when `id` is nil (show all).
+    /// Set or clear the per-slot focus. `nil` is an explicit All Hosts selection.
     func selectInstance(_ slot: SlotID, _ id: IntegrationInstanceID?) {
-        slotFocus[slot] = id
+        var config = configStore.load()
+        var override = config.slotOverrides[slot] ?? SlotPresentationOverride()
+        override.selectedInstanceID = id
+        override.showsAllInstances = id == nil
+        if override.isEmpty {
+            config.slotOverrides.removeValue(forKey: slot)
+        } else {
+            config.slotOverrides[slot] = override
+        }
+        configStore.save(config)
+        if let id {
+            slotFocus[slot] = id
+        } else {
+            slotFocus.removeValue(forKey: slot)
+        }
+        rebuildPresentationSettings(config: config)
         Task { await refreshPing() }
     }
 

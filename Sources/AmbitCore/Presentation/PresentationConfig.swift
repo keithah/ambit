@@ -53,24 +53,34 @@ public struct SlotPresentationOverride: Equatable, Sendable, Codable {
     public var shownItems: [SurfaceItemID]?
     public var hiddenItems: Set<SurfaceItemID>
     public var tableRowLimit: Int?
+    public var selectedInstanceID: IntegrationInstanceID?
+    public var showsAllInstances: Bool
 
     public init(
         shownItems: [SurfaceItemID]? = nil,
         hiddenItems: Set<SurfaceItemID> = [],
-        tableRowLimit: Int? = nil
+        tableRowLimit: Int? = nil,
+        selectedInstanceID: IntegrationInstanceID? = nil,
+        showsAllInstances: Bool = false
     ) {
         self.shownItems = shownItems
         self.hiddenItems = hiddenItems
         self.tableRowLimit = tableRowLimit
+        self.selectedInstanceID = selectedInstanceID
+        self.showsAllInstances = showsAllInstances
     }
 
-    private enum CodingKeys: String, CodingKey { case shownItems, hiddenItems, tableRowLimit }
+    private enum CodingKeys: String, CodingKey {
+        case shownItems, hiddenItems, tableRowLimit, selectedInstanceID, showsAllInstances
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         shownItems = try container.decodeIfPresent([SurfaceItemID].self, forKey: .shownItems)
         hiddenItems = try container.decodeIfPresent(Set<SurfaceItemID>.self, forKey: .hiddenItems) ?? []
         tableRowLimit = try container.decodeIfPresent(Int.self, forKey: .tableRowLimit)
+        selectedInstanceID = try container.decodeIfPresent(IntegrationInstanceID.self, forKey: .selectedInstanceID)
+        showsAllInstances = try container.decodeIfPresent(Bool.self, forKey: .showsAllInstances) ?? false
     }
 }
 
