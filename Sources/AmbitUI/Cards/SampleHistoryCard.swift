@@ -41,6 +41,9 @@ public struct SampleHistoryCard: View {
         public var rows: [RenderedRow]
         public var emptyMessage: String
         public static let defaultRowLimit = 8
+        public static let rowVerticalPadding: CGFloat = 4
+        public static let headerVerticalPadding: CGFloat = 5
+        public static let rowFontSize: CGFloat = 11.5
 
         public init(rows: [SampleHistoryRow], emptyMessage: String = "No samples yet.") {
             self.columns = [
@@ -92,14 +95,14 @@ public struct SampleHistoryCard: View {
                         ForEach(Array(row.cells.enumerated()), id: \.offset) { cellIndex, cell in
                             let alignment = model.columns.indices.contains(cellIndex) ? model.columns[cellIndex].alignment : .leading
                             Text(cell.text)
-                                .font(.system(size: 12.5, design: .monospaced))
+                                .font(.system(size: Model.rowFontSize, design: .monospaced))
                                 .foregroundStyle(cell.tone.color)
                                 .lineLimit(cell.isSingleLine ? 1 : nil)
                                 .truncationMode(.tail)
                                 .frame(maxWidth: .infinity, alignment: alignment.swiftUIAlignment)
                         }
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .padding(.horizontal, 10).padding(.vertical, Model.rowVerticalPadding)
                     .background(index.isMultiple(of: 2) ? Color.clear : Color.white.opacity(0.035))
                 }
             }
@@ -111,12 +114,12 @@ public struct SampleHistoryCard: View {
         HStack(spacing: 8) {
             ForEach(model.columns, id: \.id) { column in
                 Text(column.title)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: column.alignment.swiftUIAlignment)
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 7)
+        .padding(.horizontal, 10).padding(.vertical, Model.headerVerticalPadding)
     }
 }
 

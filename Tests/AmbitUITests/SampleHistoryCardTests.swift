@@ -37,6 +37,12 @@ final class SampleHistoryCardTests: XCTestCase {
         XCTAssertEqual(SampleHistoryCard.Model.defaultRowLimit, 8)
     }
 
+    func testCompactTableMetricsFitEightRowsLikePingscope() {
+        XCTAssertEqual(SampleHistoryCard.Model.rowVerticalPadding, 4)
+        XCTAssertEqual(SampleHistoryCard.Model.headerVerticalPadding, 5)
+        XCTAssertEqual(SampleHistoryCard.Model.rowFontSize, 11.5)
+    }
+
     func testEmptyModelCarriesEmptyMessage() {
         let model = SampleHistoryCard.Model(rows: [], emptyMessage: "No samples in the last 5m.")
 
