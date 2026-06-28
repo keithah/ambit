@@ -160,10 +160,18 @@ aggregator/viewport, never the coordinator.
   Development registry note: `ping@1.1.1.1:443` (Cloudflare TCP) was injected into `tv.kodi.ambit` as a handy
   multi-host test target and should be left in place for eyeballs. `ping@127.0.0.1:22` ("Local") is the user's
   own host with SSH closed and should also be left as-is; it intentionally exercises failing-host rendering.
-- Current master: **597 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+- **Notifications & Alerts complete** — merged on master: alert events are entity-targeted via `AlertTarget`
+  and `AlertTargetResolver`; notification delivery is injectable and testable through `NotificationDelivering`
+  + `AlertNotificationService` with global delivery; `EntityAlertPolicy` is generic with migration from the
+  old latency-shaped policy; recovery notifications only follow a delivered active alert and respect cooldown;
+  per-slot attention promotion uses resolved entity IDs; and legacy Starlink/VPN/EcoFlow default rules were
+  removed in favor of integration/manifest-owned targets. N7 caveat: service and adapter behavior are covered
+  by tests and live alert/attention promotion; real macOS banner delivery is environment-limited in the ad-hoc
+  dev bundle, so manual Notification Center inspection is the final OS confirmation.
+- Current master: **611 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
-  multi-host ping surfaces.
+  multi-host ping surfaces, and generic entity-targeted notifications.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
   `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
   retired (superseded by the pingscope-derived `ping` integration).
@@ -173,7 +181,7 @@ aggregator/viewport, never the coordinator.
 ## 6. Roadmap (presentation program)
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
-  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓.
+  Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -200,6 +208,10 @@ aggregator/viewport, never the coordinator.
   primary-line emphasis, primary-only failure bars, and a host selector that switches to a focused single-host
   surface. The recent-samples table follows the selected/headline latency entity rather than rendering one table
   per host. The menu-bar glyph and popover header consume the same `SlotReadoutSelector` result.
+- **Notifications & Alerts: complete.** Alert events target entities generically; notification delivery is a
+  UI-independent service with an injectable macOS adapter; alert policy is device-class-neutral and surfaced
+  through the generic advanced settings; recovery/cooldown semantics are phase-based; per-slot attention receives
+  resolved candidate-local alert IDs; and legacy disabled-provider default rules are gone.
 - **Remaining major milestones:** device integrations (`gl.inet` / `speedify` / `ecoflow` / `starlink` /
   `reachability`) rebuilt against the proven shape; multi-engine topology (Phase 3); iOS/widgets/Live Activity;
   real packaging.
