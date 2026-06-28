@@ -101,8 +101,10 @@ final class StatusViewModel: ObservableObject {
     private let alertTargetResolver = AlertTargetResolver()
     private let alertNotificationService = AlertNotificationService()
     private let notificationDeliverer: any NotificationDelivering
+    private let notificationSettingsOpener: any NotificationSettingsOpening
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
+    private var networkStatusAlertMonitor = NetworkStatusAlertMonitor()
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -116,6 +118,7 @@ final class StatusViewModel: ObservableObject {
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
         notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
+        notificationSettingsOpener: any NotificationSettingsOpening = MacNotificationSettingsOpener(),
         networkChangeSource: (any NetworkChangeSource)? = NWPathNetworkChangeSource()
     ) {
         let settings = (try? settingsStore.load()) ?? AppSettings()
@@ -123,6 +126,7 @@ final class StatusViewModel: ObservableObject {
         self.settings = settings
         self.routerPassword = routerPassword
         self.notificationDeliverer = notificationDeliverer
+        self.notificationSettingsOpener = notificationSettingsOpener
         self.networkChangeSource = networkChangeSource
         self.installedProviderStore = installedProviderStore
         self.credentialStore = credentialStore
@@ -416,10 +420,14 @@ final class StatusViewModel: ObservableObject {
     }
 
     func handleNetworkConfigurationChanged(_ snapshot: NetworkPathSnapshot = .connected) async {
+        let previousStatus = networkPathSnapshot.connectivityStatus
         networkPathSnapshot = snapshot
         let previousGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
         await seedGatewayHostIfNeeded()
         let currentGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
+        if let event = networkStatusAlertMonitor.evaluate(previous: previousStatus, current: snapshot.connectivityStatus) {
+            await deliverAlerts([event], descriptors: await engine.entityDescriptors())
+        }
         if let event = Self.networkChangeEvent(previousGateway: previousGateway, currentGateway: currentGateway) {
             await deliverAlerts([event], descriptors: await engine.entityDescriptors())
         }
@@ -945,6 +953,37 @@ final class StatusViewModel: ObservableObject {
     func clearHistory() async {
         await engine.clearHistory()
         await refreshPing()
+    }
+
+    func notificationAuthorizationStatus() async -> NotificationAuthorizationStatus {
+        await notificationDeliverer.authorizationStatus()
+    }
+
+    func requestNotificationAuthorization() async -> NotificationAuthorizationStatus {
+        await alertNotificationService.requestAuthorization(using: notificationDeliverer)
+    }
+
+    func sendTestNotification(now: Date = Date()) async -> [NotificationDeliveryResult] {
+        let intent = NotificationIntent.testNotification(now: now)
+        let event = ResolvedAlertEvent(
+            event: AlertEvent(
+                id: intent.id,
+                ruleID: "notification.test",
+                providerID: "notification.test",
+                target: nil,
+                phase: intent.phase,
+                title: intent.title,
+                message: intent.body,
+                severity: intent.severity,
+                triggeredAt: intent.triggeredAt
+            ),
+            entityIDs: ["notification.test"]
+        )
+        return await alertNotificationService.deliver([event], using: notificationDeliverer)
+    }
+
+    func openNotificationSettings() {
+        notificationSettingsOpener.openNotificationSettings()
     }
 
     nonisolated static func historyExportTargetOptions(model: PresentationSettingsModel) -> [HistoryExportTargetOption] {

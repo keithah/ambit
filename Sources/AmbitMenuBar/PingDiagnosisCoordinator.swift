@@ -52,8 +52,9 @@ final class PingDiagnosisCoordinator {
             let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
             diagnosis.detail = "Monitoring paused — data is \(age)s old."
         }
-        let alertHostsForStatus = networkStatus == .connected ? alertHosts : []
-        let events = alertMonitor.evaluate(hosts: alertHostsForStatus, diagnosis: diagnosis, now: now)
+        let events = networkStatus == .connected
+            ? alertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
+            : []
         return PingDiagnosisResult(diagnosis: diagnosis, events: events)
     }
 

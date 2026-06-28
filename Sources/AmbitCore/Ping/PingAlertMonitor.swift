@@ -34,6 +34,7 @@ public struct PingAlertMonitor: Sendable {
     private var lastSent: [String: Date] = [:]
     private var diagnosisStreak = 0
     private var lastVerdictKey: String?
+    private var deliveredNetworkAlert = false
 
     public init(sensitivity: DiagnosisSensitivity = .balanced, networkCooldown: TimeInterval = 300, pathDegradedConsecutive: Int = 3) {
         self.sensitivity = sensitivity
@@ -71,7 +72,11 @@ public struct PingAlertMonitor: Sendable {
                 ))
             }
         }
-        if let event = networkAlert(diagnosis, now: now) { events.append(event) }
+        if let event = internetLossSafetyNet(hosts: hosts, now: now) {
+            events.append(event)
+        } else if let event = networkAlert(diagnosis, now: now) {
+            events.append(event)
+        }
         return events
     }
 
@@ -79,6 +84,19 @@ public struct PingAlertMonitor: Sendable {
         guard let spec = Self.specific(diagnosis.verdict) else {
             diagnosisStreak = 0
             lastVerdictKey = nil
+            if deliveredNetworkAlert, diagnosis.verdict == .allReachable {
+                deliveredNetworkAlert = false
+                return AlertEvent(
+                    ruleID: "ping.pathRecovered",
+                    providerID: "ping.network",
+                    target: .entity(DiagnosisEntity.entityID),
+                    phase: .recovered,
+                    title: "Network path recovered",
+                    message: "The monitored network path is reachable again.",
+                    severity: .info,
+                    triggeredAt: now
+                )
+            }
             return nil
         }
         let key = String(describing: diagnosis.verdict)
@@ -100,6 +118,7 @@ public struct PingAlertMonitor: Sendable {
             }
         }
         guard fire(chosen.type, cooldown: networkCooldown, now: now) else { return nil }
+        deliveredNetworkAlert = true
         return AlertEvent(
             ruleID: "ping.\(chosen.type)",
             providerID: "ping.network",
@@ -107,6 +126,23 @@ public struct PingAlertMonitor: Sendable {
             title: chosen.title,
             message: diagnosis.detail,
             severity: chosen.severity,
+            triggeredAt: now
+        )
+    }
+
+    private mutating func internetLossSafetyNet(hosts: [AlertHost], now: Date) -> AlertEvent? {
+        guard hosts.count >= 2,
+              hosts.allSatisfy({ $0.status == .down }),
+              fire("internetLoss", cooldown: networkCooldown, now: now)
+        else { return nil }
+        deliveredNetworkAlert = true
+        return AlertEvent(
+            ruleID: "ping.internetLoss",
+            providerID: "ping.network",
+            target: .entity(DiagnosisEntity.entityID),
+            title: "Internet problem",
+            message: "\(hosts.count)/\(hosts.count) monitored hosts are unreachable.",
+            severity: .warning,
             triggeredAt: now
         )
     }
@@ -130,5 +166,68 @@ public struct PingAlertMonitor: Sendable {
         if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
         lastSent[key] = now
         return true
+    }
+}
+
+public struct NetworkStatusAlertMonitor: Sendable {
+    public var cooldown: TimeInterval
+    private var lastSent: [String: Date] = [:]
+
+    public init(cooldown: TimeInterval = 300) {
+        self.cooldown = cooldown
+    }
+
+    public mutating func evaluate(
+        previous: NetworkConnectivityStatus,
+        current: NetworkConnectivityStatus,
+        now: Date = Date()
+    ) -> AlertEvent? {
+        guard previous != current else { return nil }
+        if current == .connected {
+            return AlertEvent(
+                ruleID: "network.status.recovered",
+                providerID: "network.path",
+                target: .entity(DiagnosisEntity.entityID),
+                phase: .recovered,
+                title: "Network path recovered",
+                message: "The system network path is connected again.",
+                severity: .info,
+                triggeredAt: now
+            )
+        }
+        let key = "networkStatus:\(current.rawValue)"
+        guard fire(key, now: now) else { return nil }
+        return AlertEvent(
+            ruleID: "network.status.\(current.rawValue)",
+            providerID: "network.path",
+            target: .entity(DiagnosisEntity.entityID),
+            title: title(for: current),
+            message: message(for: current),
+            severity: current == .noInternet ? .warning : .critical,
+            triggeredAt: now
+        )
+    }
+
+    private mutating func fire(_ key: String, now: Date) -> Bool {
+        if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
+        lastSent[key] = now
+        return true
+    }
+
+    private func title(for status: NetworkConnectivityStatus) -> String {
+        switch status {
+        case .connected: return "Network connected"
+        case .noInternet: return "No internet"
+        case .noIPAddress, .notConnected: return "Local network down"
+        }
+    }
+
+    private func message(for status: NetworkConnectivityStatus) -> String {
+        switch status {
+        case .connected: return "The system network path is connected."
+        case .noInternet: return "The system reports no internet connection."
+        case .noIPAddress: return "The network link has no usable IP address."
+        case .notConnected: return "No network link."
+        }
     }
 }

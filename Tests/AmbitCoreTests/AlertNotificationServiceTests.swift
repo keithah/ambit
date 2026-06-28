@@ -97,6 +97,26 @@ final class AlertNotificationServiceTests: XCTestCase {
         XCTAssertEqual(delivered, [])
     }
 
+    func testRequestAuthorizationCanBeCalledProactively() async {
+        let notifier = FakeNotificationDeliverer(status: .notDetermined, requestedStatus: .authorized)
+        let service = AlertNotificationService()
+
+        let status = await service.requestAuthorization(using: notifier)
+        let requestCount = await notifier.authorizationRequestCount()
+
+        XCTAssertEqual(status, .authorized)
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    func testTestNotificationIntentUsesGenericBody() {
+        let intent = NotificationIntent.testNotification(now: Date(timeIntervalSince1970: 42))
+
+        XCTAssertEqual(intent.id, "notification.test.42")
+        XCTAssertEqual(intent.title, "Ambit test notification")
+        XCTAssertEqual(intent.entityIDs, Set<EntityID>())
+        XCTAssertEqual(intent.phase, .active)
+    }
+
     private func alert(id: String) -> AlertEvent {
         AlertEvent(id: id, ruleID: "rule", providerID: "provider", title: "Title", message: "Body", severity: .elevated)
     }

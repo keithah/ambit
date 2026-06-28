@@ -84,4 +84,41 @@ final class PingAlertMonitorTests: XCTestCase {
         XCTAssertEqual(first.count, 1)
         XCTAssertTrue(soon.isEmpty)
     }
+
+    func testInternetLossSafetyNetFiresWhenAllHostsAreDownEvenWithoutDiagnosisConfidence() {
+        var monitor = PingAlertMonitor(sensitivity: .conservative, networkCooldown: 300)
+        let events = monitor.evaluate(
+            hosts: [host(.down), AlertHost(id: "gw", name: "Gateway", status: .down, notifyOnRecovery: true, cooldown: 60)],
+            diagnosis: healthy,
+            now: at(0)
+        )
+
+        XCTAssertEqual(events.map(\.ruleID), ["ping.internetLoss"])
+        XCTAssertEqual(events.first?.target, .entity(DiagnosisEntity.entityID))
+    }
+
+    func testPathRecoveredFiresOnlyAfterDeliveredNetworkAlert() {
+        var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
+        _ = monitor.evaluate(hosts: [], diagnosis: diag(.upstreamDown, .high), now: at(0))
+        let recovered = monitor.evaluate(hosts: [], diagnosis: healthy, now: at(10))
+        let repeated = monitor.evaluate(hosts: [], diagnosis: healthy, now: at(20))
+
+        XCTAssertEqual(recovered.map(\.ruleID), ["ping.pathRecovered"])
+        XCTAssertEqual(recovered.first?.phase, .recovered)
+        XCTAssertEqual(recovered.first?.target, .entity(DiagnosisEntity.entityID))
+        XCTAssertTrue(repeated.isEmpty)
+    }
+
+    func testNetworkStatusTransitionAlertsAndRecovery() {
+        var monitor = NetworkStatusAlertMonitor(cooldown: 300)
+        let down = monitor.evaluate(previous: .connected, current: .notConnected, now: at(0))
+        let repeated = monitor.evaluate(previous: .notConnected, current: .notConnected, now: at(10))
+        let recovered = monitor.evaluate(previous: .notConnected, current: .connected, now: at(20))
+
+        XCTAssertEqual(down?.ruleID, "network.status.notConnected")
+        XCTAssertEqual(down?.target, .entity(DiagnosisEntity.entityID))
+        XCTAssertEqual(repeated, nil)
+        XCTAssertEqual(recovered?.ruleID, "network.status.recovered")
+        XCTAssertEqual(recovered?.phase, .recovered)
+    }
 }

@@ -936,8 +936,11 @@ private struct HistorySettingsDetail: View {
     @State private var selectedTargetID: String?
     @State private var selectedRange: HistoryExportRange = .graph(.m5)
     @State private var statusMessage: String?
+    @State private var notificationStatus: NotificationAuthorizationStatus = .unavailable
     @State private var isExporting = false
     @State private var isClearing = false
+    @State private var isRequestingNotifications = false
+    @State private var isSendingTestNotification = false
 
     private var targets: [HistoryExportTargetOption] {
         viewModel.historyExportTargetOptions()
@@ -1009,14 +1012,40 @@ private struct HistorySettingsDetail: View {
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
+
+                    Divider().padding(.vertical, 4)
+                    notificationControls
                 }
             }
             Spacer()
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { selectInitialTargetIfNeeded() }
+        .onAppear {
+            selectInitialTargetIfNeeded()
+            refreshNotificationStatus()
+        }
         .onChange(of: targets.map(\.id)) { _ in selectInitialTargetIfNeeded() }
+    }
+
+    private var notificationControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Notifications")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("Status: \(notificationStatus.label)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button("Allow Notifications") { requestNotifications() }
+                    .disabled(isRequestingNotifications || notificationStatus == .authorized || notificationStatus == .provisional)
+                Button("Send Test") { sendTestNotification() }
+                    .disabled(isSendingTestNotification)
+                Button("Open Notification Settings") {
+                    viewModel.openNotificationSettings()
+                }
+            }
+        }
     }
 
     private var selectedTargetIDBinding: Binding<String?> {
@@ -1071,6 +1100,34 @@ private struct HistorySettingsDetail: View {
         }
     }
 
+    private func refreshNotificationStatus() {
+        Task { @MainActor in
+            notificationStatus = await viewModel.notificationAuthorizationStatus()
+        }
+    }
+
+    private func requestNotifications() {
+        isRequestingNotifications = true
+        Task { @MainActor in
+            notificationStatus = await viewModel.requestNotificationAuthorization()
+            isRequestingNotifications = false
+        }
+    }
+
+    private func sendTestNotification() {
+        isSendingTestNotification = true
+        statusMessage = nil
+        Task { @MainActor in
+            let results = await viewModel.sendTestNotification()
+            isSendingTestNotification = false
+            statusMessage = results.contains { result in
+                if case .delivered = result { return true }
+                return false
+            } ? "Test notification sent." : "Test notification was not delivered."
+            notificationStatus = await viewModel.notificationAuthorizationStatus()
+        }
+    }
+
     private func save(data: Data, format: HistoryExportFormat, targetLabel: String) throws {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -1095,6 +1152,19 @@ private struct HistorySettingsDetail: View {
             .components(separatedBy: invalid)
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private extension NotificationAuthorizationStatus {
+    var label: String {
+        switch self {
+        case .notDetermined: return "Not requested"
+        case .authorized: return "Allowed"
+        case .denied: return "Denied"
+        case .provisional: return "Provisional"
+        case .unavailable: return "Unavailable"
+        case .unknown(let value): return value
+        }
     }
 }
 

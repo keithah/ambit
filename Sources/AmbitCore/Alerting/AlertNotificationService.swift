@@ -37,6 +37,20 @@ public struct NotificationIntent: Equatable, Identifiable, Sendable {
     }
 }
 
+public extension NotificationIntent {
+    static func testNotification(now: Date = Date()) -> NotificationIntent {
+        NotificationIntent(
+            id: "notification.test.\(Int(now.timeIntervalSince1970))",
+            title: "Ambit test notification",
+            body: "Notifications are enabled for Ambit.",
+            severity: .info,
+            entityIDs: [],
+            phase: .active,
+            triggeredAt: now
+        )
+    }
+}
+
 public protocol NotificationDelivering: Sendable {
     func authorizationStatus() async -> NotificationAuthorizationStatus
     func requestAuthorization() async -> NotificationAuthorizationStatus
@@ -57,6 +71,10 @@ public enum NotificationDeliveryResult: Equatable, Sendable {
 
 public actor AlertNotificationService {
     public init() {}
+
+    public func requestAuthorization(using notifier: any NotificationDelivering) async -> NotificationAuthorizationStatus {
+        await notifier.requestAuthorization()
+    }
 
     public func deliver(
         _ events: [ResolvedAlertEvent],

@@ -244,6 +244,30 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testNetworkStatusTransitionsDeliverEntityTargetedNotifications() async throws {
+        let registry = InMemoryIntegrationRegistry(records: [])
+        let notifier = RecordingNotificationDeliverer()
+        let viewModel = StatusViewModel(
+            settingsStore: MemorySettingsStore(),
+            credentialStore: StaticCredentialStore(credentials: [:]),
+            installedProviderStore: MemoryInstalledProviderStore(),
+            integrationRegistry: registry,
+            addressDiscovery: MutableRouterAddressDiscovery(defaultGateway: nil),
+            configStore: MemoryPresentationConfigStore(),
+            notificationDeliverer: notifier,
+            networkChangeSource: nil
+        )
+
+        await viewModel.handleNetworkConfigurationChanged(NetworkPathSnapshot(connectivityStatus: .notConnected))
+        await viewModel.handleNetworkConfigurationChanged(.connected)
+
+        let delivered = await notifier.deliveredIntents()
+        XCTAssertEqual(delivered.map(\.title), ["Local network down", "Network path recovered"])
+        XCTAssertEqual(delivered.map(\.entityIDs), [[DiagnosisEntity.entityID], [DiagnosisEntity.entityID]])
+        XCTAssertEqual(delivered.map(\.phase), [.active, .recovered])
+    }
+
+    @MainActor
     func testSystemWakeRedetectsGatewayBeforePolling() async throws {
         let gateway = IntegrationInstanceRecord(
             id: "ping@gateway",
@@ -617,7 +641,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(result.diagnosis.verdict, .upstreamDown)
         XCTAssertEqual(result.diagnosis.title, "No internet")
         XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
-        XCTAssertEqual(result.events.map(\.ruleID), ["ping.internetLoss"])
+        XCTAssertEqual(result.events, [])
     }
 
     func testNetworkPathSnapshotClassifiesSatisfiedPathWithoutUsableIPAsNoIPAddress() {
