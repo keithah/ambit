@@ -28,6 +28,12 @@ public enum ProviderCommandIDs {
     public static let iperf3Run = "iperf3.run"
 }
 
+public enum StandardCommandRole: String, Codable, Sendable, Equatable {
+    case testConnection
+    case refreshNow
+    case resetToDefaults
+}
+
 public enum ProviderCommandCatalog {
     public static func commands(for providerID: ProviderID) -> [CommandDescriptor] {
         switch providerID {
@@ -219,12 +225,20 @@ public struct CommandDescriptor: Equatable, Identifiable, Sendable {
     public var label: String
     public var parameters: [CommandParameter]
     public var requiresConfirmation: Bool
+    public var standardRole: StandardCommandRole?
 
-    public init(id: String, label: String, parameters: [CommandParameter] = [], requiresConfirmation: Bool = false) {
+    public init(
+        id: String,
+        label: String,
+        parameters: [CommandParameter] = [],
+        requiresConfirmation: Bool = false,
+        standardRole: StandardCommandRole? = nil
+    ) {
         self.id = id
         self.label = label
         self.parameters = parameters
         self.requiresConfirmation = requiresConfirmation
+        self.standardRole = standardRole
     }
 }
 

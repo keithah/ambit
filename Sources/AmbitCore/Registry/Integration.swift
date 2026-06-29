@@ -8,6 +8,7 @@ public protocol Integration: Sendable {
     var id: IntegrationID { get }
     var displayName: String { get }
     var configSchema: IntegrationConfigSchema? { get }
+    var presets: [IntegrationPreset] { get }
 
     /// True if the integration supports many configured installs (e.g. pingscope, one per
     /// host). Single-install integrations (the built-ins today) report false.
@@ -37,6 +38,7 @@ public protocol Integration: Sendable {
 public extension Integration {
     var isMultiInstance: Bool { false }
     var configSchema: IntegrationConfigSchema? { nil }
+    var presets: [IntegrationPreset] { [] }
     func alertRules(instance: IntegrationInstanceRecord) -> [AlertRule] { [] }
     func monitoringPerspectives(
         instance: IntegrationInstanceRecord,

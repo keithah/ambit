@@ -170,7 +170,8 @@ final class PingProviderTests: XCTestCase {
             "timeout",
             "degradedAfter",
             "downAfter",
-            "diagnosisSensitivity"
+            "diagnosisSensitivity",
+            "monitoringRole"
         ])
         XCTAssertEqual(fields["name"]?.kind, .text)
         XCTAssertEqual(fields["name"]?.required, true)
@@ -186,5 +187,46 @@ final class PingProviderTests: XCTestCase {
         XCTAssertEqual(fields["downAfter"]?.kind, .number)
         XCTAssertEqual(fields["diagnosisSensitivity"]?.kind, .select)
         XCTAssertEqual(fields["diagnosisSensitivity"]?.options?.map(\.value), ["conservative", "standard", "aggressive"])
+        XCTAssertEqual(fields["monitoringRole"]?.kind, .select)
+        XCTAssertEqual(fields["monitoringRole"]?.options?.map(\.value), ["auto", "localGateway", "accessNetwork", "upstreamInternet", "remoteService", "endpoint"])
+    }
+
+    func testPingIntegrationDeclaresSuggestedPresets() {
+        let presets = PingIntegration().presets
+
+        XCTAssertEqual(presets.map(\.id), ["defaultGateway", "cloudflareDNS", "googleDNS"])
+        XCTAssertEqual(presets.first?.title, "Default Gateway")
+        XCTAssertEqual(presets.first?.values["method"], .string("icmp"))
+        XCTAssertEqual(presets.first?.values["monitoringRole"], .string("localGateway"))
+        XCTAssertEqual(presets[1].values["address"], .string("1.1.1.1"))
+        XCTAssertEqual(presets[1].values["method"], .string("tcp"))
+        XCTAssertEqual(presets[1].values["port"], .number(443))
+    }
+
+    func testPingProviderDeclaresAndExecutesGenericTestConnectionCommand() async throws {
+        let p = provider(host(), ProbeResult(timestamp: Date(), latencyMs: 12))
+
+        XCTAssertEqual(p.commands.map(\.standardRole), [.testConnection])
+
+        try await p.execute(
+            commandID: StandardCommandRole.testConnection.rawValue,
+            arguments: CommandArguments(),
+            context: ctx
+        )
+    }
+
+    func testPingProviderTestConnectionReportsProbeFailure() async {
+        let p = provider(host(), ProbeResult(timestamp: Date(), failureReason: .connectionRefused))
+
+        do {
+            try await p.execute(
+                commandID: StandardCommandRole.testConnection.rawValue,
+                arguments: CommandArguments(),
+                context: ctx
+            )
+            XCTFail("Expected test connection to fail")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("connectionRefused"))
+        }
     }
 }

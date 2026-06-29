@@ -146,6 +146,64 @@ final class PresentationSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.integrations[0].enabled, false)
     }
 
+    func testBuildAddsGenericInstanceStatusPrimaryPresetsAndStandardCommands() {
+        let record = IntegrationInstanceRecord(id: "fixture@wan", integrationID: "fixture-monitor", displayName: "Fixture WAN")
+        let descriptor = descriptor(
+            "fixture@wan/probe.connected",
+            instance: "fixture@wan/probe",
+            name: "WAN Connected",
+            kind: .binarySensor,
+            defaultVisibility: .auto
+        )
+        let state = EntityState(id: descriptor.id, value: .bool(false), availability: .online, severity: .down)
+        let preset = IntegrationPreset(
+            id: "fixture.default",
+            title: "Default Fixture",
+            systemImage: "network",
+            values: ["address": .string("203.0.113.1")]
+        )
+        let command = CommandDescriptor(
+            id: "fixture.test",
+            label: "Test Connection",
+            standardRole: .testConnection
+        )
+
+        let model = PresentationSettingsModel.build(
+            integrations: [record],
+            descriptors: [descriptor.instanceID: [descriptor]],
+            states: [descriptor.id: state],
+            overrides: .empty,
+            schemas: [:],
+            presets: ["fixture-monitor": [preset]],
+            commands: [descriptor.instanceID: [command]],
+            primaryInstanceID: record.id
+        )
+
+        let group = model.integrations[0]
+        XCTAssertEqual(group.status, IntegrationInstanceStatus(availability: .online, severity: .down, text: "No"))
+        XCTAssertEqual(group.isPrimary, true)
+        XCTAssertEqual(group.presets, [preset])
+        XCTAssertEqual(group.commands.map(\.role), [.testConnection])
+        XCTAssertEqual(group.commands.map(\.providerID), [descriptor.instanceID.rawValue])
+        XCTAssertEqual(group.commands.map(\.command.id), ["fixture.test"])
+    }
+
+    func testMonitoringRoleFieldFactoryProvidesGenericDescriptions() {
+        let field = IntegrationConfigField.monitoringRole(id: "monitoringRole", title: "Network Role")
+
+        XCTAssertEqual(field.kind, .select)
+        XCTAssertEqual(field.defaultValue, .string("auto"))
+        XCTAssertEqual(field.options?.map(\.value), [
+            "auto",
+            "localGateway",
+            "accessNetwork",
+            "upstreamInternet",
+            "remoteService",
+            "endpoint"
+        ])
+        XCTAssertEqual(field.options?.first?.description, "Infer the role from the target address or provider metadata.")
+    }
+
     func testIntegrationConfigSchemaAndDraftAreCodableAndEquatable() throws {
         let schema = Self.pingSchema()
         let data = try JSONEncoder().encode(schema)

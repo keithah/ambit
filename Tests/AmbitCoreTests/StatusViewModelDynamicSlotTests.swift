@@ -1873,6 +1873,40 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testSaveIntegrationInstanceDraftPersistsMonitoringRoleSelection() throws {
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let registry = InMemoryIntegrationRegistry(records: [.ping(host)])
+        let viewModel = makeViewModel(integrationRegistry: registry)
+        let draft = IntegrationInstanceDraft(
+            integrationID: IntegrationIDs.ping,
+            replacing: host.integrationInstanceID,
+            values: [
+                "name": .string("Cloudflare DNS"),
+                "address": .string("1.1.1.1"),
+                "method": .string("tcp"),
+                "port": .number(443),
+                "interval": .number(2),
+                "timeout": .number(1),
+                "degradedAfter": .number(150),
+                "downAfter": .number(4),
+                "diagnosisSensitivity": .string("standard"),
+                "monitoringRole": .string("remoteService")
+            ]
+        )
+
+        try viewModel.saveIntegrationInstanceDraft(draft)
+
+        let record = try XCTUnwrap(registry.instances().first)
+        let savedHost = try XCTUnwrap(PingHostConfig(configObject: record.config))
+        XCTAssertEqual(savedHost.tier, .remoteService)
+
+        let provider = try XCTUnwrap(PingIntegration().makeProviders(instance: record).first)
+        let latency = provider.entityDescriptors().first { $0.metricID == "latency_ms" }
+        XCTAssertEqual(latency?.monitoring?.role, .remoteService)
+        XCTAssertEqual(latency?.monitoring?.roleAssignment?.source, .explicit)
+    }
+
+    @MainActor
     func testSaveIntegrationInstanceDraftAddsNewPingInstance() throws {
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
         let registry = InMemoryIntegrationRegistry(records: [.ping(host)])
@@ -2113,6 +2147,21 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         viewModel.setSlotPrimaryInstance(slotID, nil)
 
         XCTAssertNil(store.config.slotOverrides[slotID])
+    }
+
+    @MainActor
+    func testGenericInstanceEnableAndPrimaryHelpersPersistThroughRegistry() throws {
+        let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
+        let registry = InMemoryIntegrationRegistry(records: [.ping(host)])
+        let viewModel = makeViewModel(integrationRegistry: registry)
+
+        try viewModel.setIntegrationInstanceEnabled(host.integrationInstanceID, false)
+        try viewModel.setPrimaryIntegrationInstance(host.integrationInstanceID)
+
+        XCTAssertEqual(try registry.instances().first?.enabled, false)
+        XCTAssertEqual(try registry.primaryInstanceID(), host.integrationInstanceID)
+        XCTAssertEqual(viewModel.presentationSettings.integrations.first?.enabled, false)
+        XCTAssertEqual(viewModel.presentationSettings.integrations.first?.isPrimary, true)
     }
 
     func testHistoryExportRowsMapPresentationSettingsDescriptorsAndSamples() {

@@ -88,6 +88,10 @@ final class GenericMonitoringVocabularyTests: XCTestCase {
         )
         let declarations = integration.alertKindDeclarations(instance: instance)
 
+        XCTAssertEqual(integration.configSchema?.fields.map(\.id), ["address", "monitoringRole"])
+        XCTAssertEqual(integration.configSchema?.fields.last, .monitoringRole())
+        XCTAssertEqual(integration.presets.map(\.id), ["fixtureWan"])
+        XCTAssertEqual(integration.presets.first?.values["monitoringRole"], .string(MonitoringRole.accessNetwork.rawValue))
         XCTAssertEqual(perspectives.map(\.id.rawValue), ["fixture.wan"])
         XCTAssertEqual(perspectives.first?.members.map(\.role), [.accessNetwork])
         XCTAssertEqual(perspectives.first?.members.map(\.entityID), [descriptor.id])
@@ -100,6 +104,24 @@ final class GenericMonitoringVocabularyTests: XCTestCase {
 private struct MonitoringFixtureIntegration: Integration {
     let id: IntegrationID = "fixture-monitor"
     let displayName = "Fixture Monitor"
+    var configSchema: IntegrationConfigSchema? {
+        IntegrationConfigSchema(fields: [
+            IntegrationConfigField(id: "address", title: "Address", kind: .text, required: true),
+            .monitoringRole()
+        ])
+    }
+    var presets: [IntegrationPreset] {
+        [
+            IntegrationPreset(
+                id: "fixtureWan",
+                title: "Fixture WAN",
+                values: [
+                    "address": .string("203.0.113.1"),
+                    "monitoringRole": .string(MonitoringRole.accessNetwork.rawValue)
+                ]
+            )
+        ]
+    }
 
     func makeProviders(instance: IntegrationInstanceRecord) -> [any Provider] { [] }
 

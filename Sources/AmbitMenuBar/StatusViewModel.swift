@@ -586,6 +586,16 @@ final class StatusViewModel: ObservableObject {
         )
     }
 
+    func executeInstanceCommand(_ command: IntegrationInstanceCommand, arguments: CommandArguments = CommandArguments()) async {
+        _ = await runProviderCommand(
+            providerID: command.providerID,
+            providerName: command.providerName,
+            commandID: command.command.id,
+            commandLabel: command.command.label,
+            arguments: arguments
+        )
+    }
+
     @discardableResult
     private func runProviderCommand(
         providerID: ProviderID,
@@ -698,12 +708,15 @@ final class StatusViewModel: ObservableObject {
         await deliverAlerts(events, descriptors: allDescriptors)
         let allStates = await engine.entityStates(now: now)
         let primaryPingInstanceID = (try? integrationRegistry.primaryInstanceID()) ?? nil
+        let commandsByProvider = Self.commandsByProvider(from: await engine.commandPalette())
         presentationSettings = Self.presentationSettingsModel(
             registryRecords: allRegistryRecords,
             descriptors: allDescriptors,
             states: allStates,
             config: configStore.load(),
-            disabledIntegrationIDs: disabledTypes
+            disabledIntegrationIDs: disabledTypes,
+            commands: commandsByProvider,
+            primaryInstanceID: primaryPingInstanceID
         )
         var newSurfaces: [SlotID: SlotSurface] = [:]
 
@@ -747,7 +760,9 @@ final class StatusViewModel: ObservableObject {
         descriptors: [ProviderInstanceID: [EntityDescriptor]],
         states: [EntityID: EntityState],
         config: PresentationConfig,
-        disabledIntegrationIDs: Set<IntegrationID> = []
+        disabledIntegrationIDs: Set<IntegrationID> = [],
+        commands: [ProviderInstanceID: [CommandDescriptor]] = [:],
+        primaryInstanceID: IntegrationInstanceID? = nil
     ) -> PresentationSettingsModel {
         PresentationSettingsModel.build(
             integrations: registryRecords,
@@ -755,7 +770,10 @@ final class StatusViewModel: ObservableObject {
             states: states,
             overrides: config,
             schemas: knownIntegrationSchemas(),
-            disabledIntegrationIDs: disabledIntegrationIDs
+            disabledIntegrationIDs: disabledIntegrationIDs,
+            presets: knownIntegrationPresets(),
+            commands: commands,
+            primaryInstanceID: primaryInstanceID
         )
     }
 
@@ -766,6 +784,18 @@ final class StatusViewModel: ObservableObject {
                     integration.configSchema.map { (integration.id, $0) }
                 }
         )
+    }
+
+    nonisolated private static func knownIntegrationPresets() -> [IntegrationID: [IntegrationPreset]] {
+        Dictionary(uniqueKeysWithValues: [PingIntegration()].map { ($0.id, $0.presets) })
+    }
+
+    nonisolated private static func commandsByProvider(from palette: [CommandPaletteItem]) -> [ProviderInstanceID: [CommandDescriptor]] {
+        var result: [ProviderInstanceID: [CommandDescriptor]] = [:]
+        for item in palette {
+            result[ProviderInstanceID(rawValue: item.providerID), default: []].append(item.command)
+        }
+        return result
     }
 
     nonisolated private static func diagnosisGraphRange(
@@ -1041,6 +1071,10 @@ final class StatusViewModel: ObservableObject {
         let port = method.requiresPort
             ? UInt16(clamping: Int(draft.values["port"]?.numberValue ?? Double(existingHost?.port ?? method.defaultPort ?? 443)))
             : nil
+        let selectedRole = draft.values["monitoringRole"]?.stringValue
+        let monitoringRole = selectedRole == "auto"
+            ? nil
+            : selectedRole.flatMap(MonitoringRole.init(rawValue:)) ?? existingHost?.tier
         let host = PingHostConfig(
             displayName: draft.values["name"]?.stringValue ?? existingHost?.displayName ?? "Host",
             address: draft.values["address"]?.stringValue ?? existingHost?.address ?? "",
@@ -1053,7 +1087,7 @@ final class StatusViewModel: ObservableObject {
                 downAfterFailures: Int(draft.values["downAfter"]?.numberValue ?? Double(existingHost?.thresholds.downAfterFailures ?? 3))
             ),
             policy: existingHost?.policy ?? .preset(.balanced),
-            tier: existingHost?.tier
+            tier: monitoringRole
         )
         guard host.isValid else {
             throw IntegrationInstanceDraftError.invalidValues
@@ -1086,6 +1120,26 @@ final class StatusViewModel: ObservableObject {
         if (try? integrationRegistry.primaryInstanceID()) == id {
             try? integrationRegistry.setPrimaryInstanceID(nil)
         }
+        let records = (try? integrationRegistry.instances()) ?? []
+        rebuildPresentationSettings(
+            registryRecords: records,
+            config: configStore.load()
+        )
+        reloadProvidersAndRefresh()
+    }
+
+    func setIntegrationInstanceEnabled(_ id: IntegrationInstanceID, _ enabled: Bool) throws {
+        try integrationRegistry.setInstanceEnabled(enabled, instanceID: id)
+        let records = (try? integrationRegistry.instances()) ?? []
+        rebuildPresentationSettings(
+            registryRecords: records,
+            config: configStore.load()
+        )
+        reloadProvidersAndRefresh()
+    }
+
+    func setPrimaryIntegrationInstance(_ id: IntegrationInstanceID?) throws {
+        try integrationRegistry.setPrimaryInstanceID(id)
         let records = (try? integrationRegistry.instances()) ?? []
         rebuildPresentationSettings(
             registryRecords: records,
@@ -1150,7 +1204,9 @@ final class StatusViewModel: ObservableObject {
             descriptors: descriptors,
             states: states,
             config: config,
-            disabledIntegrationIDs: (try? integrationRegistry.disabledIntegrationIDs()) ?? []
+            disabledIntegrationIDs: (try? integrationRegistry.disabledIntegrationIDs()) ?? [],
+            commands: commandsFromPresentationSettings(),
+            primaryInstanceID: (try? integrationRegistry.primaryInstanceID()) ?? nil
         )
     }
 
@@ -1174,6 +1230,16 @@ final class StatusViewModel: ObservableObject {
             }
         }
         return descriptors
+    }
+
+    private func commandsFromPresentationSettings() -> [ProviderInstanceID: [CommandDescriptor]] {
+        var commands: [ProviderInstanceID: [CommandDescriptor]] = [:]
+        for group in presentationSettings.integrations {
+            for command in group.commands {
+                commands[ProviderInstanceID(rawValue: command.providerID), default: []].append(command.command)
+            }
+        }
+        return commands
     }
 
     private func statesFromPresentationSettings() -> [EntityID: EntityState] {

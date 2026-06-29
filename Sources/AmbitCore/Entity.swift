@@ -247,10 +247,12 @@ public enum TableValueStyle: String, Equatable, Sendable, Codable {
 public struct EntityOption: Equatable, Sendable, Codable {
     public var value: String
     public var label: String
+    public var description: String?
 
-    public init(value: String, label: String) {
+    public init(value: String, label: String, description: String? = nil) {
         self.value = value
         self.label = label
+        self.description = description
     }
 }
 

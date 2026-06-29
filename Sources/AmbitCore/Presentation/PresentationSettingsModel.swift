@@ -18,6 +18,10 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
     public var entities: [EntitySettingsRow]
     public var configValues: [String: JSONValue]
     public var configSchema: IntegrationConfigSchema?
+    public var status: IntegrationInstanceStatus
+    public var isPrimary: Bool
+    public var presets: [IntegrationPreset]
+    public var commands: [IntegrationInstanceCommand]
 
     public init(
         id: IntegrationInstanceID,
@@ -26,7 +30,11 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
         enabled: Bool,
         entities: [EntitySettingsRow],
         configValues: [String: JSONValue] = [:],
-        configSchema: IntegrationConfigSchema? = nil
+        configSchema: IntegrationConfigSchema? = nil,
+        status: IntegrationInstanceStatus = .unknown,
+        isPrimary: Bool = false,
+        presets: [IntegrationPreset] = [],
+        commands: [IntegrationInstanceCommand] = []
     ) {
         self.id = id
         self.integrationID = integrationID
@@ -35,6 +43,39 @@ public struct IntegrationSettingsGroup: Identifiable, Equatable, Sendable {
         self.entities = entities
         self.configValues = configValues
         self.configSchema = configSchema
+        self.status = status
+        self.isPrimary = isPrimary
+        self.presets = presets
+        self.commands = commands
+    }
+}
+
+public struct IntegrationInstanceStatus: Equatable, Sendable {
+    public var availability: Availability
+    public var severity: Severity?
+    public var text: String
+
+    public init(availability: Availability, severity: Severity?, text: String) {
+        self.availability = availability
+        self.severity = severity
+        self.text = text
+    }
+
+    public static let unknown = IntegrationInstanceStatus(availability: .unavailable, severity: nil, text: "No Data")
+}
+
+public struct IntegrationInstanceCommand: Identifiable, Equatable, Sendable {
+    public var id: String { "\(providerID).\(command.id)" }
+    public var role: StandardCommandRole
+    public var providerID: ProviderID
+    public var providerName: String
+    public var command: CommandDescriptor
+
+    public init(role: StandardCommandRole, providerID: ProviderID, providerName: String, command: CommandDescriptor) {
+        self.role = role
+        self.providerID = providerID
+        self.providerName = providerName
+        self.command = command
     }
 }
 
@@ -65,7 +106,10 @@ public extension PresentationSettingsModel {
         states: [EntityID: EntityState],
         overrides: PresentationConfig,
         schemas: [IntegrationID: IntegrationConfigSchema],
-        disabledIntegrationIDs: Set<IntegrationID> = []
+        disabledIntegrationIDs: Set<IntegrationID> = [],
+        presets: [IntegrationID: [IntegrationPreset]] = [:],
+        commands: [ProviderInstanceID: [CommandDescriptor]] = [:],
+        primaryInstanceID: IntegrationInstanceID? = nil
     ) -> PresentationSettingsModel {
         let groups = integrations.map { record in
             let rows = descriptors
@@ -84,6 +128,20 @@ public extension PresentationSettingsModel {
                         )
                     }
                 }
+            let instanceCommands = commands
+                .filter { providerInstance, _ in providerInstance.integrationInstanceID == record.id }
+                .sorted { lhs, rhs in lhs.key.rawValue < rhs.key.rawValue }
+                .flatMap { providerInstance, descriptors in
+                    descriptors.compactMap { command -> IntegrationInstanceCommand? in
+                        guard let role = command.standardRole else { return nil }
+                        return IntegrationInstanceCommand(
+                            role: role,
+                            providerID: providerInstance.rawValue,
+                            providerName: record.displayName,
+                            command: command
+                        )
+                    }
+                }
 
             return IntegrationSettingsGroup(
                 id: record.id,
@@ -92,10 +150,35 @@ public extension PresentationSettingsModel {
                 enabled: record.enabled && !disabledIntegrationIDs.contains(record.integrationID),
                 entities: rows,
                 configValues: record.config,
-                configSchema: schemas[record.integrationID]
+                configSchema: schemas[record.integrationID],
+                status: instanceStatus(rows: rows),
+                isPrimary: primaryInstanceID == record.id,
+                presets: presets[record.integrationID] ?? [],
+                commands: instanceCommands
             )
         }
 
         return PresentationSettingsModel(integrations: groups, slots: overrides.slots)
+    }
+
+    private static func instanceStatus(rows: [EntitySettingsRow]) -> IntegrationInstanceStatus {
+        let candidates = rows
+            .filter { $0.descriptor.category != .config }
+            .sorted { lhs, rhs in
+                let lhsPrimary = lhs.descriptor.isPrimary ? 0 : 1
+                let rhsPrimary = rhs.descriptor.isPrimary ? 0 : 1
+                if lhsPrimary != rhsPrimary { return lhsPrimary < rhsPrimary }
+                let lhsSeverity = lhs.state?.severity?.rawValue ?? -1
+                let rhsSeverity = rhs.state?.severity?.rawValue ?? -1
+                if lhsSeverity != rhsSeverity { return lhsSeverity > rhsSeverity }
+                return lhs.descriptor.id.rawValue < rhs.descriptor.id.rawValue
+            }
+        guard let row = candidates.first, let state = row.state else { return .unknown }
+        let readout = EntityReadout.make(descriptor: row.descriptor, state: state)
+        return IntegrationInstanceStatus(
+            availability: state.availability,
+            severity: state.severity,
+            text: readout.text
+        )
     }
 }

@@ -27,6 +27,13 @@ public struct PingProvider: Provider {
     private let host: PingHostConfig
     private let probe: any PingProbe
     private let tracker = HealthTracker()
+    public let commands = [
+        CommandDescriptor(
+            id: StandardCommandRole.testConnection.rawValue,
+            label: "Test Connection",
+            standardRole: .testConnection
+        )
+    ]
 
     public init(
         host: PingHostConfig,
@@ -60,6 +67,17 @@ public struct PingProvider: Provider {
             metrics: metrics,
             error: result.failureReason.map { "Probe failed: \($0.rawValue)" }
         )
+    }
+
+    public func execute(commandID: String, arguments: CommandArguments, context: EnvironmentContext) async throws {
+        guard commandID == StandardCommandRole.testConnection.rawValue else {
+            throw JSONRPCClientError.commandFailed("Unsupported Ping command \(commandID).")
+        }
+        let result = await probe.measure(host)
+        guard result.isSuccess else {
+            let reason = result.failureReason?.rawValue ?? "unknown"
+            throw JSONRPCClientError.commandFailed("Test connection failed: \(reason)")
+        }
     }
 
     public func entityDescriptors() -> [EntityDescriptor] {
@@ -156,8 +174,64 @@ public struct PingIntegration: Integration {
                 ],
                 defaultValue: .string("standard"),
                 required: true
-            )
+            ),
+            .monitoringRole()
         ])
+    }
+
+    public var presets: [IntegrationPreset] {
+        [
+            IntegrationPreset(
+                id: "defaultGateway",
+                title: "Default Gateway",
+                systemImage: "network",
+                values: [
+                    "name": .string("Gateway"),
+                    "address": .string(""),
+                    "method": .string(ProbeMethod.icmp.rawValue),
+                    "interval": .number(2),
+                    "timeout": .number(1),
+                    "degradedAfter": .number(100),
+                    "downAfter": .number(3),
+                    "diagnosisSensitivity": .string("standard"),
+                    "monitoringRole": .string(MonitoringRole.localGateway.rawValue)
+                ]
+            ),
+            IntegrationPreset(
+                id: "cloudflareDNS",
+                title: "Cloudflare DNS",
+                systemImage: "cloud",
+                values: [
+                    "name": .string("Cloudflare DNS"),
+                    "address": .string("1.1.1.1"),
+                    "method": .string(ProbeMethod.tcp.rawValue),
+                    "port": .number(443),
+                    "interval": .number(2),
+                    "timeout": .number(2),
+                    "degradedAfter": .number(250),
+                    "downAfter": .number(3),
+                    "diagnosisSensitivity": .string("standard"),
+                    "monitoringRole": .string(MonitoringRole.upstreamInternet.rawValue)
+                ]
+            ),
+            IntegrationPreset(
+                id: "googleDNS",
+                title: "Google DNS",
+                systemImage: "network",
+                values: [
+                    "name": .string("Google DNS"),
+                    "address": .string("8.8.8.8"),
+                    "method": .string(ProbeMethod.tcp.rawValue),
+                    "port": .number(443),
+                    "interval": .number(2),
+                    "timeout": .number(2),
+                    "degradedAfter": .number(250),
+                    "downAfter": .number(3),
+                    "diagnosisSensitivity": .string("standard"),
+                    "monitoringRole": .string(MonitoringRole.upstreamInternet.rawValue)
+                ]
+            )
+        ]
     }
 
     private let probeFactory: @Sendable (PingHostConfig) -> any PingProbe

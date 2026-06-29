@@ -10,6 +10,21 @@ private enum SettingsSelection: Hashable {
     case history
 }
 
+private func statusColor(_ status: IntegrationInstanceStatus) -> Color {
+    switch status.severity {
+    case .down, .alerting:
+        return .red
+    case .degraded:
+        return .orange
+    case .elevated:
+        return .yellow
+    case .normal:
+        return status.availability == .online ? .green : .gray
+    case nil:
+        return status.availability == .online ? .green : .gray
+    }
+}
+
 struct AmbitSettings: View {
     @EnvironmentObject private var viewModel: StatusViewModel
     @State private var selection: SettingsSelection = .slots
@@ -39,12 +54,7 @@ struct AmbitSettings: View {
 
             VStack(spacing: 2) {
                 ForEach(sidebarGroups) { group in
-                    sidebarButton(
-                        title: group.displayName,
-                        subtitle: group.integrationID.rawValue,
-                        systemImage: "shippingbox",
-                        selection: .integration(group.id)
-                    )
+                    sidebarIntegrationButton(group)
                 }
                 Divider().padding(.vertical, 6)
                 sidebarButton(
@@ -115,6 +125,43 @@ struct AmbitSettings: View {
         .accessibilityLabel(title)
     }
 
+    private func sidebarIntegrationButton(_ group: IntegrationSettingsGroup) -> some View {
+        Button {
+            selection = .integration(group.id)
+            didChooseInitialSelection = true
+        } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(statusColor(group.status))
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel(group.status.text)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(group.displayName).lineLimit(1)
+                        if group.isPrimary {
+                            Text("PRIMARY")
+                                .font(.system(size: 8, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(selection == .integration(group.id) ? 0.35 : 0.16), in: Capsule())
+                        }
+                    }
+                    Text("\(group.integrationID.rawValue) · \(group.status.text)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(selection == .integration(group.id) ? .white.opacity(0.8) : .secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(selection == .integration(group.id) ? Color.accentColor : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(selection == .integration(group.id) ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(group.displayName)
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch selection {
@@ -143,7 +190,9 @@ struct AmbitSettings: View {
 }
 
 private struct IntegrationSettingsDetail: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
     let group: IntegrationSettingsGroup
+    @State private var actionError: String?
 
     var body: some View {
         ScrollView {
@@ -161,15 +210,59 @@ private struct IntegrationSettingsDetail: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
+                Circle()
+                    .fill(statusColor(group.status))
+                    .frame(width: 9, height: 9)
                 Text(group.displayName).font(.system(size: 22, weight: .bold))
+                if group.isPrimary {
+                    Text("PRIMARY")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.16), in: Capsule())
+                }
                 Spacer()
-                Text(group.enabled ? "Enabled" : "Disabled")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(group.enabled ? .green : .secondary)
+                Toggle("Enabled", isOn: enabledBinding)
+                    .toggleStyle(.checkbox)
             }
-            Text(group.integrationID.rawValue)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Text("\(group.integrationID.rawValue) · \(group.status.text)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Button(group.isPrimary ? "Primary" : "Set as Primary") {
+                    do {
+                        try viewModel.setPrimaryIntegrationInstance(group.id)
+                        actionError = nil
+                    } catch {
+                        actionError = error.localizedDescription
+                    }
+                }
+                .disabled(group.isPrimary)
+                if let test = group.commands.first(where: { $0.role == .testConnection }) {
+                    Button("Test") {
+                        Task { await viewModel.executeInstanceCommand(test) }
+                    }
+                    .accessibilityLabel("Test connection")
+                }
+            }
+            if let actionError {
+                Text(actionError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding {
+            group.enabled
+        } set: { enabled in
+            do {
+                try viewModel.setIntegrationInstanceEnabled(group.id, enabled)
+                actionError = nil
+            } catch {
+                actionError = error.localizedDescription
+            }
         }
     }
 
@@ -278,6 +371,23 @@ private struct IntegrationConfigForm: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
+            if group.presets.isEmpty == false {
+                HStack(spacing: 8) {
+                    ForEach(group.presets) { preset in
+                        Button {
+                            apply(preset)
+                        } label: {
+                            if let systemImage = preset.systemImage {
+                                Label(preset.title, systemImage: systemImage)
+                            } else {
+                                Text(preset.title)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(schema.fields) { field in
                     fieldRow(field)
@@ -332,31 +442,45 @@ private struct IntegrationConfigForm: View {
         }
     }
 
+    private func apply(_ preset: IntegrationPreset) {
+        for (key, value) in preset.values {
+            model.values[key] = value
+        }
+    }
+
     @ViewBuilder
     private func fieldRow(_ field: IntegrationConfigField) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(field.title)
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 150, alignment: .leading)
-            switch field.kind {
-            case .text:
-                TextField(field.title, text: textBinding(field))
-            case .number:
-                TextField(field.title, text: numberBinding(field))
-                    .frame(width: 120)
-            case .toggle:
-                Toggle("", isOn: toggleBinding(field))
-                    .labelsHidden()
-            case .select:
-                Picker(field.title, selection: selectBinding(field)) {
-                    ForEach(field.options ?? [], id: \.value) { option in
-                        Text(option.label).tag(option.value)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(field.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 150, alignment: .leading)
+                switch field.kind {
+                case .text:
+                    TextField(field.title, text: textBinding(field))
+                case .number:
+                    TextField(field.title, text: numberBinding(field))
+                        .frame(width: 120)
+                case .toggle:
+                    Toggle("", isOn: toggleBinding(field))
+                        .labelsHidden()
+                case .select:
+                    Picker(field.title, selection: selectBinding(field)) {
+                        ForEach(field.options ?? [], id: \.value) { option in
+                            Text(option.label).tag(option.value)
+                        }
                     }
+                    .labelsHidden()
+                    .frame(width: 180)
                 }
-                .labelsHidden()
-                .frame(width: 180)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            if let description = selectedOptionDescription(field) {
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 162)
+            }
         }
     }
 
@@ -401,10 +525,19 @@ private struct IntegrationConfigForm: View {
         }
     }
 
+    private func selectedOptionDescription(_ field: IntegrationConfigField) -> String? {
+        guard field.kind == .select else { return nil }
+        let selected = model.values[field.id]?.stringValue ?? field.defaultValue?.stringValue ?? field.options?.first?.value
+        return field.options?.first { $0.value == selected }?.description
+    }
+
     private static func initialValues(group: IntegrationSettingsGroup, schema: IntegrationConfigSchema) -> [String: JSONValue] {
         var values = group.configValues
         if values["name"] == nil {
             values["name"] = .string(group.displayName)
+        }
+        if values["monitoringRole"] == nil {
+            values["monitoringRole"] = values["tier"] ?? .string("auto")
         }
         for field in schema.fields where values[field.id] == nil {
             values[field.id] = field.defaultValue
