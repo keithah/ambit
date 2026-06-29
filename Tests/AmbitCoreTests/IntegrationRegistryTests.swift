@@ -49,6 +49,25 @@ final class IntegrationRegistryTests: XCTestCase {
         XCTAssertTrue(try registry.instances().isEmpty)
     }
 
+    func testReplaceInstanceRemovesOnlyTheScopedOldIDAndUpsertsReplacement() throws {
+        let registry = InMemoryIntegrationRegistry(records: [
+            record("ping@old", integration: "ping", origin: .user),
+            record("ping@same-method-peer", integration: "ping", origin: .user),
+            record("system@local", integration: "system")
+        ])
+
+        try registry.replaceInstance(
+            replacing: "ping@old",
+            with: record("ping@new", integration: "ping", origin: .user)
+        )
+
+        XCTAssertEqual(try registry.instances().map(\.id.rawValue), [
+            "ping@same-method-peer",
+            "system@local",
+            "ping@new"
+        ])
+    }
+
     func testUserDefaultsRegistryRoundTripsInstancesAndDisabledSet() throws {
         let defaults = UserDefaults(suiteName: "IntegrationRegistryTests.\(UUID().uuidString)")!
         let registry = UserDefaultsIntegrationRegistry(defaults: defaults)

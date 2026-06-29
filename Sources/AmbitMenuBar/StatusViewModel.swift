@@ -1071,16 +1071,8 @@ final class StatusViewModel: ObservableObject {
             config: config
         )
 
-        var records = try integrationRegistry.instances()
-        if let replacing = draft.replacing {
-            records.removeAll { $0.id == replacing }
-        }
-        if let index = records.firstIndex(where: { $0.id == record.id }) {
-            records[index] = record
-        } else {
-            records.append(record)
-        }
-        try integrationRegistry.save(records)
+        try integrationRegistry.replaceInstance(replacing: draft.replacing, with: record)
+        let records = try integrationRegistry.instances()
         rebuildPresentationSettings(
             registryRecords: records,
             config: configStore.load()

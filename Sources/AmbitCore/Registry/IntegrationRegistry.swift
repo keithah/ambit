@@ -73,6 +73,19 @@ public extension IntegrationRegistry {
         try save(instances().filter { $0.id != id })
     }
 
+    func replaceInstance(replacing oldID: IntegrationInstanceID?, with record: IntegrationInstanceRecord) throws {
+        var records = try instances()
+        if let oldID {
+            records.removeAll { $0.id == oldID }
+        }
+        if let index = records.firstIndex(where: { $0.id == record.id }) {
+            records[index] = record
+        } else {
+            records.append(record)
+        }
+        try save(records)
+    }
+
     func setInstanceEnabled(_ enabled: Bool, instanceID: IntegrationInstanceID) throws {
         var records = try instances()
         guard let index = records.firstIndex(where: { $0.id == instanceID }) else { return }
