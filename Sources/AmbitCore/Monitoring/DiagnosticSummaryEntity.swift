@@ -72,11 +72,18 @@ public extension MonitoringDiagnosis {
             verdict: MonitoringVerdict(legacy: diagnosis.verdict),
             severity: DiagnosticSummaryEntity.severity(for: MonitoringVerdict.Kind(legacy: diagnosis.verdict)) ?? .normal,
             confidence: DiagnosisConfidence(legacy: diagnosis.confidence),
-            affectedEntityIDs: affectedEntityIDs ?? diagnosis.affectedHostIDs.map(EntityID.init(rawValue:)),
+            affectedEntityIDs: affectedEntityIDs ?? Self.affectedEntityIDs(for: diagnosis),
             title: diagnosis.title,
             detail: diagnosis.detail,
             evidence: diagnosis.tierEvidence.map(MonitoringEvidence.init)
         )
+    }
+
+    private static func affectedEntityIDs(for diagnosis: NetworkPerspectiveDiagnosis) -> [EntityID] {
+        if case .remoteServiceDown(let hostIDs) = diagnosis.verdict {
+            return hostIDs.map(EntityID.init(rawValue:))
+        }
+        return diagnosis.affectedHostIDs.map(EntityID.init(rawValue:))
     }
 }
 

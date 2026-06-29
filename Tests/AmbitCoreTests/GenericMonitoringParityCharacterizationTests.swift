@@ -55,6 +55,26 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
         try assertGolden(cases, named: "ping_alert_monitor_events.json")
     }
 
+    func testMonitoringAlertStateMachineMatchesPingAlertMonitorGoldenEvents() {
+        let cases = [
+            hostDownRecoveryCooldownDifferential(),
+            noRecoveryWhenDisabledDifferential(),
+            highConfidenceSpecificNetworkAlertsDifferential(),
+            tentativeSensitivityMatrixDifferential(),
+            pathDegradedStreaksDifferential(),
+            networkCooldownSuppressionDifferential(),
+            internetLossSafetyNetDifferential(),
+            remoteServiceAdditionalHostsCopyDifferential(),
+            pathRecoveredOnlyAfterDeliveredNetworkAlertDifferential(),
+            networkStatusTransitionAlertsDifferential(),
+            networkChangeEventCopyDifferential()
+        ].flatMap { $0 }
+
+        for alertCase in cases {
+            XCTAssertEqual(alertCase.old, alertCase.new, alertCase.id)
+        }
+    }
+
     @MainActor
     func testObservablePingSurfaceGoldenScenarios() async throws {
         let coordinator = SlotSurfaceCoordinator()
@@ -229,6 +249,12 @@ private struct TierEvidenceSnapshot: Codable, Equatable {
 private struct AlertGoldenCase: Codable, Equatable {
     var id: String
     var events: [AlertEventSnapshot]
+}
+
+private struct AlertDifferentialCase {
+    var id: String
+    var old: [AlertEventSnapshot]
+    var new: [AlertEventSnapshot]
 }
 
 private struct AlertEventSnapshot: Codable, Equatable {
@@ -592,6 +618,242 @@ private extension GenericMonitoringParityCharacterizationTests {
             alertCaseStableTime("networkChange.unchanged", [
                 StatusViewModel.networkChangeEvent(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1")
             ])
+        ]
+    }
+
+    func diffCase(_ id: String, old: [AlertEvent], new: [AlertEvent]) -> AlertDifferentialCase {
+        AlertDifferentialCase(
+            id: id,
+            old: old.map { AlertEventSnapshot($0) },
+            new: new.map { AlertEventSnapshot($0) }
+        )
+    }
+
+    func monitoringMachine(
+        sensitivity: DiagnosisSensitivity = .balanced,
+        networkCooldown: TimeInterval = 300,
+        pathDegradedConsecutive: Int = 3
+    ) -> MonitoringAlertStateMachine {
+        MonitoringAlertStateMachine(
+            declarations: PingIntegration.monitoringAlertDeclarations(networkCooldown: networkCooldown),
+            sensitivity: sensitivity,
+            networkCooldown: networkCooldown,
+            pathDegradedConsecutive: pathDegradedConsecutive
+        )
+    }
+
+    func alertMembers(_ hosts: [AlertHost]) -> [MonitoringAlertMember] {
+        hosts.map {
+            MonitoringAlertMember(
+                id: $0.id,
+                name: $0.name,
+                status: $0.status,
+                target: .entity(EntityID(rawValue: "\($0.id)/probe.latency_ms")),
+                notifyOnRecovery: $0.notifyOnRecovery,
+                cooldown: $0.cooldown
+            )
+        }
+    }
+
+    func monitoringDiagnosis(_ diagnosis: NetworkPerspectiveDiagnosis) -> MonitoringDiagnosis {
+        MonitoringDiagnosis(legacy: diagnosis)
+    }
+
+    func hostDownRecoveryCooldownDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor()
+        var new = monitoringMachine()
+        let healthy = [alertHost(status: .healthy)]
+        _ = old.evaluate(hosts: healthy, diagnosis: healthyDiagnosis(), now: at(0))
+        _ = new.evaluate(members: alertMembers(healthy), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0))
+        let downHosts = [alertHost(status: .down)]
+        let down = diffCase(
+            "hostDownRecovery.down",
+            old: old.evaluate(hosts: downHosts, diagnosis: healthyDiagnosis(), now: at(1)),
+            new: new.evaluate(members: alertMembers(downHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(1))
+        )
+        let stillDown = diffCase(
+            "hostDownRecovery.stillDown",
+            old: old.evaluate(hosts: downHosts, diagnosis: healthyDiagnosis(), now: at(2)),
+            new: new.evaluate(members: alertMembers(downHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(2))
+        )
+        let recoveredHosts = [alertHost(status: .healthy)]
+        let recovered = diffCase(
+            "hostDownRecovery.recovered",
+            old: old.evaluate(hosts: recoveredHosts, diagnosis: healthyDiagnosis(), now: at(70)),
+            new: new.evaluate(members: alertMembers(recoveredHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(70))
+        )
+        return [down, stillDown, recovered]
+    }
+
+    func noRecoveryWhenDisabledDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor()
+        var new = monitoringMachine()
+        let down = [alertHost(status: .down, recovery: false)]
+        _ = old.evaluate(hosts: down, diagnosis: healthyDiagnosis(), now: at(0))
+        _ = new.evaluate(members: alertMembers(down), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0))
+        let healthy = [alertHost(status: .healthy, recovery: false)]
+        return [
+            diffCase(
+                "noRecoveryWhenDisabled",
+                old: old.evaluate(hosts: healthy, diagnosis: healthyDiagnosis(), now: at(5)),
+                new: new.evaluate(members: alertMembers(healthy), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(5))
+            )
+        ]
+    }
+
+    func highConfidenceSpecificNetworkAlertsDifferential() -> [AlertDifferentialCase] {
+        [
+            (.localNetworkDown, "localNetworkDown"),
+            (.ispPathDown, "ispPathDown"),
+            (.upstreamDown, "upstreamDown"),
+            (.remoteServiceDown(hostIDs: ["cf"]), "remoteServiceDown")
+        ].map { verdict, id in
+            var old = PingAlertMonitor(sensitivity: .balanced)
+            var new = monitoringMachine(sensitivity: .balanced)
+            let diagnosis = alertDiagnosis(verdict, .high)
+            return diffCase(
+                "highConfidence.\(id)",
+                old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
+                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))
+            )
+        }
+    }
+
+    func tentativeSensitivityMatrixDifferential() -> [AlertDifferentialCase] {
+        DiagnosisSensitivity.allCases.map { sensitivity in
+            var old = PingAlertMonitor(sensitivity: sensitivity)
+            var new = monitoringMachine(sensitivity: sensitivity)
+            let diagnosis = alertDiagnosis(.upstreamDown, .tentative)
+            return diffCase(
+                "tentative.\(sensitivity.rawValue)",
+                old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
+                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))
+            )
+        }
+    }
+
+    func pathDegradedStreaksDifferential() -> [AlertDifferentialCase] {
+        DiagnosisSensitivity.allCases.flatMap { sensitivity in
+            var old = PingAlertMonitor(sensitivity: sensitivity, pathDegradedConsecutive: 3)
+            var new = monitoringMachine(sensitivity: sensitivity, pathDegradedConsecutive: 3)
+            let diagnosis = alertDiagnosis(.partialDegradation(tier: .upstream), .tentative)
+            return [
+                diffCase("pathDegraded.\(sensitivity.rawValue).first",
+                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
+                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))),
+                diffCase("pathDegraded.\(sensitivity.rawValue).second",
+                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(1)),
+                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(1))),
+                diffCase("pathDegraded.\(sensitivity.rawValue).third",
+                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(2)),
+                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(2)))
+            ]
+        }
+    }
+
+    func networkCooldownSuppressionDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
+        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let diagnosis = alertDiagnosis(.upstreamDown, .high)
+        return [
+            diffCase("networkCooldown.first",
+                     old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
+                     new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))),
+            diffCase("networkCooldown.suppressed",
+                     old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(30)),
+                     new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(30)))
+        ]
+    }
+
+    func internetLossSafetyNetDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor(sensitivity: .conservative, networkCooldown: 300)
+        var new = monitoringMachine(sensitivity: .conservative, networkCooldown: 300)
+        let hosts = [
+            alertHost(status: .down),
+            alertHost("gw", name: "Gateway", status: .down)
+        ]
+        return [
+            diffCase("internetLossSafetyNet",
+                     old: old.evaluate(hosts: hosts, diagnosis: healthyDiagnosis(), now: at(0)),
+                     new: new.evaluate(members: alertMembers(hosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0)))
+        ]
+    }
+
+    func remoteServiceAdditionalHostsCopyDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
+        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let hosts = [
+            alertHost("cf", name: "Cloudflare DNS", status: .degraded),
+            alertHost("gg", name: "Google DNS", status: .degraded),
+            alertHost("svc", name: "Service API", status: .degraded)
+        ]
+        let diagnosis = NetworkPerspectiveDiagnosis(
+            scope: .remoteService,
+            verdict: .remoteServiceDown(hostIDs: ["cf", "gg", "svc"]),
+            confidence: .high,
+            faultTier: .remoteService,
+            affectedHostIDs: ["cf", "gg", "svc"],
+            title: "Remote service down",
+            detail: "3/3 remote host(s) unreachable.",
+            tierEvidence: []
+        )
+        return [
+            diffCase("remoteServiceAdditionalHostsCopy",
+                     old: old.evaluate(hosts: hosts, diagnosis: diagnosis, now: at(0)),
+                     new: new.evaluate(members: alertMembers(hosts), diagnosis: monitoringDiagnosis(diagnosis), now: at(0)))
+        ]
+    }
+
+    func pathRecoveredOnlyAfterDeliveredNetworkAlertDifferential() -> [AlertDifferentialCase] {
+        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
+        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let noPrior = diffCase("pathRecovered.noPrior",
+                               old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(0)),
+                               new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0)))
+        _ = old.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .high), now: at(10))
+        _ = new.evaluate(members: [], diagnosis: monitoringDiagnosis(alertDiagnosis(.upstreamDown, .high)), now: at(10))
+        let recovered = diffCase("pathRecovered.afterDelivered",
+                                 old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(20)),
+                                 new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(20)))
+        let repeated = diffCase("pathRecovered.repeated",
+                                old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(30)),
+                                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(30)))
+        return [noPrior, recovered, repeated]
+    }
+
+    func networkStatusTransitionAlertsDifferential() -> [AlertDifferentialCase] {
+        NetworkConnectivityStatus.allCases.flatMap { status in
+            guard status != .connected else { return [AlertDifferentialCase]() }
+            var old = NetworkStatusAlertMonitor(cooldown: 300)
+            var new = MonitoringAlertStateMachine(networkAwarenessConfig: NetworkAwarenessConfig(cooldown: 300))
+            let down = diffCase("networkStatus.\(status.rawValue).down",
+                                old: [old.evaluate(previous: .connected, current: status, now: at(0))].compactMap { $0 },
+                                new: [new.evaluateNetworkStatus(previous: .connected, current: status, now: at(0))].compactMap { $0 })
+            let repeated = diffCase("networkStatus.\(status.rawValue).repeated",
+                                    old: [old.evaluate(previous: status, current: status, now: at(10))].compactMap { $0 },
+                                    new: [new.evaluateNetworkStatus(previous: status, current: status, now: at(10))].compactMap { $0 })
+            let recovered = diffCase("networkStatus.\(status.rawValue).recovered",
+                                     old: [old.evaluate(previous: status, current: .connected, now: at(20))].compactMap { $0 },
+                                     new: [new.evaluateNetworkStatus(previous: status, current: .connected, now: at(20))].compactMap { $0 })
+            return [down, repeated, recovered]
+        }
+    }
+
+    func networkChangeEventCopyDifferential() -> [AlertDifferentialCase] {
+        let oldChanged = StatusViewModel.networkChangeEvent(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1", now: at(0))
+        let oldUnchanged = StatusViewModel.networkChangeEvent(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1", now: at(0))
+        let machine = MonitoringAlertStateMachine()
+        let newChanged = machine.networkChangeEvent(
+            MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"),
+            now: at(0)
+        )
+        let newUnchanged = machine.networkChangeEvent(
+            MonitoringNetworkChange(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1"),
+            now: at(0)
+        )
+        return [
+            diffCase("networkChange.gatewayChanged", old: [oldChanged].compactMap { $0 }, new: [newChanged].compactMap { $0 }),
+            diffCase("networkChange.unchanged", old: [oldUnchanged].compactMap { $0 }, new: [newUnchanged].compactMap { $0 })
         ]
     }
 

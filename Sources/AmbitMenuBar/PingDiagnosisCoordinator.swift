@@ -13,7 +13,7 @@ final class PingDiagnosisCoordinator {
 
     private let monitoringCoordinator = MonitoringPerspectiveCoordinator()
     private let tierClassifier = NetworkTierClassifier()
-    private var alertMonitor = PingAlertMonitor()
+    private var alertStateMachine = MonitoringAlertStateMachine(declarations: PingIntegration.monitoringAlertDeclarations())
 
     func evaluate(
         activeRecords: [IntegrationInstanceRecord],
@@ -24,10 +24,10 @@ final class PingDiagnosisCoordinator {
         historySamples: @escaping HistorySamples
     ) async -> PingDiagnosisResult {
         let sensitivity = Self.diagnosisSensitivity(from: activeRecords)
-        alertMonitor.sensitivity = sensitivity
+        alertStateMachine.sensitivity = sensitivity
 
         var diagnosisHosts: [DiagnosisHost] = []
-        var alertHosts: [AlertHost] = []
+        var alertMembers: [MonitoringAlertMember] = []
         var newestSample: Date?
         for record in activeRecords {
             guard let host = PingHostConfig(configObject: record.config) else { continue }
@@ -40,10 +40,11 @@ final class PingDiagnosisCoordinator {
                 newestSample = last
             }
             diagnosisHosts.append(DiagnosisHost(id: record.id.rawValue, tier: tierClassifier.tier(for: host), status: health, isStale: isStale))
-            alertHosts.append(AlertHost(
+            alertMembers.append(MonitoringAlertMember(
                 id: record.id.rawValue,
                 name: record.displayName,
                 status: health,
+                target: .entity(EntityID(rawValue: "\(record.id.rawValue)/probe.latency_ms")),
                 notifyOnRecovery: host.policy.notifyOnRecovery,
                 cooldown: host.policy.cooldown
             ))
@@ -64,7 +65,7 @@ final class PingDiagnosisCoordinator {
             monitoringDiagnosis.detail = diagnosis.detail
         }
         let events = networkStatus == .connected
-            ? alertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
+            ? alertStateMachine.evaluate(members: alertMembers, diagnosis: monitoringDiagnosis, now: now)
             : []
         return PingDiagnosisResult(diagnosis: diagnosis, monitoringDiagnosis: monitoringDiagnosis, events: events)
     }

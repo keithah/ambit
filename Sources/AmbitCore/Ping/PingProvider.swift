@@ -201,4 +201,87 @@ public struct PingIntegration: Integration {
             ))
         ]
     }
+
+    public func alertKindDeclarations(instance: IntegrationInstanceRecord) -> [AlertKindDeclaration] {
+        Self.monitoringAlertDeclarations()
+    }
+
+    public static func monitoringAlertDeclarations(networkCooldown: TimeInterval = 300) -> [AlertKindDeclaration] {
+        [
+            AlertKindDeclaration(
+                id: "ping.hostDown",
+                titleTemplate: "{hostName} is down",
+                messageTemplate: "No response from {hostName}.",
+                severity: .critical,
+                defaultEnabled: true,
+                target: .providerMetric(providerID: "ping", metricID: "latency_ms"),
+                trigger: .healthTransition(to: .down),
+                recovery: AlertRecoveryDeclaration(
+                    titleTemplate: "{hostName} recovered",
+                    messageTemplate: "{hostName} is reachable again."
+                ),
+                cooldown: 60
+            ),
+            AlertKindDeclaration(
+                id: "ping.internetLoss",
+                titleTemplate: "Internet problem",
+                messageTemplate: "{affectedCount}/{totalCount} monitored hosts are unreachable.",
+                severity: .warning,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .allMembersFailing(minimumCount: 2, ratio: 1),
+                cooldown: networkCooldown
+            ),
+            AlertKindDeclaration(
+                id: "ping.localNetworkDown",
+                titleTemplate: "Local network down",
+                messageTemplate: "{detail}",
+                severity: .critical,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .diagnosisVerdict(.localNetworkDown),
+                cooldown: networkCooldown
+            ),
+            AlertKindDeclaration(
+                id: "ping.ispPathDown",
+                titleTemplate: "ISP path down",
+                messageTemplate: "{detail}",
+                severity: .critical,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .diagnosisVerdict(.accessNetworkDown),
+                cooldown: networkCooldown
+            ),
+            AlertKindDeclaration(
+                id: "ping.upstreamDown",
+                titleTemplate: "Internet unreachable",
+                messageTemplate: "{detail}",
+                severity: .critical,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .diagnosisVerdict(.upstreamDown),
+                cooldown: networkCooldown
+            ),
+            AlertKindDeclaration(
+                id: "ping.remoteServiceDown",
+                titleTemplate: "Remote service down",
+                messageTemplate: "{detail}",
+                severity: .warning,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .diagnosisVerdict(.remoteServiceDown),
+                cooldown: networkCooldown
+            ),
+            AlertKindDeclaration(
+                id: "ping.pathDegraded",
+                titleTemplate: "{roleName} degraded",
+                messageTemplate: "{detail}",
+                severity: .warning,
+                defaultEnabled: true,
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                trigger: .diagnosisVerdict(.partialDegradation),
+                cooldown: networkCooldown
+            )
+        ]
+    }
 }

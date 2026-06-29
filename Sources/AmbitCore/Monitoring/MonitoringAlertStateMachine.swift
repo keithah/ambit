@@ -1,0 +1,344 @@
+import Foundation
+
+public struct MonitoringAlertMember: Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var status: HealthStatus
+    public var target: AlertTarget
+    public var notifyOnRecovery: Bool
+    public var cooldown: TimeInterval
+
+    public init(
+        id: String,
+        name: String,
+        status: HealthStatus,
+        target: AlertTarget,
+        notifyOnRecovery: Bool,
+        cooldown: TimeInterval
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.target = target
+        self.notifyOnRecovery = notifyOnRecovery
+        self.cooldown = cooldown
+    }
+}
+
+public struct MonitoringNetworkChange: Equatable, Sendable {
+    public var previousGateway: String?
+    public var currentGateway: String?
+
+    public init(previousGateway: String?, currentGateway: String?) {
+        self.previousGateway = previousGateway
+        self.currentGateway = currentGateway
+    }
+}
+
+public struct MonitoringAlertStateMachine: Sendable {
+    public var declarations: [AlertKindDeclaration]
+    public var sensitivity: DiagnosisSensitivity
+    public var networkCooldown: TimeInterval
+    public var pathDegradedConsecutive: Int
+    public var networkAwarenessConfig: NetworkAwarenessConfig
+
+    private var lastStatus: [String: HealthStatus] = [:]
+    private var lastSent: [String: Date] = [:]
+    private var diagnosisStreak = 0
+    private var lastVerdictKey: String?
+    private var deliveredNetworkAlert = false
+
+    public init(
+        declarations: [AlertKindDeclaration] = [],
+        sensitivity: DiagnosisSensitivity = .balanced,
+        networkCooldown: TimeInterval = 300,
+        pathDegradedConsecutive: Int = 3,
+        networkAwarenessConfig: NetworkAwarenessConfig = NetworkAwarenessConfig()
+    ) {
+        self.declarations = declarations
+        self.sensitivity = sensitivity
+        self.networkCooldown = networkCooldown
+        self.pathDegradedConsecutive = pathDegradedConsecutive
+        self.networkAwarenessConfig = networkAwarenessConfig
+    }
+
+    public mutating func evaluate(
+        members: [MonitoringAlertMember],
+        diagnosis: MonitoringDiagnosis,
+        now: Date = Date()
+    ) -> [AlertEvent] {
+        var events: [AlertEvent] = []
+        for member in members {
+            let previous = lastStatus[member.id]
+            lastStatus[member.id] = member.status
+            if member.status == .down, previous != nil, previous != .down {
+                if fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
+                    events.append(hostDownEvent(member, now: now))
+                }
+            } else if previous == .down,
+                      (member.status == .healthy || member.status == .degraded),
+                      member.notifyOnRecovery {
+                events.append(hostRecoveredEvent(member, now: now))
+            }
+        }
+        if let event = internetLossSafetyNet(members: members, now: now) {
+            events.append(event)
+        } else if let event = networkAlert(diagnosis, members: members, now: now) {
+            events.append(event)
+        }
+        return events
+    }
+
+    public mutating func evaluateNetworkStatus(
+        previous: NetworkConnectivityStatus,
+        current: NetworkConnectivityStatus,
+        now: Date = Date()
+    ) -> AlertEvent? {
+        guard networkAwarenessConfig.connectivityAlertsEnabled, previous != current else { return nil }
+        if current == .connected {
+            return AlertEvent(
+                ruleID: "network.status.recovered",
+                providerID: "network.path",
+                target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                phase: .recovered,
+                title: "Network path recovered",
+                message: "The system network path is connected again.",
+                severity: .info,
+                triggeredAt: now
+            )
+        }
+        let key = "networkStatus:\(current.rawValue)"
+        guard fire(key, cooldown: networkAwarenessConfig.cooldown, now: now) else { return nil }
+        return AlertEvent(
+            ruleID: "network.status.\(current.rawValue)",
+            providerID: "network.path",
+            target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+            title: networkStatusTitle(for: current),
+            message: networkStatusMessage(for: current),
+            severity: current == .noInternet ? .warning : .critical,
+            triggeredAt: now
+        )
+    }
+
+    public func networkChangeEvent(_ change: MonitoringNetworkChange, now: Date = Date()) -> AlertEvent? {
+        guard networkAwarenessConfig.networkChangeAlertsEnabled,
+              let previousGateway = change.previousGateway,
+              let currentGateway = change.currentGateway,
+              previousGateway != currentGateway
+        else { return nil }
+        return AlertEvent(
+            ruleID: "network.gateway.changed",
+            providerID: "network.path",
+            target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+            title: "Network changed",
+            message: "Gateway changed from \(previousGateway) to \(currentGateway).",
+            severity: .info,
+            triggeredAt: now
+        )
+    }
+
+    private func hostDownEvent(_ member: MonitoringAlertMember, now: Date) -> AlertEvent {
+        let declaration = hostDownDeclaration
+        return AlertEvent(
+            ruleID: "\(declaration.id.rawValue).\(member.id)",
+            providerID: member.id,
+            target: member.target,
+            title: AlertTemplateRenderer.render(declaration.titleTemplate, context: AlertTemplateContext(hostName: member.name)),
+            message: AlertTemplateRenderer.render(declaration.messageTemplate, context: AlertTemplateContext(hostName: member.name)),
+            severity: declaration.severity,
+            triggeredAt: now
+        )
+    }
+
+    private func hostRecoveredEvent(_ member: MonitoringAlertMember, now: Date) -> AlertEvent {
+        let declaration = hostDownDeclaration
+        let recovery = declaration.recovery
+        return AlertEvent(
+            ruleID: recoveryRuleID(for: declaration, memberID: member.id),
+            providerID: member.id,
+            target: member.target,
+            phase: .recovered,
+            title: AlertTemplateRenderer.render(recovery?.titleTemplate ?? "{hostName} recovered", context: AlertTemplateContext(hostName: member.name)),
+            message: AlertTemplateRenderer.render(recovery?.messageTemplate ?? "{hostName} is reachable again.", context: AlertTemplateContext(hostName: member.name)),
+            severity: .info,
+            triggeredAt: now
+        )
+    }
+
+    private var hostDownDeclaration: AlertKindDeclaration {
+        declarations.first {
+            if case .healthTransition(to: .down) = $0.trigger { return true }
+            return false
+        } ?? AlertKindDeclaration(
+            id: "ping.hostDown",
+            titleTemplate: "{hostName} is down",
+            messageTemplate: "No response from {hostName}.",
+            severity: .critical,
+            defaultEnabled: true,
+            target: .providerMetric(providerID: "ping", metricID: "latency_ms"),
+            trigger: .healthTransition(to: .down),
+            recovery: AlertRecoveryDeclaration(
+                titleTemplate: "{hostName} recovered",
+                messageTemplate: "{hostName} is reachable again."
+            ),
+            cooldown: 60
+        )
+    }
+
+    private func recoveryRuleID(for declaration: AlertKindDeclaration, memberID: String) -> String {
+        declaration.id.rawValue == "ping.hostDown"
+            ? "ping.recovered.\(memberID)"
+            : "\(declaration.id.rawValue).recovered.\(memberID)"
+    }
+
+    private mutating func networkAlert(_ diagnosis: MonitoringDiagnosis, members: [MonitoringAlertMember], now: Date) -> AlertEvent? {
+        guard let spec = networkSpec(for: diagnosis) else {
+            diagnosisStreak = 0
+            lastVerdictKey = nil
+            if deliveredNetworkAlert, diagnosis.verdict.kind == .allReachable {
+                deliveredNetworkAlert = false
+                return AlertEvent(
+                    ruleID: "ping.pathRecovered",
+                    providerID: "ping.network",
+                    target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+                    phase: .recovered,
+                    title: "Network path recovered",
+                    message: "The monitored network path is reachable again.",
+                    severity: .info,
+                    triggeredAt: now
+                )
+            }
+            return nil
+        }
+
+        let key = verdictKey(diagnosis.verdict)
+        if key == lastVerdictKey {
+            diagnosisStreak += 1
+        } else {
+            diagnosisStreak = 1
+            lastVerdictKey = key
+        }
+
+        let chosen: (type: String, title: String, severity: Severity)
+        if diagnosis.verdict.kind == .partialDegradation {
+            guard sensitivity != .conservative, diagnosisStreak >= pathDegradedConsecutive else { return nil }
+            chosen = spec
+        } else if diagnosis.confidence == .high {
+            chosen = spec
+        } else {
+            switch sensitivity {
+            case .conservative:
+                return nil
+            case .balanced:
+                chosen = ("internetLoss", "Internet problem", .warning)
+            case .sensitive:
+                chosen = spec
+            }
+        }
+        guard fire(chosen.type, cooldown: networkCooldown, now: now) else { return nil }
+        deliveredNetworkAlert = true
+        return AlertEvent(
+            ruleID: "ping.\(chosen.type)",
+            providerID: "ping.network",
+            target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+            title: chosen.title,
+            message: networkAlertMessage(for: diagnosis, members: members),
+            severity: chosen.severity,
+            triggeredAt: now
+        )
+    }
+
+    private func networkSpec(for diagnosis: MonitoringDiagnosis) -> (type: String, title: String, severity: Severity)? {
+        switch diagnosis.verdict.kind {
+        case .allReachable, .noData, .monitoringStalled:
+            return nil
+        case .localNetworkDown:
+            return ("localNetworkDown", "Local network down", .critical)
+        case .accessNetworkDown:
+            return ("ispPathDown", "ISP path down", .critical)
+        case .upstreamDown:
+            return ("upstreamDown", "Internet unreachable", .critical)
+        case .remoteServiceDown:
+            return ("remoteServiceDown", "Remote service down", .warning)
+        case .partialDegradation:
+            return ("pathDegraded", "\(diagnosis.verdict.affectedRole?.displayName ?? "Path") degraded", .warning)
+        }
+    }
+
+    private func networkAlertMessage(for diagnosis: MonitoringDiagnosis, members: [MonitoringAlertMember]) -> String {
+        guard diagnosis.verdict.kind == .remoteServiceDown else { return diagnosis.detail }
+        let namesByID = Dictionary(uniqueKeysWithValues: members.map { ($0.id, $0.name) })
+        let names = diagnosis.affectedEntityIDs.map { namesByID[$0.rawValue] ?? $0.rawValue }
+        guard !names.isEmpty else { return diagnosis.detail }
+        let visible = Array(names.prefix(2))
+        let extra = names.count - visible.count
+        if extra > 0 {
+            return "No response from \(visible.joined(separator: ", ")), +\(extra) more \(extra == 1 ? "host" : "hosts")."
+        }
+        return "No response from \(visible.joined(separator: ", "))."
+    }
+
+    private mutating func internetLossSafetyNet(members: [MonitoringAlertMember], now: Date) -> AlertEvent? {
+        guard members.count >= 2,
+              members.allSatisfy({ $0.status == .down }),
+              fire("internetLoss", cooldown: networkCooldown, now: now)
+        else { return nil }
+        deliveredNetworkAlert = true
+        return AlertEvent(
+            ruleID: "ping.internetLoss",
+            providerID: "ping.network",
+            target: .entity(DiagnosticSummaryEntity.Owner.ping.entityID),
+            title: "Internet problem",
+            message: "\(members.count)/\(members.count) monitored hosts are unreachable.",
+            severity: .warning,
+            triggeredAt: now
+        )
+    }
+
+    private func verdictKey(_ verdict: MonitoringVerdict) -> String {
+        switch verdict.kind {
+        case .noData: return "noData"
+        case .monitoringStalled: return "monitoringStalled"
+        case .allReachable: return "allReachable"
+        case .localNetworkDown: return "localNetworkDown"
+        case .accessNetworkDown: return "ispPathDown"
+        case .upstreamDown: return "upstreamDown"
+        case .remoteServiceDown: return "remoteServiceDown(hostIDs: [])"
+        case .partialDegradation:
+            return "partialDegradation(tier: \(legacyTierName(for: verdict.affectedRole)))"
+        }
+    }
+
+    private func legacyTierName(for role: MonitoringRole?) -> String {
+        switch role {
+        case .localGateway, .localLink: return "localGateway"
+        case .accessNetwork: return "ispEdge"
+        case .upstreamInternet: return "upstream"
+        case .remoteService, .endpoint: return "remoteService"
+        case nil: return "upstream"
+        }
+    }
+
+    private mutating func fire(_ key: String, cooldown: TimeInterval, now: Date) -> Bool {
+        if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
+        lastSent[key] = now
+        return true
+    }
+
+    private func networkStatusTitle(for status: NetworkConnectivityStatus) -> String {
+        switch status {
+        case .connected: return "Network connected"
+        case .noInternet: return "No internet"
+        case .noIPAddress, .notConnected: return "Local network down"
+        }
+    }
+
+    private func networkStatusMessage(for status: NetworkConnectivityStatus) -> String {
+        switch status {
+        case .connected: return "The system network path is connected."
+        case .noInternet: return "The system reports no internet connection."
+        case .noIPAddress: return "The network link has no usable IP address."
+        case .notConnected: return "No network link."
+        }
+    }
+}

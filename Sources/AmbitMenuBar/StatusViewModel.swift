@@ -113,7 +113,7 @@ final class StatusViewModel: ObservableObject {
     private let startAtLoginCoordinator: StartAtLoginCoordinator
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
-    private var networkStatusAlertMonitor = NetworkStatusAlertMonitor()
+    private var networkAlertStateMachine = MonitoringAlertStateMachine()
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -367,19 +367,8 @@ final class StatusViewModel: ObservableObject {
         currentGateway: String?,
         now: Date = Date()
     ) -> AlertEvent? {
-        guard let previousGateway,
-              let currentGateway,
-              previousGateway != currentGateway
-        else { return nil }
-        return AlertEvent(
-            ruleID: "network.gateway.changed",
-            providerID: "network.path",
-            target: .entity(DiagnosisEntity.entityID),
-            title: "Network changed",
-            message: "Gateway changed from \(previousGateway) to \(currentGateway).",
-            severity: .info,
-            triggeredAt: now
-        )
+        MonitoringAlertStateMachine()
+            .networkChangeEvent(MonitoringNetworkChange(previousGateway: previousGateway, currentGateway: currentGateway), now: now)
     }
 
     /// Detect the default gateway and add/update the stable auto gateway pingscope host (ICMP —
@@ -437,10 +426,10 @@ final class StatusViewModel: ObservableObject {
         let previousGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
         await seedGatewayHostIfNeeded()
         let currentGateway = Self.autoGatewayAddress(in: (try? integrationRegistry.instances()) ?? [])
-        if let event = networkStatusAlertMonitor.evaluate(previous: previousStatus, current: snapshot.connectivityStatus) {
+        if let event = networkAlertStateMachine.evaluateNetworkStatus(previous: previousStatus, current: snapshot.connectivityStatus) {
             await deliverAlerts([event], descriptors: await engine.entityDescriptors())
         }
-        if let event = Self.networkChangeEvent(previousGateway: previousGateway, currentGateway: currentGateway) {
+        if let event = networkAlertStateMachine.networkChangeEvent(MonitoringNetworkChange(previousGateway: previousGateway, currentGateway: currentGateway)) {
             await deliverAlerts([event], descriptors: await engine.entityDescriptors())
         }
         await engine.pollNow()
