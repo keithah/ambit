@@ -133,7 +133,7 @@ final class StatusViewModel: ObservableObject {
     private let startAtLoginCoordinator: StartAtLoginCoordinator
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
-    private var networkAlertStateMachine = MonitoringAlertStateMachine()
+    private var networkAlertStateMachine = MonitoringAlertStateMachine(warmUpCycles: 0)
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -314,8 +314,8 @@ final class StatusViewModel: ObservableObject {
         currentGateway: String?,
         now: Date = Date()
     ) -> AlertEvent? {
-        MonitoringAlertStateMachine()
-            .networkChangeEvent(MonitoringNetworkChange(previousGateway: previousGateway, currentGateway: currentGateway), now: now)
+        var machine = MonitoringAlertStateMachine(warmUpCycles: 0)
+        return machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: previousGateway, currentGateway: currentGateway), now: now)
     }
 
     /// Detect the default gateway and add/update the stable auto gateway pingscope host (ICMP —
@@ -388,6 +388,7 @@ final class StatusViewModel: ObservableObject {
     }
 
     func handleSystemDidWake() async {
+        monitoringDiagnosisCoordinator.resetAlertWarmUp()
         await handleNetworkConfigurationChanged(.connected)
     }
 

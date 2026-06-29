@@ -354,17 +354,20 @@ public struct NetworkAwarenessConfig: Equatable, Codable, Sendable {
     public var networkChangeAlertsEnabled: Bool
     public var pathRecoveredAlertsEnabled: Bool
     public var cooldown: TimeInterval
+    public var warmUpCycles: Int
 
     public init(
         connectivityAlertsEnabled: Bool = true,
         networkChangeAlertsEnabled: Bool = true,
         pathRecoveredAlertsEnabled: Bool = true,
-        cooldown: TimeInterval = 300
+        cooldown: TimeInterval = 300,
+        warmUpCycles: Int = 1
     ) {
         self.connectivityAlertsEnabled = connectivityAlertsEnabled
         self.networkChangeAlertsEnabled = networkChangeAlertsEnabled
         self.pathRecoveredAlertsEnabled = pathRecoveredAlertsEnabled
         self.cooldown = cooldown
+        self.warmUpCycles = max(0, warmUpCycles)
     }
 }
 

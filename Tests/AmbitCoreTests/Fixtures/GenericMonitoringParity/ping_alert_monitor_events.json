@@ -43,6 +43,12 @@
   },
   {
     "events" : [
+
+    ],
+    "id" : "highConfidence.localNetworkDown.baseline"
+  },
+  {
+    "events" : [
       {
         "message" : "d",
         "phase" : "active",
@@ -51,10 +57,16 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Local network down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "highConfidence.localNetworkDown"
+    "id" : "highConfidence.localNetworkDown.sustained"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "highConfidence.ispPathDown.baseline"
   },
   {
     "events" : [
@@ -66,10 +78,16 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "ISP path down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "highConfidence.ispPathDown"
+    "id" : "highConfidence.ispPathDown.sustained"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "highConfidence.upstreamDown.baseline"
   },
   {
     "events" : [
@@ -81,10 +99,16 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Internet unreachable",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "highConfidence.upstreamDown"
+    "id" : "highConfidence.upstreamDown.sustained"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "highConfidence.remoteServiceDown.baseline"
   },
   {
     "events" : [
@@ -96,16 +120,28 @@
         "severity" : "elevated",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Remote service down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "highConfidence.remoteServiceDown"
+    "id" : "highConfidence.remoteServiceDown.sustained"
   },
   {
     "events" : [
 
     ],
-    "id" : "tentative.conservative"
+    "id" : "tentative.conservative.baseline"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "tentative.conservative.sustained"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "tentative.balanced.baseline"
   },
   {
     "events" : [
@@ -117,10 +153,16 @@
         "severity" : "elevated",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Internet problem",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "tentative.balanced"
+    "id" : "tentative.balanced.sustained"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "tentative.sensitive.baseline"
   },
   {
     "events" : [
@@ -132,10 +174,10 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Internet unreachable",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "tentative.sensitive"
+    "id" : "tentative.sensitive.sustained"
   },
   {
     "events" : [
@@ -211,6 +253,12 @@
   },
   {
     "events" : [
+
+    ],
+    "id" : "networkCooldown.baseline"
+  },
+  {
+    "events" : [
       {
         "message" : "d",
         "phase" : "active",
@@ -219,16 +267,22 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Internet unreachable",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "networkCooldown.first"
+    "id" : "networkCooldown.delivered"
   },
   {
     "events" : [
 
     ],
     "id" : "networkCooldown.suppressed"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "internetLossSafetyNet.baseline"
   },
   {
     "events" : [
@@ -240,10 +294,16 @@
         "severity" : "elevated",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Internet problem",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "internetLossSafetyNet"
+    "id" : "internetLossSafetyNet.delivered"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "remoteServiceAdditionalHostsCopy.baseline"
   },
   {
     "events" : [
@@ -255,10 +315,10 @@
         "severity" : "elevated",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Remote service down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1001
       }
     ],
-    "id" : "remoteServiceAdditionalHostsCopy"
+    "id" : "remoteServiceAdditionalHostsCopy.delivered"
   },
   {
     "events" : [
@@ -289,6 +349,12 @@
   },
   {
     "events" : [
+
+    ],
+    "id" : "networkStatus.noInternet.baseline"
+  },
+  {
+    "events" : [
       {
         "message" : "The system reports no internet connection.",
         "phase" : "active",
@@ -297,7 +363,7 @@
         "severity" : "elevated",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "No internet",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1010
       }
     ],
     "id" : "networkStatus.noInternet.down"
@@ -325,6 +391,12 @@
   },
   {
     "events" : [
+
+    ],
+    "id" : "networkStatus.noIPAddress.baseline"
+  },
+  {
+    "events" : [
       {
         "message" : "The network link has no usable IP address.",
         "phase" : "active",
@@ -333,7 +405,7 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Local network down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1010
       }
     ],
     "id" : "networkStatus.noIPAddress.down"
@@ -361,6 +433,12 @@
   },
   {
     "events" : [
+
+    ],
+    "id" : "networkStatus.notConnected.baseline"
+  },
+  {
+    "events" : [
       {
         "message" : "No network link.",
         "phase" : "active",
@@ -369,7 +447,7 @@
         "severity" : "down",
         "target" : "entity(ping.summary.diagnosis)",
         "title" : "Local network down",
-        "triggeredAt" : 1000
+        "triggeredAt" : 1010
       }
     ],
     "id" : "networkStatus.notConnected.down"
@@ -394,6 +472,12 @@
       }
     ],
     "id" : "networkStatus.notConnected.recovered"
+  },
+  {
+    "events" : [
+
+    ],
+    "id" : "networkChange.baseline"
   },
   {
     "events" : [

@@ -25,10 +25,9 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
     }
 
     func testFrozenAlertEventsMatchMonitoringAlertStateMachine() throws {
-        let expected: [AlertGoldenCase] = try loadGolden("ping_alert_monitor_events.json")
         let actual = genericAlertGoldenCases()
 
-        XCTAssertEqual(actual, expected)
+        try assertGolden(actual, named: "ping_alert_monitor_events.json")
     }
 
     @MainActor
@@ -451,20 +450,25 @@ private extension GenericMonitoringParityCharacterizationTests {
             (.accessNetworkDown, "ispPathDown", .accessNetwork),
             (.upstreamDown, "upstreamDown", .upstreamInternet),
             (.remoteServiceDown, "remoteServiceDown", .remoteService)
-        ].map { kind, id, role in
+        ].flatMap { kind, id, role in
             var machine = monitoringMachine(sensitivity: .balanced)
             let affected: [EntityID] = kind == .remoteServiceDown ? ["cf"] : []
-            return alertCase("highConfidence.\(id)", machine.evaluate(members: [], diagnosis: diagnosis(kind, .high, role: role, affected: affected), now: at(0)))
+            let diag = diagnosis(kind, .high, role: role, affected: affected)
+            return [
+                alertCase("highConfidence.\(id).baseline", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+                alertCase("highConfidence.\(id).sustained", machine.evaluate(members: [], diagnosis: diag, now: at(1)))
+            ]
         }
     }
 
     func tentativeSensitivityMatrix() -> [AlertGoldenCase] {
-        DiagnosisSensitivity.allCases.map { sensitivity in
+        DiagnosisSensitivity.allCases.flatMap { sensitivity in
             var machine = monitoringMachine(sensitivity: sensitivity)
-            return alertCase(
-                "tentative.\(sensitivity.rawValue)",
-                machine.evaluate(members: [], diagnosis: diagnosis(.upstreamDown, .tentative), now: at(0))
-            )
+            let diag = diagnosis(.upstreamDown, .tentative)
+            return [
+                alertCase("tentative.\(sensitivity.rawValue).baseline", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+                alertCase("tentative.\(sensitivity.rawValue).sustained", machine.evaluate(members: [], diagnosis: diag, now: at(1)))
+            ]
         }
     }
 
@@ -484,24 +488,23 @@ private extension GenericMonitoringParityCharacterizationTests {
         var machine = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
         let diag = diagnosis(.upstreamDown, .high)
         return [
-            alertCase("networkCooldown.first", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+            alertCase("networkCooldown.baseline", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+            alertCase("networkCooldown.delivered", machine.evaluate(members: [], diagnosis: diag, now: at(1))),
             alertCase("networkCooldown.suppressed", machine.evaluate(members: [], diagnosis: diag, now: at(30)))
         ]
     }
 
     func internetLossSafetyNet() -> [AlertGoldenCase] {
         var machine = monitoringMachine(sensitivity: .conservative, networkCooldown: 300)
+        let members = [
+            member(status: .down),
+            member("gw", name: "Gateway", status: .down)
+        ]
         return [
+            alertCase("internetLossSafetyNet.baseline", machine.evaluate(members: members, diagnosis: healthyDiagnosis(), now: at(0))),
             alertCase(
-                "internetLossSafetyNet",
-                machine.evaluate(
-                    members: [
-                        member(status: .down),
-                        member("gw", name: "Gateway", status: .down)
-                    ],
-                    diagnosis: healthyDiagnosis(),
-                    now: at(0)
-                )
+                "internetLossSafetyNet.delivered",
+                machine.evaluate(members: members, diagnosis: healthyDiagnosis(), now: at(1))
             )
         ]
     }
@@ -520,7 +523,10 @@ private extension GenericMonitoringParityCharacterizationTests {
             affected: ["cf", "gg", "svc"],
             detail: "3/3 remote host(s) unreachable."
         )
-        return [alertCase("remoteServiceAdditionalHostsCopy", machine.evaluate(members: members, diagnosis: diag, now: at(0)))]
+        return [
+            alertCase("remoteServiceAdditionalHostsCopy.baseline", machine.evaluate(members: members, diagnosis: diag, now: at(0))),
+            alertCase("remoteServiceAdditionalHostsCopy.delivered", machine.evaluate(members: members, diagnosis: diag, now: at(1)))
+        ]
     }
 
     func pathRecoveredOnlyAfterDeliveredNetworkAlert() -> [AlertGoldenCase] {
@@ -540,10 +546,13 @@ private extension GenericMonitoringParityCharacterizationTests {
         NetworkConnectivityStatus.allCases.flatMap { status in
             guard status != .connected else { return [AlertGoldenCase]() }
             var machine = MonitoringAlertStateMachine(networkAwarenessConfig: NetworkAwarenessConfig(cooldown: 300))
-            let down = machine.evaluateNetworkStatus(previous: .connected, current: status, now: at(0))
+            let baseline = machine.evaluateNetworkStatus(previous: .connected, current: status, now: at(0))
+            _ = machine.evaluate(members: [], diagnosis: healthyDiagnosis(), now: at(1))
+            let down = machine.evaluateNetworkStatus(previous: .connected, current: status, now: at(10))
             let repeated = machine.evaluateNetworkStatus(previous: status, current: status, now: at(10))
             let recovered = machine.evaluateNetworkStatus(previous: status, current: .connected, now: at(20))
             return [
+                alertCase("networkStatus.\(status.rawValue).baseline", [baseline].compactMap { $0 }),
                 alertCase("networkStatus.\(status.rawValue).down", [down].compactMap { $0 }),
                 alertCase("networkStatus.\(status.rawValue).repeated", [repeated].compactMap { $0 }),
                 alertCase("networkStatus.\(status.rawValue).recovered", [recovered].compactMap { $0 })
@@ -552,10 +561,13 @@ private extension GenericMonitoringParityCharacterizationTests {
     }
 
     func networkChangeEventCopy() -> [AlertGoldenCase] {
-        let machine = MonitoringAlertStateMachine()
+        var machine = MonitoringAlertStateMachine()
+        let baseline = machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"), now: at(0))
+        _ = machine.evaluate(members: [], diagnosis: healthyDiagnosis(), now: at(1))
         return [
+            alertCaseStableTime("networkChange.baseline", [baseline]),
             alertCaseStableTime("networkChange.gatewayChanged", [
-                machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"), now: at(0))
+                machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"), now: at(10))
             ]),
             alertCaseStableTime("networkChange.unchanged", [
                 machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1"), now: at(0))

@@ -13,6 +13,10 @@ final class MonitoringSlotDiagnosisCoordinator {
     private let monitoringCoordinator = MonitoringPerspectiveCoordinator()
     private var alertStateMachine = MonitoringAlertStateMachine(declarations: PingIntegration.monitoringAlertDeclarations())
 
+    func resetAlertWarmUp() {
+        alertStateMachine.resetWarmUp()
+    }
+
     func evaluate(
         activeRecords: [IntegrationInstanceRecord],
         descriptors: [ProviderInstanceID: [EntityDescriptor]],

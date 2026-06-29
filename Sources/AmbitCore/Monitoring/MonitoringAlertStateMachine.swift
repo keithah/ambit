@@ -41,25 +41,32 @@ public struct MonitoringAlertStateMachine: Sendable {
     public var networkCooldown: TimeInterval
     public var pathDegradedConsecutive: Int
     public var networkAwarenessConfig: NetworkAwarenessConfig
+    public var warmUpCycles: Int
 
     private var lastStatus: [String: HealthStatus] = [:]
     private var lastSent: [String: Date] = [:]
     private var diagnosisStreak = 0
     private var lastVerdictKey: String?
     private var deliveredNetworkAlert = false
+    private var deliveredNetworkStatusAlert = false
+    private var deliveredHostDownIDs: Set<String> = []
+    private var warmUpEvaluations = 0
+    private var pendingHostDownIDs: Set<String> = []
 
     public init(
         declarations: [AlertKindDeclaration] = [],
         sensitivity: DiagnosisSensitivity = .balanced,
         networkCooldown: TimeInterval = 300,
         pathDegradedConsecutive: Int = 3,
-        networkAwarenessConfig: NetworkAwarenessConfig = NetworkAwarenessConfig()
+        networkAwarenessConfig: NetworkAwarenessConfig = NetworkAwarenessConfig(),
+        warmUpCycles: Int? = nil
     ) {
         self.declarations = declarations
         self.sensitivity = sensitivity
         self.networkCooldown = networkCooldown
         self.pathDegradedConsecutive = pathDegradedConsecutive
         self.networkAwarenessConfig = networkAwarenessConfig
+        self.warmUpCycles = warmUpCycles ?? networkAwarenessConfig.warmUpCycles
     }
 
     public mutating func evaluate(
@@ -67,24 +74,50 @@ public struct MonitoringAlertStateMachine: Sendable {
         diagnosis: MonitoringDiagnosis,
         now: Date = Date()
     ) -> [AlertEvent] {
-        var events: [AlertEvent] = []
+        let warmingUp = isWarmingUp
+        defer { completeWarmUpEvaluation() }
+        var hostEvents: [AlertEvent] = []
         for member in members {
             let previous = lastStatus[member.id]
             lastStatus[member.id] = member.status
-            if member.status == .down, previous != nil, previous != .down {
-                if fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
-                    events.append(hostDownEvent(member, now: now))
+            if member.status == .down, previous == nil {
+                pendingHostDownIDs.insert(member.id)
+            } else if member.status == .down, previous != .down {
+                pendingHostDownIDs.insert(member.id)
+                if !warmingUp, fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
+                    hostEvents.append(hostDownEvent(member, now: now))
+                    deliveredHostDownIDs.insert(member.id)
+                    pendingHostDownIDs.remove(member.id)
                 }
+            } else if member.status == .down,
+                      pendingHostDownIDs.contains(member.id),
+                      !warmingUp,
+                      fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
+                hostEvents.append(hostDownEvent(member, now: now))
+                deliveredHostDownIDs.insert(member.id)
+                pendingHostDownIDs.remove(member.id)
             } else if previous == .down,
                       (member.status == .healthy || member.status == .degraded),
-                      member.notifyOnRecovery {
-                events.append(hostRecoveredEvent(member, now: now))
+                      member.notifyOnRecovery,
+                      deliveredHostDownIDs.contains(member.id) {
+                hostEvents.append(hostRecoveredEvent(member, now: now))
+                deliveredHostDownIDs.remove(member.id)
+                pendingHostDownIDs.remove(member.id)
+            } else if member.status != .down {
+                pendingHostDownIDs.remove(member.id)
             }
         }
-        if let event = internetLossSafetyNet(members: members, now: now) {
+        if !warmingUp, let event = internetLossSafetyNet(members: members, now: now) {
+            for member in members {
+                deliveredHostDownIDs.remove(member.id)
+            }
+            return [event]
+        }
+        var events = hostEvents
+        if !warmingUp, let event = networkAlert(diagnosis, members: members, now: now) {
             events.append(event)
-        } else if let event = networkAlert(diagnosis, members: members, now: now) {
-            events.append(event)
+        } else if warmingUp {
+            trackNetworkAlertState(diagnosis)
         }
         return events
     }
@@ -95,7 +128,10 @@ public struct MonitoringAlertStateMachine: Sendable {
         now: Date = Date()
     ) -> AlertEvent? {
         guard networkAwarenessConfig.connectivityAlertsEnabled, previous != current else { return nil }
+        guard !isWarmingUp else { return nil }
         if current == .connected {
+            guard deliveredNetworkStatusAlert else { return nil }
+            deliveredNetworkStatusAlert = false
             return AlertEvent(
                 ruleID: "network.status.recovered",
                 providerID: "network.path",
@@ -109,6 +145,7 @@ public struct MonitoringAlertStateMachine: Sendable {
         }
         let key = "networkStatus:\(current.rawValue)"
         guard fire(key, cooldown: networkAwarenessConfig.cooldown, now: now) else { return nil }
+        deliveredNetworkStatusAlert = true
         return AlertEvent(
             ruleID: "network.status.\(current.rawValue)",
             providerID: "network.path",
@@ -120,12 +157,13 @@ public struct MonitoringAlertStateMachine: Sendable {
         )
     }
 
-    public func networkChangeEvent(_ change: MonitoringNetworkChange, now: Date = Date()) -> AlertEvent? {
+    public mutating func networkChangeEvent(_ change: MonitoringNetworkChange, now: Date = Date()) -> AlertEvent? {
         guard networkAwarenessConfig.networkChangeAlertsEnabled,
               let previousGateway = change.previousGateway,
               let currentGateway = change.currentGateway,
               previousGateway != currentGateway
         else { return nil }
+        guard !isWarmingUp else { return nil }
         return AlertEvent(
             ruleID: "network.gateway.changed",
             providerID: "network.path",
@@ -135,6 +173,10 @@ public struct MonitoringAlertStateMachine: Sendable {
             severity: .info,
             triggeredAt: now
         )
+    }
+
+    public mutating func resetWarmUp() {
+        warmUpEvaluations = 0
     }
 
     private func hostDownEvent(_ member: MonitoringAlertMember, now: Date) -> AlertEvent {
@@ -248,6 +290,23 @@ public struct MonitoringAlertStateMachine: Sendable {
         )
     }
 
+    private mutating func trackNetworkAlertState(_ diagnosis: MonitoringDiagnosis) {
+        guard networkSpec(for: diagnosis) != nil else {
+            if diagnosis.verdict.kind == .allReachable {
+                diagnosisStreak = 0
+                lastVerdictKey = nil
+            }
+            return
+        }
+        let key = verdictKey(diagnosis.verdict)
+        if key == lastVerdictKey {
+            diagnosisStreak += 1
+        } else {
+            diagnosisStreak = 1
+            lastVerdictKey = key
+        }
+    }
+
     private func networkSpec(for diagnosis: MonitoringDiagnosis) -> (type: String, title: String, severity: Severity)? {
         switch diagnosis.verdict.kind {
         case .allReachable, .noData, .monitoringStalled:
@@ -323,6 +382,16 @@ public struct MonitoringAlertStateMachine: Sendable {
         if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
         lastSent[key] = now
         return true
+    }
+
+    private var isWarmingUp: Bool {
+        warmUpEvaluations < max(0, warmUpCycles)
+    }
+
+    private mutating func completeWarmUpEvaluation() {
+        if isWarmingUp {
+            warmUpEvaluations += 1
+        }
     }
 
     private func networkStatusTitle(for status: NetworkConnectivityStatus) -> String {
