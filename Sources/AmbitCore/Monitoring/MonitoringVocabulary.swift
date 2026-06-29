@@ -323,6 +323,7 @@ public struct AlertKindDeclaration: Equatable, Codable, Sendable {
     public var defaultEnabled: Bool
     public var target: AlertTargetTemplate
     public var trigger: AlertTriggerDeclaration
+    public var condition: Condition?
     public var recovery: AlertRecoveryDeclaration?
     public var cooldown: TimeInterval
 
@@ -334,6 +335,7 @@ public struct AlertKindDeclaration: Equatable, Codable, Sendable {
         defaultEnabled: Bool,
         target: AlertTargetTemplate,
         trigger: AlertTriggerDeclaration,
+        condition: Condition? = nil,
         recovery: AlertRecoveryDeclaration? = nil,
         cooldown: TimeInterval
     ) {
@@ -344,6 +346,7 @@ public struct AlertKindDeclaration: Equatable, Codable, Sendable {
         self.defaultEnabled = defaultEnabled
         self.target = target
         self.trigger = trigger
+        self.condition = condition
         self.recovery = recovery
         self.cooldown = cooldown
     }
