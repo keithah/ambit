@@ -7,6 +7,29 @@ acceptance checklist) and `docs/ux/v0/schema.md` (§5 Reactions, §10 reconcilia
 **Prerequisite:** B1 (the `Condition` tree + evaluator) is merged. B2 generalizes the *then* side —
 what happens when a condition fires — while keeping all existing notifications byte-identical.
 
+## Gates carried over from the B1 review (must close in B2)
+
+B1 landed the `Condition` tree but left it **dormant** — `AlertKindDeclaration.condition` is not yet
+consumed by `MonitoringAlertStateMachine`. The moment B2 routes evaluation through `Condition`, these
+three things must hold or alert behavior will silently drift:
+
+1. **Make the parity test non-inert.** B1's `testMonitoringAlertOutputsRemainIdenticalWithCompiledConditionDeclarations`
+   passes by construction because the engine ignores `.condition`. In B2, actually evaluate the compiled
+   `Condition` in the production path for the kinds you touch, and prove byte-identical output against a
+   golden produced by the *legacy* path — a test where flipping the engine to the Condition path is the only
+   change. A test that still ignores `.condition` does not count.
+2. **Resolve `metricThreshold` consecutive-sample semantics.** B1 maps `EntityAlertPolicy.consecutive` to
+   `heldFor((n−1)·sampleInterval)`, which only equals the real consecutive-sample count under perfectly
+   regular sampling, and is only tested at `consecutive: 1`. Before relying on it, either add a native
+   `consecutiveSamples(n)` temporal op, or validate the held-for mapping against real (possibly irregular /
+   gapped) sample timing — with tests at `consecutive > 1` and non-uniform timestamps — proving parity with
+   today's count-based behavior.
+3. **Converge on one dwell implementation.** B1 added a second dwell (`ConditionEvaluator.startedAt`) parallel
+   to `MonitoringAlertStateMachine`/`SustainedAlertRule`. Use one, or prove equivalence under sleep/wake and
+   irregular polling, so flap/dwell behavior does not diverge.
+
+If any of these cannot be satisfied byte-identically, stop and report rather than changing behavior.
+
 ## Goal
 
 Replace the current "the only reaction is an alert notification" model with a generic `Reaction`
