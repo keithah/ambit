@@ -357,8 +357,8 @@
           "title" : "Local network down"
         }
       ],
-      "glyphText" : "1/1 gateway host(s) unreachable.",
-      "glyphTone" : "bad",
+      "glyphText" : "3ms",
+      "glyphTone" : "good",
       "hostOptions" : [
         {
           "id" : "ping@192.168.8.1",
@@ -376,7 +376,7 @@
           "subtitle" : "TCP 127.0.0.1"
         }
       ],
-      "primaryEntityID" : "ping.summary.diagnosis",
+      "primaryEntityID" : "ping@192.168.8.1/probe.latency_ms",
       "primaryInstanceID" : "ping@192.168.8.1",
       "selectedInstanceID" : "ping@192.168.8.1",
       "series" : [

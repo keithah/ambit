@@ -1261,7 +1261,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    func testCombinedPingSampleHistoryFallsBackToRestingLatencyWhenHeadlineIsDiagnostic() async {
+    func testCombinedPingSampleHistoryAndHeadlineStayOnLatencyWhenDiagnosisBannerIsPresent() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
 
@@ -1279,7 +1279,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
         )
 
-        XCTAssertEqual(surface.primaryEntityID, DiagnosticSummaryEntity.Owner.ping.entityID)
+        XCTAssertEqual(surface.primaryEntityID, fixtures.latencyIDs[0])
+        XCTAssertEqual(surface.glyph.primaryText, "12ms")
         XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[0].rawValue)")
         XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[0]])
     }

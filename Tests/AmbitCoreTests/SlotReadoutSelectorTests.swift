@@ -132,6 +132,38 @@ final class SlotReadoutSelectorTests: XCTestCase {
         XCTAssertEqual(result.selection.lanes.first?.id, peer.id)
     }
 
+    func testDiagnosticTextNeverBecomesCompactHeadline() {
+        var engine = AttentionEngine()
+        let primary = descriptor("ping.primary", deviceClass: .latency, isPrimary: true, priority: 10)
+        let diagnostic = diagnosticDescriptor("ping.diagnosis")
+        let states = [
+            primary.id: state(primary.id, value: 7, severity: .normal),
+            diagnostic.id: EntityState(
+                id: diagnostic.id,
+                value: .text("Elevated latency on the local network."),
+                availability: .online,
+                severity: .degraded
+            )
+        ]
+
+        let result = SlotReadoutSelector.resolve(
+            mode: .dynamic,
+            candidates: [
+                AttentionCandidate(descriptor: primary, state: states[primary.id]!),
+                AttentionCandidate(descriptor: diagnostic, state: states[diagnostic.id]!)
+            ],
+            states: states,
+            headlineEligibleActiveIDs: [primary.id, diagnostic.id],
+            alertingIDs: [],
+            config: .empty,
+            now: now,
+            attentionEngine: &engine
+        )
+
+        XCTAssertEqual(result.primaryEntityID, primary.id)
+        XCTAssertEqual(result.selection.lanes.first?.id, diagnostic.id)
+    }
+
     func testNilLatencyDownStillOverridesRestingPrimary() {
         var engine = AttentionEngine()
         let cpu = descriptor("system.cpu", isPrimary: true, priority: 100)
@@ -229,6 +261,18 @@ final class SlotReadoutSelectorTests: XCTestCase {
             defaultVisibility: visibility,
             isPrimary: isPrimary,
             priority: priority
+        )
+    }
+
+    private func diagnosticDescriptor(_ key: String) -> EntityDescriptor {
+        EntityDescriptor(
+            id: EntityID(rawValue: "test.\(key)"),
+            instanceID: ProviderInstanceID(rawValue: "test"),
+            name: key,
+            kind: .text,
+            deviceClass: nil,
+            category: .diagnostic,
+            defaultVisibility: .auto
         )
     }
 

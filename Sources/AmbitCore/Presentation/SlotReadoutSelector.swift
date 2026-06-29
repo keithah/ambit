@@ -64,6 +64,9 @@ public enum SlotReadoutSelector {
         let descriptors = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.descriptor) })
         let candidateStates = Dictionary(uniqueKeysWithValues: candidates.map { ($0.descriptor.id, $0.state) })
         return selection.lanes.first { entity in
+            guard let descriptor = descriptors[entity.id], canCompactHeadline(descriptor) else {
+                return false
+            }
             if let headlineEligibleActiveIDs, !headlineEligibleActiveIDs.contains(entity.id) {
                 return false
             }
@@ -71,13 +74,16 @@ public enum SlotReadoutSelector {
             let isPinned = config.entityOverrides[entity.id]?.pinned ?? false
             if isAlerted || isPinned || entity.reason.transitionBoosted { return true }
             guard entity.tier == .surfaced || entity.reason.severity > .normal else { return false }
-            let descriptor = descriptors[entity.id]
             let state = states[entity.id] ?? candidateStates[entity.id]
             if state?.availability == .unavailable, state?.value == nil, entity.reason.severity == .down {
-                return descriptor.map(nilUnavailableCanHeadline) ?? false
+                return nilUnavailableCanHeadline(descriptor)
             }
             return true
         }?.id
+    }
+
+    private static func canCompactHeadline(_ descriptor: EntityDescriptor) -> Bool {
+        !(descriptor.kind == .text && descriptor.category == .diagnostic)
     }
 
     private static func nilUnavailableCanHeadline(_ descriptor: EntityDescriptor) -> Bool {
