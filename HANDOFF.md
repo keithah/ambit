@@ -144,9 +144,8 @@ aggregator/viewport, never the coordinator.
 - **Core hardening Phase 1 complete** — prerequisite hardening for multi-host ping parity and overlay work:
   per-slot `AttentionEngine` state via `SlotAttentionEngines`; pure primary/readout selection extracted into
   Core as `SlotReadoutSelector`; `MenuBarStatusItemCoordinator` reconciles status items from `$slots` at runtime;
-  `SlotSurfaceCoordinator` owns slot surface assembly; `PingDiagnosisCoordinator` isolates ping diagnosis and
-  alert-ID mapping; `MenuBarGlyph.primaryText` replaces ping-specific naming; obsolete
-  `GraphGeometry.points(...)` was removed; and history retention labels now derive from
+  `SlotSurfaceCoordinator` owns slot surface assembly; `MenuBarGlyph.primaryText` replaces ping-specific naming;
+  obsolete `GraphGeometry.points(...)` was removed; and history retention labels now derive from
   `HistoryService.retentionInterval`.
 - **Multi-host ping parity complete** — merged on master: the ping slot now supports an **All Hosts** combined
   multi-series latency graph with deterministic index colors, compact legend, shared axis, and primary-line
@@ -174,7 +173,7 @@ aggregator/viewport, never the coordinator.
 - **Network resilience + reliability parity complete** — merged on master: gateway detection now uses a stable
   auto-gateway instance ID with mutable address and live redetection on `NWPathMonitor` changes and wake;
   sleep cancels in-flight poll cycles; NWPath-derived connectivity (`connected`, `noInternet`, `noIPAddress`,
-  `notConnected`) feeds `NetworkPerspectiveDiagnoser` so link-state overrides are live; per-host alerts are
+  `notConnected`) feeds the generic topology diagnosis path so link-state overrides are live; per-host alerts are
   suppressed during link drops; network-status transitions, path recovery, internet-loss safety-net alerts, and
   gateway-change notifications are entity-targeted through the generic alert path; notification permission/test/
   settings controls are exposed in Settings; a file-lock single-instance guard and Start-at-Login toggle are in
@@ -182,25 +181,53 @@ aggregator/viewport, never the coordinator.
   Phase G polish is in place: ICMP failures distinguish timeout, host-unreachable, no-route, TTL-expired, and DNS
   failures where `/sbin/ping` reports enough detail, and remote-service-down notifications summarize affected
   hosts with a capped `+N more hosts` body.
+- **Generic monitoring parity complete** — merged on master: Ambit now has full PingScope behavior with
+  **zero ping-specific diagnosis, alert, role, or UI logic** outside the Ping integration declarations and
+  migrations; the grep-gate enforces this. Ping now only declares metadata and capabilities, while the generic
+  primitives do the work:
+  - `MonitoringMetadata` on descriptors carries roles/perspectives without expanding the entity model surface.
+  - `TopologyDiagnosisEngine` produces provider-agnostic topology verdicts from declared perspectives and
+    `NetworkAwarenessConfig`.
+  - `MonitoringAlertStateMachine` turns declared alert kinds/templates into entity-targeted alert events.
+  - `DiagnosticSummaryEntity` provides a generic owner-scoped diagnostic text entity for banners/headlines.
+  - `NetworkAwarenessConfig` owns app-level connectivity, network-change, and path-recovery alert behavior.
+  The old ping engines were deleted: `PingDiagnosisCoordinator`, `NetworkPerspectiveDiagnoser`,
+  `NetworkDiagnosis`, `NetworkTier`, `PingAlertMonitor`, and `DiagnosisEntity`. Their behavior remains locked by
+  frozen Phase 0.5 golden fixtures, differential coverage, migration tests, and the permanent non-ping fixture
+  proof.
+- **Generic monitoring Half 2 complete** — settings and controls are now generic feature surfaces rather than
+  ping panes. Instance management shows health dots, PRIMARY badges, suggested presets, role dropdowns, and a
+  generic Test action for any multi-instance integration. Display/overlay config covers per-slot graph range,
+  overlay visibility, always-on-top, compact mode, opacity, saved frame, and reset. Diagnostics exposes current
+  state, recent failures from generic `ok == false` history, and debug-log actions. App/About/Reset hooks expose
+  build flavor, ICMP/local-network status, reset, quit/about, and Sparkle service hooks without hardcoded feed
+  or keys. Notification settings are provider-declared per-kind toggles plus status-color overrides.
+- **Phase J hygiene complete** — config and registry migration live in a dedicated generic migrator; broad
+  mutation/probe APIs were tightened; probe and gateway-discovery truthfulness was audited; no bounded-buffer or
+  timeout-cleanup analogue was found; and the oversized menu-bar/settings files were decomposed into focused
+  files without behavior changes.
+- **Phase I quieting complete** — generic monitoring alerts now suppress startup/wake noise with warm-up and
+  first-observation baselines, require sustained degraded states before firing, apply unified network-tier
+  cooldowns, and only emit recoveries after a delivered active alert. This was the intentional behavior-change
+  phase; the affected goldens were updated to the quieter expected output.
 - **Generic presentation core is feature-complete for Ping + System.** The full path is now proven end to end:
   `EntityDescriptor`/`EntityState` → `EntityEnricher` → per-slot `AttentionEngine` → `SlotReadoutSelector` →
   `SurfaceComposer` → generic `CardSpec` vocabulary → `AmbitUI`; settings are schema/override-driven
   (`IntegrationConfigSchema`, `EntityPresentationOverride`, `SlotPresentationOverride`,
   `PresentationSettingsModel`); history, export, alerting, Available Items, and overlay reuse the same generic
   primitives.
-- **Manual verification caveats:** network resilience and the single-instance guard were eyeball-confirmed live;
-  notification service + adapter behavior are covered by tests and live alert/attention promotion; and the
-  overlay is covered by pure selection/rendering tests. App-pane controls and real macOS notification banners
-  remain manual checks in the ad-hoc dev build — use **Send Test Notification** and macOS notification settings
-  to confirm banner delivery. Overlay-window capture is also environment-limited — confirm manually.
-- Current master: **660 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+- **Verification state:** behavior is locked by frozen Phase 0.5 goldens, differential tests, migration tests,
+  the non-ping fixture proof, and the grep-gate. Live eyeballs confirmed Wi-Fi-toggle diagnosis, System staying
+  healthy during outages, and instance status dots matching the headline. Remaining manual checks are Settings
+  pane click-throughs and a real macOS notification banner via **Send Test** in the App pane.
+- Current master: **684 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
   multi-host ping surfaces, generic entity-targeted notifications, a generic selected-slot overlay, and
   pingscope-style network resilience across network switches and sleep/wake.
-- **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** Only
-  `ping` is active. They'll be rebuilt later against the proven shape. The old basic `ping` built-in was
-  retired (superseded by the pingscope-derived `ping` integration).
+- **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** `ping`
+  and `system@local` are active. The disabled device integrations will be rebuilt later against the proven
+  shape. The old basic `ping` built-in was retired (superseded by the pingscope-derived `ping` integration).
 
 ---
 
@@ -208,7 +235,7 @@ aggregator/viewport, never the coordinator.
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
   Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓, Floating Overlay ✓,
-  Network resilience + reliability ✓.
+  Network resilience + reliability ✓, Generic monitoring parity ✓.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -250,17 +277,27 @@ aggregator/viewport, never the coordinator.
   instance with a lockfile, supports Start at Login through `SMAppService`, surfaces Local Network permission
   guidance for private/link-local/loopback targets, classifies common ICMP failure modes, and summarizes
   multi-host remote-service-down notifications with capped affected-host bodies.
+- **Generic monitoring parity: complete.** Full PingScope behavior now runs through generic monitoring
+  primitives with no ping-specific engines or UI branches. Ping declares roles, perspectives, alert kinds,
+  presets, commands, and entity metadata; `TopologyDiagnosisEngine`, `MonitoringAlertStateMachine`,
+  `DiagnosticSummaryEntity`, `NetworkAwarenessConfig`, generic settings, and generic surfaces do the rest. The
+  grep-gate keeps ping diagnosis/alert/role identifiers out of Core engines and UI modules, with allowlists
+  limited to the Ping integration, seed/migration code, and frozen characterization fixtures. Half 2 added the
+  user-facing generic controls: instance management with status dots/PRIMARY badges/presets/role dropdown/Test,
+  display and overlay settings, Diagnostics, app/about/reset/Sparkle hooks, per-kind notification toggles, and
+  status colors.
 - **Core feature-complete checkpoint:** the four queued core areas are done on top of the earlier System
-  dashboard, Available Items, and history/graph-fidelity work: core architecture hardening, multi-host ping
-  parity, notifications & alerts, and floating-overlay generalization. Ambit's generic presentation core is ready
-  for additional integrations without adding bespoke UI.
+  dashboard, Available Items, history/graph-fidelity work, network resilience, and generic monitoring parity:
+  core architecture hardening, multi-host ping parity, notifications & alerts, floating-overlay generalization,
+  and removal of ping-specific monitoring logic. Ambit's generic presentation and monitoring core is ready for
+  additional integrations without adding bespoke UI.
 - **Dev test artifacts:** `ping@1.1.1.1:443` (Cloudflare TCP) is intentionally present in the `tv.kodi.ambit`
   registry for multi-host eyeballs. `ping@127.0.0.1:22` ("Local") is the user's pre-existing failing host
   (SSH closed) and intentionally exercises down/failure rendering.
-- **Remaining major milestones (explicitly deferred, not started):** device integrations rebuilt against the
-  proven shape (`gl.inet` first; needs the secure config field), multi-engine topology (Phase 3), iOS/widgets/
-  Live Activity, and real packaging. Sparkle auto-update is explicitly deferred pending infrastructure decisions:
-  feed URL, EdDSA keys, signing/release workflow, and hosting.
+- **Remaining major milestones (explicitly deferred, not started):** Sparkle auto-update (needs feed URL, EdDSA
+  keys, signing/release workflow, and hosting); device integrations rebuilt against the proven generic shape
+  (`gl.inet` first, then Starlink including HTTP/2+protobuf telemetry, reachability, Speedify, and EcoFlow; all
+  need the secure config field); multi-engine topology (Phase 3); and iOS/widgets/Live Activity.
 
 ---
 
