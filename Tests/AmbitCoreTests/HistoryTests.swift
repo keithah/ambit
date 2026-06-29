@@ -44,6 +44,19 @@ final class HistoryTests: XCTestCase {
         XCTAssertEqual(stats.avg, 30)
     }
 
+    func testHistoryServiceMostRecentLimitReturnsChronologicalWindow() async {
+        let service = HistoryService(store: InMemoryHistoryStore(), retention: 86_400, pruneInterval: 60)
+        let id = EntityID(rawValue: "ping@1.1.1.1:443/probe.latency_ms")
+        for index in 0..<5 {
+            await service.record(ok(Double(index), TimeInterval(index)), for: id)
+        }
+
+        let samples = await service.samples(id, since: at(0), limit: 2)
+
+        XCTAssertEqual(samples.map(\.value), [3, 4])
+        XCTAssertEqual(samples.map(\.timestamp), [at(3), at(4)])
+    }
+
     func testHistoryServicePrunesByRetention() async {
         // retention 60s, prune every record (interval 0): a sample at +120 prunes the +0 one.
         let service = HistoryService(store: InMemoryHistoryStore(), retention: 60, pruneInterval: 0)
