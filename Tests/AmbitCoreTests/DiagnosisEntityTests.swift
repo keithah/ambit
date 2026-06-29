@@ -35,4 +35,57 @@ final class DiagnosisEntityTests: XCTestCase {
         XCTAssertEqual(made?.1.value, .text("1/1 gateway host(s) unreachable."))
         XCTAssertEqual(made?.1.availability, .online)
     }
+
+    func testGenericSummaryPreservesLegacyPingEntityID() {
+        let diagnosis = MonitoringDiagnosis(
+            perspectiveID: "ping.default",
+            verdict: MonitoringVerdict(kind: .localNetworkDown, affectedRole: .localGateway),
+            severity: .down,
+            confidence: .high,
+            affectedEntityIDs: [],
+            title: "Local network down",
+            detail: "1/1 gateway host(s) unreachable."
+        )
+
+        let made = DiagnosticSummaryEntity.make(diagnosis, owner: .ping)
+
+        XCTAssertEqual(made?.0.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(made?.0.instanceID, DiagnosisEntity.instanceID)
+        XCTAssertEqual(made?.0.category, .diagnostic)
+        XCTAssertEqual(made?.1.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(made?.1.value, .text("1/1 gateway host(s) unreachable."))
+    }
+
+    func testGenericSummarySupportsNonPingOwner() {
+        let diagnosis = MonitoringDiagnosis(
+            perspectiveID: "fixture.wan",
+            verdict: MonitoringVerdict(kind: .upstreamDown, affectedRole: .upstreamInternet),
+            severity: .down,
+            confidence: .high,
+            affectedEntityIDs: ["fixture@local/wan.status"],
+            title: "Internet unreachable",
+            detail: "1/1 upstream host(s) unreachable."
+        )
+
+        let made = DiagnosticSummaryEntity.make(diagnosis, owner: .custom(instanceID: "fixture.summary", entityID: "fixture.summary.diagnosis"))
+
+        XCTAssertEqual(made?.0.id, "fixture.summary.diagnosis")
+        XCTAssertEqual(made?.0.instanceID, "fixture.summary")
+        XCTAssertEqual(made?.0.kind, .text)
+        XCTAssertEqual(made?.0.category, .diagnostic)
+        XCTAssertEqual(made?.1.severity, .down)
+    }
+
+    func testPreMilestoneFixtureSummaryOverrideContinuesToResolveToPingSummaryID() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures")
+            .appendingPathComponent("GenericMonitoringParity")
+            .appendingPathComponent("observable_ping_surface.json")
+        let data = try Data(contentsOf: fixtureURL)
+        let fixture = String(decoding: data, as: UTF8.self)
+
+        XCTAssertTrue(fixture.contains(DiagnosticSummaryEntity.Owner.ping.entityID.rawValue))
+        XCTAssertEqual(DiagnosticSummaryEntity.Owner.ping.entityID, DiagnosisEntity.entityID)
+    }
 }

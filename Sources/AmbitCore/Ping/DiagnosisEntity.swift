@@ -5,32 +5,20 @@ import Foundation
 // level, so the id is a stable synthetic summary id (no EngineID). P3/P4 can promote production
 // of this entity into an aggregate / the attention engine.
 public enum DiagnosisEntity {
-    public static let instanceID = ProviderInstanceID(rawValue: "ping.summary")
-    public static let entityID = EntityID(rawValue: "ping.summary.diagnosis")
+    public static let instanceID = DiagnosticSummaryEntity.Owner.ping.instanceID
+    public static let entityID = DiagnosticSummaryEntity.Owner.ping.entityID
 
     public static func descriptor(title: String = "Network status") -> EntityDescriptor {
-        EntityDescriptor(
-            id: entityID, instanceID: instanceID, name: title,
-            kind: .text, deviceClass: nil, category: .diagnostic, access: .read
-        )
+        DiagnosticSummaryEntity.descriptor(owner: .ping, title: title)
     }
 
     /// nil when the network is healthy / has no data (banner omitted).
     public static func make(_ diagnosis: NetworkPerspectiveDiagnosis) -> (EntityDescriptor, EntityState)? {
-        guard let severity = severity(for: diagnosis.verdict) else { return nil }
-        let descriptor = descriptor(title: diagnosis.title)
-        let state = EntityState(id: entityID, value: .text(diagnosis.detail), availability: .online, severity: severity)
-        return (descriptor, state)
+        DiagnosticSummaryEntity.make(MonitoringDiagnosis(legacy: diagnosis), owner: .ping)
     }
 
     // Locked P2 default (catastrophic vs notable); only drives banner tone in P2, re-examined at P4.
     static func severity(for verdict: NetworkPerspectiveDiagnosis.Verdict) -> Severity? {
-        switch verdict {
-        case .allReachable, .noData: return nil
-        case .monitoringStalled: return .elevated   // calm "Monitoring paused" banner, not a fault
-        case .partialDegradation: return .degraded
-        case .localNetworkDown, .ispPathDown, .upstreamDown: return .down
-        case .remoteServiceDown: return .alerting
-        }
+        DiagnosticSummaryEntity.severity(for: MonitoringVerdict.Kind(legacy: verdict))
     }
 }

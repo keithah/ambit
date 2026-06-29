@@ -3,6 +3,7 @@ import Foundation
 
 struct PingDiagnosisResult: Equatable {
     var diagnosis: NetworkPerspectiveDiagnosis
+    var monitoringDiagnosis: MonitoringDiagnosis
     var events: [AlertEvent]
 }
 
@@ -55,15 +56,17 @@ final class PingDiagnosisCoordinator {
             linkStatus: networkStatus,
             sensitivity: sensitivity
         )
-        var diagnosis = monitoringCoordinator.legacyNetworkDiagnosis(for: perspective)
+        var monitoringDiagnosis = monitoringCoordinator.diagnose(perspective)
+        var diagnosis = NetworkPerspectiveDiagnosis(monitoringDiagnosis)
         if case .monitoringStalled = diagnosis.verdict {
             let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
             diagnosis.detail = "Monitoring paused — data is \(age)s old."
+            monitoringDiagnosis.detail = diagnosis.detail
         }
         let events = networkStatus == .connected
             ? alertMonitor.evaluate(hosts: alertHosts, diagnosis: diagnosis, now: now)
             : []
-        return PingDiagnosisResult(diagnosis: diagnosis, events: events)
+        return PingDiagnosisResult(diagnosis: diagnosis, monitoringDiagnosis: monitoringDiagnosis, events: events)
     }
 
     nonisolated static func diagnosisSensitivity(from records: [IntegrationInstanceRecord]) -> DiagnosisSensitivity {

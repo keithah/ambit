@@ -761,6 +761,7 @@ final class StatusViewModel: ObservableObject {
             let surface = await slotSurfaceCoordinator.buildSurface(
                 slot: slot,
                 diagnosis: diagnosis,
+                monitoringDiagnosis: diagnosisResult.monitoringDiagnosis,
                 enabledPingRecords: activeRecords,
                 allRegistryRecords: allRegistryRecords,
                 allDescriptors: allDescriptors,
@@ -782,9 +783,10 @@ final class StatusViewModel: ObservableObject {
     private func deliverAlerts(_ events: [AlertEvent], descriptors: [ProviderInstanceID: [EntityDescriptor]]) async {
         guard !events.isEmpty else { return }
         var allDescriptors = descriptors.values.flatMap { $0 }
-        if events.contains(where: { $0.target == .entity(DiagnosisEntity.entityID) }),
-           !allDescriptors.contains(where: { $0.id == DiagnosisEntity.entityID }) {
-            allDescriptors.append(DiagnosisEntity.descriptor())
+        let summaryEntityID = DiagnosticSummaryEntity.Owner.ping.entityID
+        if events.contains(where: { $0.target == .entity(summaryEntityID) }),
+           !allDescriptors.contains(where: { $0.id == summaryEntityID }) {
+            allDescriptors.append(DiagnosticSummaryEntity.descriptor(owner: .ping))
         }
         let resolved = events.map { event in
             ResolvedAlertEvent(event: event, entityIDs: alertTargetResolver.resolve(event, descriptors: allDescriptors))

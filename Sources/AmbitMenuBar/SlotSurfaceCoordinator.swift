@@ -12,6 +12,7 @@ final class SlotSurfaceCoordinator {
     func buildSurface(
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
+        monitoringDiagnosis: MonitoringDiagnosis? = nil,
         enabledPingRecords: [IntegrationInstanceRecord],
         allRegistryRecords: [IntegrationInstanceRecord],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
@@ -80,6 +81,7 @@ final class SlotSurfaceCoordinator {
         return await buildPingSurface(
             slot: slot,
             diagnosis: diagnosis,
+            monitoringDiagnosis: monitoringDiagnosis,
             shownRecords: shownRecords,
             headlineRecordID: headlineRecordID,
             shownResolved: shownResolved,
@@ -98,6 +100,7 @@ final class SlotSurfaceCoordinator {
     private func buildPingSurface(
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
+        monitoringDiagnosis: MonitoringDiagnosis?,
         shownRecords: [IntegrationInstanceRecord],
         headlineRecordID: IntegrationInstanceID?,
         shownResolved: [EntityDescriptor],
@@ -136,7 +139,8 @@ final class SlotSurfaceCoordinator {
             }
         }
 
-        if let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis) {
+        let summaryDiagnosis = monitoringDiagnosis ?? MonitoringDiagnosis(legacy: diagnosis)
+        if let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(summaryDiagnosis, owner: .ping) {
             descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
             states[diagnosisDescriptor.id] = diagnosisState
             attentionDescriptors.append(diagnosisDescriptor)
@@ -153,7 +157,9 @@ final class SlotSurfaceCoordinator {
         })
         var headlineEligibleActiveIDs = Set<EntityID>()
         if let headlineLatencyID { headlineEligibleActiveIDs.insert(headlineLatencyID) }
-        if descriptors[DiagnosisEntity.entityID] != nil { headlineEligibleActiveIDs.insert(DiagnosisEntity.entityID) }
+        if descriptors[DiagnosticSummaryEntity.Owner.ping.entityID] != nil {
+            headlineEligibleActiveIDs.insert(DiagnosticSummaryEntity.Owner.ping.entityID)
+        }
         let readout = attentionEngines.resolveReadout(
             slotID: slot.id,
             mode: slot.barReadout,
