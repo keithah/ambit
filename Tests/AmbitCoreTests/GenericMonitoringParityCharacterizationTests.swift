@@ -115,13 +115,12 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
             let surface = await coordinator.buildSurface(
                 slot: scenarioFixtures.slot,
                 diagnosis: diagnosis,
-                enabledPingRecords: scenarioFixtures.records,
                 allRegistryRecords: scenarioFixtures.records,
                 allDescriptors: scenarioFixtures.descriptorsByProvider,
                 allStates: scenarioFixtures.states,
                 firedAlertEvents: [],
                 slotFocus: [:],
-                pingRange: .fiveMinutes,
+                fallbackGraphRange: .m5,
                 config: config,
                 now: surfaceNow,
                 historySamples: { entityID, _ in scenarioFixtures.samples[entityID] ?? [] }

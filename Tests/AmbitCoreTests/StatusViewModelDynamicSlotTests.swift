@@ -565,7 +565,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: [],
             allRegistryRecords: [
                 IntegrationInstanceRecord(
                     id: "system@local",
@@ -579,7 +578,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             allStates: [cpu.id: state(cpu.id, value: 34, severity: .normal)],
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in id == cpu.id ? [sample] : [] }
@@ -688,13 +687,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -729,13 +727,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -759,13 +756,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -799,13 +795,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: config,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -829,13 +824,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: config,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -863,13 +857,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: config,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -889,13 +882,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: config,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -911,6 +903,40 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testSlotGraphRangeOverrideDrivesHistoryQueriesAndCardRanges() async throws {
+        let coordinator = SlotSurfaceCoordinator()
+        let fixtures = pingSurfaceFixtures()
+        var config = PresentationConfig.empty
+        config.slotOverrides[fixtures.slot.id] = SlotPresentationOverride(graphRange: .m1)
+        var requestedSince: [Date] = []
+
+        let surface = await coordinator.buildSurface(
+            slot: fixtures.slot,
+            diagnosis: diagnosis(.allReachable),
+            allRegistryRecords: fixtures.records,
+            allDescriptors: fixtures.descriptorsByProvider,
+            allStates: fixtures.states,
+            firedAlertEvents: [],
+            slotFocus: [:],
+            fallbackGraphRange: .h1,
+            config: config,
+            now: now,
+            historySamples: { id, since in
+                if id == fixtures.latencyIDs[0] {
+                    requestedSince.append(since)
+                }
+                return fixtures.samples[id] ?? []
+            }
+        )
+
+        XCTAssertEqual(surface.graphRange, .m1)
+        XCTAssertEqual(surface.firstCard(kind: .historyGraph)?.graphRange, .m1)
+        XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.graphRange, .m1)
+        let since = try XCTUnwrap(requestedSince.first)
+        XCTAssertEqual(since.timeIntervalSince1970, now.addingTimeInterval(-GraphRange.m1.seconds).timeIntervalSince1970, accuracy: 0.001)
+    }
+
+    @MainActor
     func testFocusedPingSurfaceFiltersDescriptorsSeriesAndSampleHistoryToFocusedHost() async {
         let coordinator = SlotSurfaceCoordinator()
         let fixtures = pingSurfaceFixtures()
@@ -919,13 +945,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [fixtures.slot.id: focused],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -948,14 +973,13 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
             primaryPingInstanceID: fixtures.records[1].id,
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -980,13 +1004,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: config,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1010,13 +1033,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1045,13 +1067,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1071,13 +1092,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1096,13 +1116,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.localNetworkDown),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1121,13 +1140,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: fixtures.records,
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
             firedAlertEvents: [],
             slotFocus: [fixtures.slot.id: "ping@missing"],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1150,13 +1168,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
             diagnosis: diagnosis(.allReachable),
-            enabledPingRecords: [record],
             allRegistryRecords: fixtures.records,
             allDescriptors: [provider: fixtures.descriptorsByProvider[provider] ?? []],
             allStates: [latencyID: fixtures.states[latencyID]!],
             firedAlertEvents: [],
             slotFocus: [:],
-            pingRange: .fiveMinutes,
+            fallbackGraphRange: .m5,
             config: .empty,
             now: now,
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
@@ -1886,6 +1903,21 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         XCTAssertEqual(store.config.slotOverrides[slotID]?.tableRowLimit, 9)
 
         viewModel.setSlotTableRowLimit(slotID, nil)
+
+        XCTAssertNil(store.config.slotOverrides[slotID])
+    }
+
+    @MainActor
+    func testSlotGraphRangePersistsAndResetsCleanly() {
+        let slotID = SlotID(rawValue: "slot.system")
+        let store = MemoryPresentationConfigStore()
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setSlotGraphRange(slotID, .h1)
+
+        XCTAssertEqual(store.config.slotOverrides[slotID]?.graphRange, .h1)
+
+        viewModel.setSlotGraphRange(slotID, nil)
 
         XCTAssertNil(store.config.slotOverrides[slotID])
     }

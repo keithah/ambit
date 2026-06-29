@@ -81,14 +81,7 @@ struct SlotPopover: View {
     private var focus: IntegrationInstanceID? {
         surface.selectedInstanceID
     }
-    /// The range picker drives the global ping window (P3). Show it only on the ping slot so a
-    /// future non-ping slot's popover never binds/mutates ping state. Per-slot range is P5.
-    private var isPingSlot: Bool {
-        if case .integrationType(IntegrationIDs.ping)? = viewModel.slots.first(where: { $0.id == slotID })?.selection {
-            return true
-        }
-        return false
-    }
+    private var selectedGraphRange: GraphRange? { surface.graphRange }
     private var focusReadout: (text: String, tone: LatencyTone, statusLabel: String) {
         // Derive readout from the glyph (glyph already holds primary-entity data).
         // When focused on a specific host, the glyph is already recomputed for that host.
@@ -106,7 +99,7 @@ struct SlotPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            if isPingSlot { rangePicker }
+            if selectedGraphRange != nil { rangePicker }
             ScrollView(.vertical) {
                 SurfaceView(plan: surface.plan, data: surface.data)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -182,10 +175,10 @@ struct SlotPopover: View {
         HStack(spacing: 14) {
             Text("Range").font(.system(size: 14, weight: .semibold))
             Picker("", selection: Binding(
-                get: { viewModel.pingRange },
-                set: { viewModel.setPingRange($0) }
+                get: { selectedGraphRange ?? .m5 },
+                set: { viewModel.setSlotGraphRange(slotID, $0) }
             )) {
-                ForEach(TimeRange.allCases, id: \.self) { Text($0.label).tag($0) }
+                ForEach(GraphRange.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented).fixedSize()
             Spacer()

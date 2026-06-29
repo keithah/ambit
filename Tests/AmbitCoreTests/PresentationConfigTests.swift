@@ -17,6 +17,7 @@ final class PresentationConfigTests: XCTestCase {
         c.slotOverrides[SlotID(rawValue: "slot.system")] = SlotPresentationOverride(
             shownItems: [SurfaceItemID(rawValue: "entity:system@local/overview.cpu_usage_percent")],
             hiddenItems: [SurfaceItemID(rawValue: "group:system.memory:dataSize:B:segments")],
+            graphRange: .h1,
             selectedInstanceID: IntegrationInstanceID(rawValue: "system@local"),
             primaryInstanceID: IntegrationInstanceID(rawValue: "system@local"),
             showsAllInstances: false

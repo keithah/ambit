@@ -53,6 +53,7 @@ public struct SlotPresentationOverride: Equatable, Sendable, Codable {
     public var shownItems: [SurfaceItemID]?
     public var hiddenItems: Set<SurfaceItemID>
     public var tableRowLimit: Int?
+    public var graphRange: GraphRange?
     public var selectedInstanceID: IntegrationInstanceID?
     public var primaryInstanceID: IntegrationInstanceID?
     public var showsAllInstances: Bool
@@ -61,6 +62,7 @@ public struct SlotPresentationOverride: Equatable, Sendable, Codable {
         shownItems: [SurfaceItemID]? = nil,
         hiddenItems: Set<SurfaceItemID> = [],
         tableRowLimit: Int? = nil,
+        graphRange: GraphRange? = nil,
         selectedInstanceID: IntegrationInstanceID? = nil,
         primaryInstanceID: IntegrationInstanceID? = nil,
         showsAllInstances: Bool = false
@@ -68,13 +70,14 @@ public struct SlotPresentationOverride: Equatable, Sendable, Codable {
         self.shownItems = shownItems
         self.hiddenItems = hiddenItems
         self.tableRowLimit = tableRowLimit
+        self.graphRange = graphRange
         self.selectedInstanceID = selectedInstanceID
         self.primaryInstanceID = primaryInstanceID
         self.showsAllInstances = showsAllInstances
     }
 
     private enum CodingKeys: String, CodingKey {
-        case shownItems, hiddenItems, tableRowLimit, selectedInstanceID, primaryInstanceID, showsAllInstances
+        case shownItems, hiddenItems, tableRowLimit, graphRange, selectedInstanceID, primaryInstanceID, showsAllInstances
     }
 
     public init(from decoder: Decoder) throws {
@@ -82,6 +85,7 @@ public struct SlotPresentationOverride: Equatable, Sendable, Codable {
         shownItems = try container.decodeIfPresent([SurfaceItemID].self, forKey: .shownItems)
         hiddenItems = try container.decodeIfPresent(Set<SurfaceItemID>.self, forKey: .hiddenItems) ?? []
         tableRowLimit = try container.decodeIfPresent(Int.self, forKey: .tableRowLimit)
+        graphRange = try container.decodeIfPresent(GraphRange.self, forKey: .graphRange)
         selectedInstanceID = try container.decodeIfPresent(IntegrationInstanceID.self, forKey: .selectedInstanceID)
         primaryInstanceID = try container.decodeIfPresent(IntegrationInstanceID.self, forKey: .primaryInstanceID)
         showsAllInstances = try container.decodeIfPresent(Bool.self, forKey: .showsAllInstances) ?? false

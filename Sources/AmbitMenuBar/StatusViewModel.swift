@@ -32,6 +32,7 @@ private extension SlotPresentationOverride {
         shownItems == nil &&
             hiddenItems.isEmpty &&
             tableRowLimit == nil &&
+            graphRange == nil &&
             selectedInstanceID == nil &&
             primaryInstanceID == nil &&
             showsAllInstances == false
@@ -49,6 +50,28 @@ private extension Slot {
             return integrationID == record.integrationID
         case .capability, .entities:
             return id.rawValue == record.id.rawValue
+        }
+    }
+}
+
+private extension GraphRange {
+    init(timeRange: TimeRange) {
+        switch timeRange {
+        case .oneMinute: self = .m1
+        case .fiveMinutes: self = .m5
+        case .tenMinutes: self = .m10
+        case .oneHour: self = .h1
+        }
+    }
+}
+
+private extension TimeRange {
+    init(graphRange: GraphRange) {
+        switch graphRange {
+        case .m1: self = .oneMinute
+        case .m5: self = .fiveMinutes
+        case .m10: self = .tenMinutes
+        case .h1: self = .oneHour
         }
     }
 }
@@ -71,10 +94,7 @@ final class StatusViewModel: ObservableObject {
     @Published var providerLayouts: [ProviderID: ProviderManifest.Layout] = [:]
     @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
-    // Ping UI state
-    @Published var pingRange: TimeRange = .fiveMinutes {
-        didSet { UserDefaults.standard.set(pingRange.rawValue, forKey: "pingRange") }
-    }
+    private var fallbackGraphRange: GraphRange = .m5
     @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
     /// Per-slot surface values (plan + data + glyph + hostOptions), keyed by SlotID.
     @Published var slotSurfaces: [SlotID: SlotSurface] = [:]
@@ -151,7 +171,7 @@ final class StatusViewModel: ObservableObject {
         Self.dedupePingHostsByAddress(integrationRegistry)
         self.slots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
         if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
-            pingRange = range
+            fallbackGraphRange = GraphRange(timeRange: range)
         }
         let historyStore: any HistoryStore = (try? SQLiteHistoryStore.defaultURL()).map { SQLiteHistoryStore(url: $0) } ?? InMemoryHistoryStore()
         self.engine = Engine(
@@ -674,8 +694,10 @@ final class StatusViewModel: ObservableObject {
         moduleUsageSnapshots = Array(await engine.usageSnapshots().values)
     }
 
-    func setPingRange(_ range: TimeRange) {
-        pingRange = range
+    func setSlotGraphRange(_ slot: SlotID, _ range: GraphRange?) {
+        mutateSlotOverride(slot) { override in
+            override.graphRange = range
+        }
         Task { await refreshPing() }
     }
 
@@ -719,12 +741,14 @@ final class StatusViewModel: ObservableObject {
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
         let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
 
+        let loadedConfig = configStore.load()
+        let diagnosisGraphRange = Self.diagnosisGraphRange(slots: slots, config: loadedConfig, fallback: fallbackGraphRange)
         let diagnosisResult = await pingDiagnosisCoordinator.evaluate(
             activeRecords: activeRecords,
             snapshot: snapshot,
             networkStatus: networkPathSnapshot.connectivityStatus,
             now: now,
-            range: pingRange
+            range: TimeRange(graphRange: diagnosisGraphRange)
         ) { [engine] id, since in
             await engine.historySamples(id, since: since)
         }
@@ -751,15 +775,14 @@ final class StatusViewModel: ObservableObject {
                 slot: slot,
                 diagnosis: diagnosis,
                 monitoringDiagnosis: diagnosisResult.monitoringDiagnosis,
-                enabledPingRecords: activeRecords,
                 allRegistryRecords: allRegistryRecords,
                 allDescriptors: allDescriptors,
                 allStates: allStates,
                 firedAlertEvents: events,
                 slotFocus: slotFocus,
                 primaryPingInstanceID: primaryPingInstanceID,
-                pingRange: pingRange,
-                config: configStore.load(),
+                fallbackGraphRange: fallbackGraphRange,
+                config: loadedConfig,
                 now: now
             ) { [engine] id, since in
                 await engine.historySamples(id, since: since)
@@ -807,6 +830,20 @@ final class StatusViewModel: ObservableObject {
                     integration.configSchema.map { (integration.id, $0) }
                 }
         )
+    }
+
+    nonisolated private static func diagnosisGraphRange(
+        slots: [Slot],
+        config: PresentationConfig,
+        fallback: GraphRange
+    ) -> GraphRange {
+        guard let slot = slots.first(where: { slot in
+            if case .integrationType(let integrationID) = slot.selection {
+                return integrationID == IntegrationIDs.ping
+            }
+            return false
+        }) else { return fallback }
+        return config.slotOverrides[slot.id]?.graphRange ?? fallback
     }
 
     func setEntityVisibility(_ id: EntityID, _ visibility: GlanceVisibility?) {

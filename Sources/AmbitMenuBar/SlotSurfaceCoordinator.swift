@@ -13,14 +13,13 @@ final class SlotSurfaceCoordinator {
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
         monitoringDiagnosis: MonitoringDiagnosis? = nil,
-        enabledPingRecords: [IntegrationInstanceRecord],
         allRegistryRecords: [IntegrationInstanceRecord],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
         allStates: [EntityID: EntityState],
         firedAlertEvents: [AlertEvent],
         slotFocus: [SlotID: IntegrationInstanceID],
         primaryPingInstanceID: IntegrationInstanceID? = nil,
-        pingRange: TimeRange,
+        fallbackGraphRange: GraphRange,
         config: PresentationConfig,
         now: Date,
         historySamples: @escaping HistorySamples
@@ -29,17 +28,20 @@ final class SlotSurfaceCoordinator {
         let resolved = SlotResolver.resolve(slot.selection, descriptors: flatDescriptors, records: allRegistryRecords)
 
         let resolvedInstanceIDs = Set(resolved.map { $0.instanceID.integrationInstanceID })
-        let resolvedRecords = enabledPingRecords.filter { resolvedInstanceIDs.contains($0.id) }
+        let resolvedRecords = allRegistryRecords.filter { record in
+            record.enabled && resolvedInstanceIDs.contains(record.id)
+        }
         let hostOptions = resolvedRecords.map { record in
             InstanceSelectorCard.Option(
                 id: record.id.rawValue,
                 label: record.displayName,
-                subtitle: Self.pingHostSubtitle(record)
+                subtitle: Self.instanceSubtitle(record, descriptors: resolved)
             )
         }
 
         let override = config.slotOverrides[slot.id]
-        let defaultFocusID = Self.defaultPingFocusID(
+        let graphRange = override?.graphRange ?? fallbackGraphRange
+        let defaultFocusID = Self.defaultFocusID(
             records: resolvedRecords,
             primaryPingInstanceID: override?.primaryInstanceID ?? primaryPingInstanceID
         )
@@ -61,7 +63,26 @@ final class SlotSurfaceCoordinator {
                 shownInstanceIDs.contains(descriptor.instanceID.integrationInstanceID)
             }
 
-        guard Self.isPingSlot(slot) else {
+        guard !Self.hasMultiInstanceMeasurementSurface(resolved: resolved, records: resolvedRecords) else {
+            return await buildMultiInstanceSurface(
+                slot: slot,
+                diagnosis: diagnosis,
+                monitoringDiagnosis: monitoringDiagnosis,
+                shownRecords: shownRecords,
+                headlineRecordID: headlineRecordID,
+                shownResolved: shownResolved,
+                allStates: allStates,
+                firedAlertEvents: firedAlertEvents,
+                hostOptions: hostOptions,
+                selectedInstanceID: focusedID,
+                graphRange: graphRange,
+                config: config,
+                now: now,
+                historySamples: historySamples
+            )
+        }
+
+        do {
             let plan = SurfaceComposer.detailPlan(descriptors: shownResolved, states: allStates, config: config, slotID: slot.id)
             let series = await Self.historySeries(for: plan, now: now, historySamples: historySamples)
             return attentionEngines.withEngine(for: slot.id) { attentionEngine in
@@ -77,39 +98,20 @@ final class SlotSurfaceCoordinator {
                 )
             }
         }
-
-        return await buildPingSurface(
-            slot: slot,
-            diagnosis: diagnosis,
-            monitoringDiagnosis: monitoringDiagnosis,
-            shownRecords: shownRecords,
-            headlineRecordID: headlineRecordID,
-            shownResolved: shownResolved,
-            allDescriptors: allDescriptors,
-            allStates: allStates,
-            firedAlertEvents: firedAlertEvents,
-            hostOptions: hostOptions,
-            selectedInstanceID: focusedID,
-            pingRange: pingRange,
-            config: config,
-            now: now,
-            historySamples: historySamples
-        )
     }
 
-    private func buildPingSurface(
+    private func buildMultiInstanceSurface(
         slot: Slot,
         diagnosis: NetworkPerspectiveDiagnosis,
         monitoringDiagnosis: MonitoringDiagnosis?,
         shownRecords: [IntegrationInstanceRecord],
         headlineRecordID: IntegrationInstanceID?,
         shownResolved: [EntityDescriptor],
-        allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
         allStates: [EntityID: EntityState],
         firedAlertEvents: [AlertEvent],
         hostOptions: [InstanceSelectorCard.Option],
         selectedInstanceID: IntegrationInstanceID?,
-        pingRange: TimeRange,
+        graphRange: GraphRange,
         config: PresentationConfig,
         now: Date,
         historySamples: @escaping HistorySamples
@@ -119,28 +121,53 @@ final class SlotSurfaceCoordinator {
         var series: [EntityID: [Sample]] = [:]
         var attentionDescriptors: [EntityDescriptor] = []
         var detailDescriptors: [EntityDescriptor] = []
-        var headlineLatencyID: EntityID?
-        for record in shownRecords {
-            let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
-            let latencyID = EntityID(rawValue: "\(providerInstance.rawValue).latency_ms")
-            guard var latency = allDescriptors[providerInstance]?.first(where: { $0.id == latencyID }) else { continue }
-            latency.name = record.displayName
-            latency.isPrimary = record.id == headlineRecordID
-            if record.id == headlineRecordID {
-                headlineLatencyID = latencyID
+        var headlineMeasurementID: EntityID?
+        let recordsByID = Dictionary(uniqueKeysWithValues: shownRecords.map { ($0.id, $0) })
+        let allowCategoryPrimary = hostOptions.count > 1
+        let recordOrder = Dictionary(uniqueKeysWithValues: shownRecords.enumerated().map { ($0.element.id, $0.offset) })
+        let surfaceDescriptors = shownResolved.enumerated()
+            .filter { _, descriptor in Self.isSurfaceDescriptor(descriptor) }
+            .sorted { lhs, rhs in
+                let lhsOrder = recordOrder[lhs.element.instanceID.integrationInstanceID] ?? Int.max
+                let rhsOrder = recordOrder[rhs.element.instanceID.integrationInstanceID] ?? Int.max
+                if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+                return lhs.offset < rhs.offset
             }
-            detailDescriptors.append(latency)
-            attentionDescriptors.append(latency)
-            descriptors[latencyID] = latency
-            let samples = await historySamples(latencyID, now.addingTimeInterval(-pingRange.seconds))
-            series[latencyID] = samples
-            if let state = Self.latencyStateForSurface(id: latencyID, current: allStates[latencyID], samples: samples) {
-                states[latencyID] = state
+            .map(\.element)
+        for rawDescriptor in surfaceDescriptors {
+            var descriptor = rawDescriptor
+            let instanceID = descriptor.instanceID.integrationInstanceID
+            let isHeadlineInstance = instanceID == headlineRecordID
+            if Self.isPrimaryMeasurement(descriptor, allowCategoryPrimary: allowCategoryPrimary) {
+                descriptor.isPrimary = isHeadlineInstance
+                if let record = recordsByID[instanceID], shownRecords.count > 1 {
+                    descriptor.name = record.displayName
+                }
+                if isHeadlineInstance {
+                    headlineMeasurementID = descriptor.id
+                }
+            }
+            detailDescriptors.append(descriptor)
+            attentionDescriptors.append(descriptor)
+            descriptors[descriptor.id] = descriptor
+            if descriptor.stateClass != nil {
+                let samples = await historySamples(descriptor.id, now.addingTimeInterval(-graphRange.seconds))
+                series[descriptor.id] = samples
+                if descriptor.deviceClass == .latency,
+                   let state = Self.latencyStateForSurface(id: descriptor.id, current: allStates[descriptor.id], samples: samples) {
+                    states[descriptor.id] = state
+                } else if let state = allStates[descriptor.id] {
+                    states[descriptor.id] = state
+                }
+            } else if let state = allStates[descriptor.id] {
+                states[descriptor.id] = state
             }
         }
 
+        var diagnosticEntityID: EntityID?
         let summaryDiagnosis = monitoringDiagnosis ?? MonitoringDiagnosis(legacy: diagnosis)
         if let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(summaryDiagnosis, owner: .ping) {
+            diagnosticEntityID = diagnosisDescriptor.id
             descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
             states[diagnosisDescriptor.id] = diagnosisState
             attentionDescriptors.append(diagnosisDescriptor)
@@ -156,10 +183,8 @@ final class SlotSurfaceCoordinator {
             alertTargetResolver.resolve(event, descriptors: candidateDescriptors)
         })
         var headlineEligibleActiveIDs = Set<EntityID>()
-        if let headlineLatencyID { headlineEligibleActiveIDs.insert(headlineLatencyID) }
-        if descriptors[DiagnosticSummaryEntity.Owner.ping.entityID] != nil {
-            headlineEligibleActiveIDs.insert(DiagnosticSummaryEntity.Owner.ping.entityID)
-        }
+        if let headlineMeasurementID { headlineEligibleActiveIDs.insert(headlineMeasurementID) }
+        if let diagnosticEntityID { headlineEligibleActiveIDs.insert(diagnosticEntityID) }
         let readout = attentionEngines.resolveReadout(
             slotID: slot.id,
             mode: slot.barReadout,
@@ -175,13 +200,16 @@ final class SlotSurfaceCoordinator {
             preferredEntityID: readout.primaryEntityID,
             in: detailDescriptors
         )
-        let planCards = SurfaceComposer.detailPlan(
+        let planCards = Self.applyingGraphRange(
+            graphRange,
+            to: SurfaceComposer.detailPlan(
             descriptors: detailDescriptors,
             states: states,
             config: config,
             slotID: slot.id,
             preferredSampleHistoryEntityID: sampleHistoryEntityID
-        ).cards
+            ).cards
+        )
 
         let data = SurfaceData(
             descriptors: descriptors,
@@ -195,39 +223,51 @@ final class SlotSurfaceCoordinator {
             data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
+            graphRange: graphRange,
             selectedInstanceID: selectedInstanceID,
             primaryInstanceID: headlineRecordID,
             hostOptions: hostOptions
         )
     }
 
-    nonisolated private static func isPingSlot(_ slot: Slot) -> Bool {
-        if case .integrationType(let integrationID) = slot.selection, integrationID == IntegrationIDs.ping {
-            return true
-        }
-        return false
+    nonisolated private static func hasMultiInstanceMeasurementSurface(
+        resolved: [EntityDescriptor],
+        records: [IntegrationInstanceRecord]
+    ) -> Bool {
+        !records.isEmpty && resolved.contains { isPrimaryMeasurement($0, allowCategoryPrimary: records.count > 1) }
     }
 
-    nonisolated private static func pingHostSubtitle(_ record: IntegrationInstanceRecord) -> String? {
-        guard let host = PingHostConfig(configObject: record.config, displayNameFallback: record.displayName) else { return nil }
-        return "\(host.method.rawValue.uppercased()) \(host.address)"
+    nonisolated private static func instanceSubtitle(_ record: IntegrationInstanceRecord, descriptors: [EntityDescriptor]) -> String? {
+        let instanceDescriptors = descriptors.filter { $0.instanceID.integrationInstanceID == record.id }
+        let address = instanceDescriptors.compactMap { $0.monitoring?.address?.rawValue }.first
+            ?? record.config["address"]?.stringValue
+        guard let address else { return nil }
+        let method = record.config["method"]?.stringValue?.uppercased()
+        return [method, address].compactMap { $0 }.joined(separator: " ")
     }
 
-    nonisolated private static func defaultPingFocusID(
+    nonisolated private static func defaultFocusID(
         records: [IntegrationInstanceRecord],
         primaryPingInstanceID: IntegrationInstanceID?
     ) -> IntegrationInstanceID? {
-        let nonLoopbackRecords = records.filter { !isLoopbackPingRecord($0) }
+        let nonLoopbackRecords = records.filter { record in
+            record.config["address"]?.stringValue.map { AddressClassifier.scope(for: $0) != .loopback } ?? true
+        }
         if let primaryPingInstanceID,
            let primaryRecord = records.first(where: { $0.id == primaryPingInstanceID }),
-           !isLoopbackPingRecord(primaryRecord) || nonLoopbackRecords.isEmpty {
+           (primaryRecord.config["address"]?.stringValue.map { AddressClassifier.scope(for: $0) != .loopback } ?? true) || nonLoopbackRecords.isEmpty {
             return primaryPingInstanceID
         }
         return nonLoopbackRecords.first?.id ?? records.first?.id
     }
 
-    nonisolated private static func isLoopbackPingRecord(_ record: IntegrationInstanceRecord) -> Bool {
-        PingHostConfig(configObject: record.config, displayNameFallback: record.displayName)?.isLoopbackTarget ?? false
+    nonisolated private static func isSurfaceDescriptor(_ descriptor: EntityDescriptor) -> Bool {
+        guard descriptor.category != .config else { return false }
+        return descriptor.stateClass != nil || descriptor.kind == .table || descriptor.category == .diagnostic
+    }
+
+    nonisolated private static func isPrimaryMeasurement(_ descriptor: EntityDescriptor, allowCategoryPrimary: Bool = false) -> Bool {
+        descriptor.stateClass != nil && (descriptor.isPrimary || (allowCategoryPrimary && descriptor.category == .primary))
     }
 
     static func historySeries(for plan: SurfacePlan, now: Date, historySamples: @escaping HistorySamples) async -> [EntityID: [Sample]] {
@@ -274,6 +314,20 @@ final class SlotSurfaceCoordinator {
         state.severity = state.severity ?? .normal
         return state
     }
+
+    nonisolated static func applyingGraphRange(_ range: GraphRange, to cards: [CardSpec]) -> [CardSpec] {
+        cards.map { card in
+            var copy = card
+            copy.children = applyingGraphRange(range, to: card.children)
+            switch card.kind {
+            case .historyGraph, .dualLineGraph, .sampleHistory:
+                copy.graphRange = range
+            default:
+                break
+            }
+            return copy
+        }
+    }
 }
 
 enum StatusSlotSurfaceBuilder {
@@ -316,6 +370,7 @@ enum StatusSlotSurfaceBuilder {
             data: data,
             glyph: readout.glyph,
             primaryEntityID: readout.primaryEntityID,
+            graphRange: nil,
             selectedInstanceID: nil,
             primaryInstanceID: nil,
             hostOptions: []
