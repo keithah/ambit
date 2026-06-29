@@ -188,6 +188,60 @@ final class PresentationSettingsModelTests: XCTestCase {
         XCTAssertEqual(group.commands.map(\.command.id), ["fixture.test"])
     }
 
+    func testInstanceStatusUsesRestingPrimaryBeforeUnavailableSecondaryMetric() {
+        let record = IntegrationInstanceRecord(id: "fixture@local", integrationID: "fixture-monitor", displayName: "Fixture")
+        let primary = descriptor(
+            "fixture@local/overview.primary",
+            instance: "fixture@local/overview",
+            name: "Primary",
+            deviceClass: .percent,
+            isPrimary: true
+        )
+        let secondary = descriptor(
+            "fixture@local/network.secondary",
+            instance: "fixture@local/network",
+            name: "Secondary",
+            deviceClass: .throughput,
+            isPrimary: true
+        )
+        let model = PresentationSettingsModel.build(
+            integrations: [record],
+            descriptors: [
+                primary.instanceID: [primary],
+                secondary.instanceID: [secondary]
+            ],
+            states: [
+                primary.id: EntityState(id: primary.id, value: .number(14), availability: .online, severity: .normal),
+                secondary.id: EntityState(id: secondary.id, availability: .unavailable, severity: .down)
+            ],
+            overrides: .empty,
+            schemas: [:]
+        )
+
+        XCTAssertEqual(model.integrations[0].status, IntegrationInstanceStatus(availability: .online, severity: .normal, text: "14%"))
+    }
+
+    func testInstanceStatusStillShowsDownWhenResolvedPrimaryIsDown() {
+        let record = IntegrationInstanceRecord(id: "fixture@local", integrationID: "fixture-monitor", displayName: "Fixture")
+        let primary = descriptor(
+            "fixture@local/overview.primary",
+            instance: "fixture@local/overview",
+            name: "Primary",
+            isPrimary: true
+        )
+        let model = PresentationSettingsModel.build(
+            integrations: [record],
+            descriptors: [primary.instanceID: [primary]],
+            states: [
+                primary.id: EntityState(id: primary.id, availability: .unavailable, severity: .down)
+            ],
+            overrides: .empty,
+            schemas: [:]
+        )
+
+        XCTAssertEqual(model.integrations[0].status, IntegrationInstanceStatus(availability: .unavailable, severity: .down, text: "Down"))
+    }
+
     func testMonitoringRoleFieldFactoryProvidesGenericDescriptions() {
         let field = IntegrationConfigField.monitoringRole(id: "monitoringRole", title: "Network Role")
 
@@ -224,15 +278,19 @@ final class PresentationSettingsModelTests: XCTestCase {
         name: String,
         kind: EntityKind = .sensor,
         category: EntityCategory = .primary,
-        defaultVisibility: GlanceVisibility = .auto
+        defaultVisibility: GlanceVisibility = .auto,
+        deviceClass: DeviceClass? = nil,
+        isPrimary: Bool = false
     ) -> EntityDescriptor {
         EntityDescriptor(
             id: id,
             instanceID: instance,
             name: name,
             kind: kind,
+            deviceClass: deviceClass,
             category: category,
-            defaultVisibility: defaultVisibility
+            defaultVisibility: defaultVisibility,
+            isPrimary: isPrimary
         )
     }
 

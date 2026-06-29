@@ -165,6 +165,9 @@ public actor Engine {
         let states = EntityProjection.states(snapshot: snapshot, descriptors: descriptors)
         for descriptor in descriptors where descriptor.stateClass != nil {
             guard let state = states[descriptor.id] else { continue }
+            if shouldSkipUnfailedMissingSample(descriptor: descriptor, state: state) {
+                continue
+            }
             let value: Double? = {
                 if case .number(let n) = state.value { return n }
                 return nil
@@ -174,6 +177,13 @@ public actor Engine {
                 for: descriptor.id
             )
         }
+    }
+
+    private func shouldSkipUnfailedMissingSample(descriptor: EntityDescriptor, state: EntityState) -> Bool {
+        state.value == nil &&
+            state.availability == .unavailable &&
+            state.error == nil &&
+            descriptor.deviceClass != .latency
     }
 
     public func historySamples(_ id: EntityID, since: Date, limit: Int = 10_000) async -> [Sample] {

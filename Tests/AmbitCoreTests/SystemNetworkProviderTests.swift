@@ -17,6 +17,8 @@ final class SystemNetworkProviderTests: XCTestCase {
         XCTAssertNil(snapshot.metricValue("throughput_out"))
         XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("throughput_in")]?.availability, .unavailable)
         XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("throughput_out")]?.availability, .unavailable)
+        XCTAssertNil(states[ProviderInstanceIDs.systemNetwork.appending("throughput_in")]?.error)
+        XCTAssertNil(states[ProviderInstanceIDs.systemNetwork.appending("throughput_out")]?.error)
     }
 
     func testTwoPollsComputeAggregateThroughputBpsFromNonLoopbackDeltas() async {
@@ -42,6 +44,9 @@ final class SystemNetworkProviderTests: XCTestCase {
 
         XCTAssertEqual(snapshot.metricValue("throughput_in"), .throughput(bitsPerSecond: 8_000))
         XCTAssertEqual(snapshot.metricValue("throughput_out"), .throughput(bitsPerSecond: 4_000))
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: provider.entityDescriptors())
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("throughput_in")]?.availability, .online)
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("throughput_out")]?.availability, .online)
     }
 
     func testCounterDecreaseSkipsThatInterfaceAndAggregatesRemainingInterfaces() async {

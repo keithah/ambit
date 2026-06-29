@@ -168,9 +168,12 @@ public extension PresentationSettingsModel {
                 let lhsPrimary = lhs.descriptor.isPrimary ? 0 : 1
                 let rhsPrimary = rhs.descriptor.isPrimary ? 0 : 1
                 if lhsPrimary != rhsPrimary { return lhsPrimary < rhsPrimary }
-                let lhsSeverity = lhs.state?.severity?.rawValue ?? -1
-                let rhsSeverity = rhs.state?.severity?.rawValue ?? -1
-                if lhsSeverity != rhsSeverity { return lhsSeverity > rhsSeverity }
+                let lhsPriority = lhs.descriptor.priority ?? 0
+                let rhsPriority = rhs.descriptor.priority ?? 0
+                if lhsPriority != rhsPriority { return lhsPriority > rhsPriority }
+                let lhsAvailability = availabilityRank(lhs.state?.availability ?? .unavailable)
+                let rhsAvailability = availabilityRank(rhs.state?.availability ?? .unavailable)
+                if lhsAvailability != rhsAvailability { return lhsAvailability > rhsAvailability }
                 return lhs.descriptor.id.rawValue < rhs.descriptor.id.rawValue
             }
         guard let row = candidates.first, let state = row.state else { return .unknown }
@@ -180,5 +183,13 @@ public extension PresentationSettingsModel {
             severity: state.severity,
             text: readout.text
         )
+    }
+
+    private static func availabilityRank(_ availability: Availability) -> Int {
+        switch availability {
+        case .online: return 2
+        case .stale: return 1
+        case .unavailable: return 0
+        }
     }
 }

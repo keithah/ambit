@@ -143,6 +143,60 @@ final class EngineHistoryFeedTests: XCTestCase {
         XCTAssertEqual(samples.count, 1)
         XCTAssertEqual(samples.first?.ok, true)
     }
+
+    func testEngineDoesNotRecordMissingUnfailedSystemThroughputAsFailedSample() async {
+        let provider = SystemNetworkProvider(
+            reader: EngineHistorySequenceNetworkReader(snapshots: [
+                Self.systemSnapshot(counters: [
+                    NetworkCounterMetrics(interfaceName: "en0", bytesIn: 1_000, bytesOut: 2_000, isLoopback: false)
+                ])
+            ]),
+            clock: EngineHistorySequenceClock([Date(timeIntervalSince1970: 10)]).now
+        )
+        let engine = Engine(
+            settings: AppSettings(remoteHost: "", endpointMode: .forceRemote),
+            providers: [provider],
+            registerBuiltInProviders: false
+        )
+
+        await engine.refresh()
+
+        let samples = await engine.historySamples(EntityID(rawValue: "\(ProviderInstanceIDs.systemNetwork.rawValue).throughput_in"), since: epoch)
+        XCTAssertTrue(samples.isEmpty)
+    }
+
+    fileprivate static func systemSnapshot(counters: [NetworkCounterMetrics]) -> SystemMetricsSnapshot {
+        SystemMetricsSnapshot(
+            cpu: CPUMetrics(userPercent: 0, systemPercent: 0, idlePercent: 100, coreCount: 1),
+            memory: MemoryMetrics(usedBytes: 0, wiredBytes: 0, compressedBytes: 0, totalBytes: 1),
+            networkCounters: counters
+        )
+    }
+}
+
+private actor EngineHistorySequenceNetworkReader: SystemMetricsReading {
+    private var snapshots: [SystemMetricsSnapshot]
+
+    init(snapshots: [SystemMetricsSnapshot]) {
+        self.snapshots = snapshots
+    }
+
+    func snapshot() async throws -> SystemMetricsSnapshot {
+        guard !snapshots.isEmpty else { return EngineHistoryFeedTests.systemSnapshot(counters: []) }
+        return snapshots.removeFirst()
+    }
+}
+
+private final class EngineHistorySequenceClock: @unchecked Sendable {
+    private var dates: [Date]
+
+    init(_ dates: [Date]) {
+        self.dates = dates
+    }
+
+    func now() -> Date {
+        dates.isEmpty ? Date() : dates.removeFirst()
+    }
 }
 
 private final class LocalTCPProbeServer: @unchecked Sendable {
