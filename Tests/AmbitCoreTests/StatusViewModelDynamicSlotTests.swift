@@ -2151,6 +2151,32 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testResetToDefaultsClearsConfigAndRegistryThroughSeedPath() async {
+        var config = PresentationConfig.empty
+        config.slots = [
+            Slot(id: SlotID(rawValue: "custom"), title: "Custom", selection: .entities([]))
+        ]
+        config.entityOverrides[EntityID(rawValue: "custom/entity")] = EntityPresentationOverride(visibility: .always)
+        let store = MemoryPresentationConfigStore(config: config)
+        let record = IntegrationInstanceRecord(
+            id: IntegrationInstanceID(rawValue: "custom@local"),
+            integrationID: IntegrationID(rawValue: "custom"),
+            displayName: "Custom",
+            enabled: true
+        )
+        let registry = InMemoryIntegrationRegistry(records: [record], disabledIntegrations: [], primary: record.id)
+        let viewModel = makeViewModel(configStore: store, integrationRegistry: registry)
+
+        await viewModel.resetToDefaults()
+
+        XCTAssertFalse(store.config.slots.contains { $0.id == SlotID(rawValue: "custom") })
+        XCTAssertTrue(store.config.entityOverrides.isEmpty)
+        XCTAssertNil(try registry.primaryInstanceID())
+        XCTAssertFalse(try registry.instances().contains { $0.id == record.id })
+        XCTAssertTrue(try registry.instances().contains { $0.integrationID == IntegrationIDs.system })
+    }
+
+    @MainActor
     func testSelectInstancePersistsFocusedHostForSlot() {
         let store = MemoryPresentationConfigStore()
         let viewModel = makeViewModel(configStore: store)

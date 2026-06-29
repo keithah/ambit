@@ -14,6 +14,13 @@ struct LocalNetworkPermissionHintRow: Equatable, Identifiable, Sendable {
     var detail: String
 }
 
+struct DiagnosticsCurrentState: Equatable, Sendable {
+    var slotTitle: String
+    var entityName: String
+    var result: String
+    var status: String
+}
+
 private extension EntityPresentationOverride {
     var isEmpty: Bool {
         visibility == nil &&
@@ -131,6 +138,8 @@ final class StatusViewModel: ObservableObject {
     private let alertNotificationService = AlertNotificationService()
     private let notificationDeliverer: any NotificationDelivering
     private let notificationSettingsOpener: any NotificationSettingsOpening
+    private let diagnosticsLogService: any DiagnosticsLogService
+    private let softwareUpdateService: any SoftwareUpdateService
     private let startAtLoginCoordinator: StartAtLoginCoordinator
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
@@ -149,6 +158,8 @@ final class StatusViewModel: ObservableObject {
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
         notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
         notificationSettingsOpener: any NotificationSettingsOpening = MacNotificationSettingsOpener(),
+        diagnosticsLogService: any DiagnosticsLogService = AppKitDiagnosticsLogService(),
+        softwareUpdateService: any SoftwareUpdateService = UnavailableSoftwareUpdateService(),
         startAtLoginCoordinator: StartAtLoginCoordinator = StartAtLoginCoordinator(),
         networkChangeSource: (any NetworkChangeSource)? = NWPathNetworkChangeSource()
     ) {
@@ -158,6 +169,8 @@ final class StatusViewModel: ObservableObject {
         self.routerPassword = routerPassword
         self.notificationDeliverer = notificationDeliverer
         self.notificationSettingsOpener = notificationSettingsOpener
+        self.diagnosticsLogService = diagnosticsLogService
+        self.softwareUpdateService = softwareUpdateService
         self.startAtLoginCoordinator = startAtLoginCoordinator
         self.networkChangeSource = networkChangeSource
         self.installedProviderStore = installedProviderStore
@@ -1003,6 +1016,115 @@ final class StatusViewModel: ObservableObject {
         await refreshPing()
     }
 
+    func diagnosticsCurrentState(slotID: SlotID? = nil) -> DiagnosticsCurrentState? {
+        let selectedSlot = slotID.flatMap { id in slots.first { $0.id == id } } ?? slots.first
+        guard let selectedSlot else { return nil }
+        let surface = slotSurfaces[selectedSlot.id]
+        guard let entityID = surface?.primaryEntityID,
+              let descriptor = surface?.data.descriptors[entityID]
+        else {
+            return DiagnosticsCurrentState(
+                slotTitle: selectedSlot.title ?? selectedSlot.id.rawValue,
+                entityName: "No Data",
+                result: "—",
+                status: "No Data"
+            )
+        }
+        let readout = EntityReadout.make(descriptor: descriptor, state: surface?.data.states[entityID])
+        let state = surface?.data.states[entityID]
+        return DiagnosticsCurrentState(
+            slotTitle: selectedSlot.title ?? selectedSlot.id.rawValue,
+            entityName: descriptor.name,
+            result: readout.text,
+            status: state?.severity.map(Self.label(for:)) ?? state?.availability.rawValue.capitalized ?? "No Data"
+        )
+    }
+
+    func recentFailures(
+        target: HistoryExportTarget,
+        range: HistoryExportRange,
+        now: Date = Date(),
+        limit: Int = 8
+    ) async -> [DiagnosticsFailureRow] {
+        let model = presentationSettings
+        let descriptors = Self.historyExportDescriptors(model: model)
+        let records = Self.historyExportRecords(model: model)
+        let exportDescriptors = HistoryExport.exportDescriptors(
+            target: target,
+            descriptors: descriptors,
+            slots: model.slots,
+            records: records
+        )
+        let since = now.addingTimeInterval(-range.seconds(retentionInterval: historyRetentionInterval))
+        var samplesByEntity: [EntityID: [Sample]] = [:]
+        for descriptor in exportDescriptors {
+            samplesByEntity[descriptor.id] = await engine.historySamples(descriptor.id, since: since)
+        }
+        return DiagnosticsFailureQuery.rows(
+            descriptors: exportDescriptors,
+            samplesByEntity: samplesByEntity,
+            limit: limit
+        )
+    }
+
+    var diagnosticsLogURL: URL {
+        diagnosticsLogService.logURL
+    }
+
+    func revealDiagnosticsLog() throws {
+        try diagnosticsLogService.reveal()
+    }
+
+    func copyDiagnosticsLogPath() throws {
+        try diagnosticsLogService.copyPath()
+    }
+
+    func clearDiagnosticsLog() throws {
+        try diagnosticsLogService.clear()
+    }
+
+    var appBuildInfo: AppBuildInfo {
+        AppBuildInfo.current()
+    }
+
+    var icmpAvailabilityText: String {
+        FileManager.default.isExecutableFile(atPath: "/sbin/ping") ? "Available" : "Unavailable"
+    }
+
+    var networkMonitorStatusText: String {
+        networkPathSnapshot.connectivityStatus.rawValue
+    }
+
+    var softwareUpdateFeedURLStatus: SoftwareUpdateConfigurationStatus {
+        softwareUpdateService.feedURLStatus
+    }
+
+    var softwareUpdatePublicKeyStatus: SoftwareUpdateConfigurationStatus {
+        softwareUpdateService.publicKeyStatus
+    }
+
+    func softwareUpdateStatus() async -> SoftwareUpdateStatus {
+        await softwareUpdateService.status()
+    }
+
+    func checkForSoftwareUpdates() async -> SoftwareUpdateCheckResult {
+        await softwareUpdateService.checkNow()
+    }
+
+    func resetToDefaults() async {
+        configStore.save(.empty)
+        try? integrationRegistry.save([])
+        try? integrationRegistry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
+        try? integrationRegistry.setPrimaryInstanceID(nil)
+        IntegrationConfigMigrator(settings: settings).migrate(integrationRegistry)
+        slots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
+        overlayConfig = Self.reconciledOverlayConfig(configStore.load().overlay, slots: slots)
+        overlaySlotID = overlayConfig.selectedSlotID
+        refreshPresentationSettingsFromRegistry()
+        reloadProvidersAndRefresh()
+        await refreshPing()
+    }
+
     func notificationAuthorizationStatus() async -> NotificationAuthorizationStatus {
         await notificationDeliverer.authorizationStatus()
     }
@@ -1049,6 +1171,16 @@ final class StatusViewModel: ObservableObject {
                 title: host.displayName,
                 detail: LocalNetworkPrivacyHint.guidance(for: host.displayName, host: host.address)
             )
+        }
+    }
+
+    nonisolated private static func label(for severity: Severity) -> String {
+        switch severity {
+        case .normal: return "Healthy"
+        case .elevated: return "Elevated"
+        case .degraded: return "Degraded"
+        case .alerting: return "Alerting"
+        case .down: return "Down"
         }
     }
 

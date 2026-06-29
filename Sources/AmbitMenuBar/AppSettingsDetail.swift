@@ -1,4 +1,5 @@
 import AmbitCore
+import AppKit
 import SwiftUI
 
 struct AppSettingsDetail: View {
@@ -7,9 +8,15 @@ struct AppSettingsDetail: View {
     @State private var notificationMessage: String?
     @State private var isRequestingNotifications = false
     @State private var isSendingTestNotification = false
+    @State private var softwareUpdateStatus: SoftwareUpdateStatus = .idle
+    @State private var softwareUpdateMessage: String?
+    @State private var isCheckingForUpdates = false
+    @State private var showingResetConfirmation = false
+    @State private var resetMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("App").font(.system(size: 22, weight: .bold))
                 Text("Launch behavior and system integration.")
@@ -34,11 +41,31 @@ struct AppSettingsDetail: View {
 
             localNetworkHints
 
+            appAboutControls
+
+            softwareUpdateControls
+
+            resetAndQuitControls
+
             Spacer()
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(22)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { refreshNotificationStatus() }
+        .onAppear {
+            refreshNotificationStatus()
+            refreshSoftwareUpdateStatus()
+        }
+        .confirmationDialog(
+            "Reset Ambit to defaults?",
+            isPresented: $showingResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) { resetToDefaults() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This clears presentation settings and integration records, then reseeds the default integrations.")
+        }
     }
 
     private var notificationControls: some View {
@@ -150,6 +177,74 @@ struct AppSettingsDetail: View {
         }
     }
 
+    private var appAboutControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("About")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            let build = viewModel.appBuildInfo
+            Text("\(build.name) \(build.version) (\(build.build)) · \(build.flavor)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("ICMP: \(viewModel.icmpAvailabilityText)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("Local network monitor: \(viewModel.networkMonitorStatusText)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Button("About Ambit") {
+                NSApp.orderFrontStandardAboutPanel(nil)
+            }
+        }
+    }
+
+    private var softwareUpdateControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Software Updates")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Text("Status: \(softwareUpdateStatus.label)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("Feed URL: \(viewModel.softwareUpdateFeedURLStatus.label)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text("Public key: \(viewModel.softwareUpdatePublicKeyStatus.label)")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Button("Check for Updates") {
+                checkForUpdates()
+            }
+            .disabled(isCheckingForUpdates)
+            if let softwareUpdateMessage {
+                Text(softwareUpdateMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var resetAndQuitControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Maintenance")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button("Reset to Defaults", role: .destructive) {
+                    showingResetConfirmation = true
+                }
+                Button("Quit Ambit") {
+                    NSApp.terminate(nil)
+                }
+            }
+            if let resetMessage {
+                Text(resetMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func refreshNotificationStatus() {
         Task { @MainActor in
             notificationStatus = await viewModel.notificationAuthorizationStatus()
@@ -178,6 +273,36 @@ struct AppSettingsDetail: View {
         }
     }
 
+    private func refreshSoftwareUpdateStatus() {
+        Task { @MainActor in
+            softwareUpdateStatus = await viewModel.softwareUpdateStatus()
+        }
+    }
+
+    private func checkForUpdates() {
+        isCheckingForUpdates = true
+        softwareUpdateMessage = nil
+        Task { @MainActor in
+            let result = await viewModel.checkForSoftwareUpdates()
+            isCheckingForUpdates = false
+            switch result {
+            case .unavailable(let reason):
+                softwareUpdateStatus = .unavailable(reason: reason)
+                softwareUpdateMessage = reason
+            case .checked(let status):
+                softwareUpdateStatus = status
+                softwareUpdateMessage = status.label
+            }
+        }
+    }
+
+    private func resetToDefaults() {
+        Task { @MainActor in
+            await viewModel.resetToDefaults()
+            resetMessage = "Defaults restored."
+        }
+    }
+
     private var startAtLoginBinding: Binding<Bool> {
         Binding {
             viewModel.startAtLoginEnabled
@@ -185,6 +310,28 @@ struct AppSettingsDetail: View {
             Task { @MainActor in
                 await viewModel.setStartAtLoginEnabled(enabled)
             }
+        }
+    }
+}
+
+private extension SoftwareUpdateStatus {
+    var label: String {
+        switch self {
+        case .unavailable(let reason): return "Unavailable - \(reason)"
+        case .idle: return "Idle"
+        case .checking: return "Checking"
+        case .updateAvailable(let version): return "Update available: \(version)"
+        case .upToDate: return "Up to date"
+        case .failed(let reason): return "Failed - \(reason)"
+        }
+    }
+}
+
+private extension SoftwareUpdateConfigurationStatus {
+    var label: String {
+        switch self {
+        case .configured: return "Configured"
+        case .unavailable(let reason): return "Unavailable - \(reason)"
         }
     }
 }

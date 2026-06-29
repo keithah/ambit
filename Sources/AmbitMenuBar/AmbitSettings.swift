@@ -8,6 +8,7 @@ private enum SettingsSelection: Hashable {
     case app
     case slots
     case history
+    case diagnostics
 }
 
 private func statusColor(_ status: IntegrationInstanceStatus) -> Color {
@@ -74,6 +75,12 @@ struct AmbitSettings: View {
                     subtitle: "\(viewModel.historyRetentionLabel) retained",
                     systemImage: "clock.arrow.circlepath",
                     selection: .history
+                )
+                sidebarButton(
+                    title: "Diagnostics",
+                    subtitle: "State and logs",
+                    systemImage: "stethoscope",
+                    selection: .diagnostics
                 )
             }
             Spacer()
@@ -177,6 +184,8 @@ struct AmbitSettings: View {
             SlotsSettingsDetail(slots: viewModel.presentationSettings.slots)
         case .history:
             HistorySettingsDetail()
+        case .diagnostics:
+            DiagnosticsSettingsDetail()
         }
     }
 
