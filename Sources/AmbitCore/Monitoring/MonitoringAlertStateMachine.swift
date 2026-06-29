@@ -42,6 +42,8 @@ public struct MonitoringAlertStateMachine: Sendable {
     public var pathDegradedConsecutive: Int
     public var networkAwarenessConfig: NetworkAwarenessConfig
     public var warmUpCycles: Int
+    public var alertKindOverrides: [AlertKindID: AlertKindOverride]
+    public var entityAlertKindOverrides: [EntityID: [AlertKindID: AlertKindOverride]]
 
     private var lastStatus: [String: HealthStatus] = [:]
     private var lastSent: [String: Date] = [:]
@@ -59,6 +61,8 @@ public struct MonitoringAlertStateMachine: Sendable {
         networkCooldown: TimeInterval = 300,
         pathDegradedConsecutive: Int = 3,
         networkAwarenessConfig: NetworkAwarenessConfig = NetworkAwarenessConfig(),
+        alertKindOverrides: [AlertKindID: AlertKindOverride] = [:],
+        entityAlertKindOverrides: [EntityID: [AlertKindID: AlertKindOverride]] = [:],
         warmUpCycles: Int? = nil
     ) {
         self.declarations = declarations
@@ -66,6 +70,8 @@ public struct MonitoringAlertStateMachine: Sendable {
         self.networkCooldown = networkCooldown
         self.pathDegradedConsecutive = pathDegradedConsecutive
         self.networkAwarenessConfig = networkAwarenessConfig
+        self.alertKindOverrides = alertKindOverrides
+        self.entityAlertKindOverrides = entityAlertKindOverrides
         self.warmUpCycles = warmUpCycles ?? networkAwarenessConfig.warmUpCycles
     }
 
@@ -78,19 +84,23 @@ public struct MonitoringAlertStateMachine: Sendable {
         defer { completeWarmUpEvaluation() }
         var hostEvents: [AlertEvent] = []
         for member in members {
+            let declaration = hostDownDeclaration
             let previous = lastStatus[member.id]
             lastStatus[member.id] = member.status
             if member.status == .down, previous == nil {
                 pendingHostDownIDs.insert(member.id)
             } else if member.status == .down, previous != .down {
                 pendingHostDownIDs.insert(member.id)
-                if !warmingUp, fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
+                if isEnabled(declaration, target: member.target),
+                   !warmingUp,
+                   fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
                     hostEvents.append(hostDownEvent(member, now: now))
                     deliveredHostDownIDs.insert(member.id)
                     pendingHostDownIDs.remove(member.id)
                 }
             } else if member.status == .down,
                       pendingHostDownIDs.contains(member.id),
+                      isEnabled(declaration, target: member.target),
                       !warmingUp,
                       fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
                 hostEvents.append(hostDownEvent(member, now: now))
@@ -98,6 +108,7 @@ public struct MonitoringAlertStateMachine: Sendable {
                 pendingHostDownIDs.remove(member.id)
             } else if previous == .down,
                       (member.status == .healthy || member.status == .degraded),
+                      isEnabled(declaration, target: member.target),
                       member.notifyOnRecovery,
                       deliveredHostDownIDs.contains(member.id) {
                 hostEvents.append(hostRecoveredEvent(member, now: now))
@@ -231,6 +242,17 @@ public struct MonitoringAlertStateMachine: Sendable {
         declaration.id.rawValue == "ping.hostDown"
             ? "ping.recovered.\(memberID)"
             : "\(declaration.id.rawValue).recovered.\(memberID)"
+    }
+
+    private func isEnabled(_ declaration: AlertKindDeclaration, target: AlertTarget?) -> Bool {
+        if let entityID = target?.entityID,
+           let enabled = entityAlertKindOverrides[entityID]?[declaration.id]?.enabled {
+            return enabled
+        }
+        if let enabled = alertKindOverrides[declaration.id]?.enabled {
+            return enabled
+        }
+        return declaration.defaultEnabled
     }
 
     private mutating func networkAlert(_ diagnosis: MonitoringDiagnosis, members: [MonitoringAlertMember], now: Date) -> AlertEvent? {

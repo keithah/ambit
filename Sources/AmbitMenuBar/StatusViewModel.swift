@@ -752,6 +752,7 @@ final class StatusViewModel: ObservableObject {
             descriptors: allDescriptors,
             snapshot: snapshot,
             networkStatus: networkPathSnapshot.connectivityStatus,
+            config: loadedConfig,
             now: now,
             range: TimeRange(graphRange: diagnosisGraphRange)
         ) { [engine] id, since in
@@ -835,7 +836,7 @@ final class StatusViewModel: ObservableObject {
 
     nonisolated private static func knownIntegrationSchemas() -> [IntegrationID: IntegrationConfigSchema] {
         Dictionary(
-            uniqueKeysWithValues: [PingIntegration()]
+            uniqueKeysWithValues: knownIntegrations()
                 .compactMap { integration in
                     integration.configSchema.map { (integration.id, $0) }
                 }
@@ -843,7 +844,11 @@ final class StatusViewModel: ObservableObject {
     }
 
     nonisolated private static func knownIntegrationPresets() -> [IntegrationID: [IntegrationPreset]] {
-        Dictionary(uniqueKeysWithValues: [PingIntegration()].map { ($0.id, $0.presets) })
+        Dictionary(uniqueKeysWithValues: knownIntegrations().map { ($0.id, $0.presets) })
+    }
+
+    nonisolated private static func knownIntegrations() -> [any Integration] {
+        [PingIntegration()]
     }
 
     nonisolated private static func commandsByProvider(from palette: [CommandPaletteItem]) -> [ProviderInstanceID: [CommandDescriptor]] {
@@ -1125,6 +1130,58 @@ final class StatusViewModel: ObservableObject {
         await refreshPing()
     }
 
+    var statusStylePalette: StatusStylePalette {
+        StatusStylePalette(overrides: configStore.load().statusStyleOverrides)
+    }
+
+    func alertKindSettingsRows() -> [AlertKindSettingsRow] {
+        let records = (try? integrationRegistry.instances()) ?? []
+        return AlertKindSettingsModel.rows(
+            records: records,
+            declarationsByInstance: Self.alertKindDeclarationsByInstance(records: records),
+            config: configStore.load()
+        )
+    }
+
+    func setAlertKindEnabled(_ id: AlertKindID, _ enabled: Bool?) {
+        var config = configStore.load()
+        if let enabled {
+            config.alertKindOverrides[id] = AlertKindOverride(enabled: enabled)
+        } else {
+            config.alertKindOverrides.removeValue(forKey: id)
+        }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    func setEntityAlertKindEnabled(_ entityID: EntityID, kindID: AlertKindID, enabled: Bool?) {
+        var config = configStore.load()
+        var overrides = config.entityAlertKindOverrides[entityID] ?? [:]
+        if let enabled {
+            overrides[kindID] = AlertKindOverride(enabled: enabled)
+        } else {
+            overrides.removeValue(forKey: kindID)
+        }
+        if overrides.isEmpty {
+            config.entityAlertKindOverrides.removeValue(forKey: entityID)
+        } else {
+            config.entityAlertKindOverrides[entityID] = overrides
+        }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
+    func setStatusStyleOverride(_ tone: DisplayTone, colorHex: String?) {
+        var config = configStore.load()
+        if let colorHex, !colorHex.isEmpty {
+            config.statusStyleOverrides[tone] = StatusStyleOverride(colorHex: colorHex)
+        } else {
+            config.statusStyleOverrides.removeValue(forKey: tone)
+        }
+        configStore.save(config)
+        rebuildPresentationSettings(config: config)
+    }
+
     func notificationAuthorizationStatus() async -> NotificationAuthorizationStatus {
         await notificationDeliverer.authorizationStatus()
     }
@@ -1172,6 +1229,15 @@ final class StatusViewModel: ObservableObject {
                 detail: LocalNetworkPrivacyHint.guidance(for: host.displayName, host: host.address)
             )
         }
+    }
+
+    nonisolated private static func alertKindDeclarationsByInstance(records: [IntegrationInstanceRecord]) -> [IntegrationInstanceID: [AlertKindDeclaration]] {
+        let integrationsByID = Dictionary(uniqueKeysWithValues: knownIntegrations().map { ($0.id, $0) })
+        var result: [IntegrationInstanceID: [AlertKindDeclaration]] = [:]
+        for record in records {
+            result[record.id] = integrationsByID[record.integrationID]?.alertKindDeclarations(instance: record) ?? []
+        }
+        return result
     }
 
     nonisolated private static func label(for severity: Severity) -> String {

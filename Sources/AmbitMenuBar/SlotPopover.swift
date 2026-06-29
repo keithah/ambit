@@ -26,7 +26,7 @@ enum StatusGlyphRenderer {
         )
     }
 
-    static func image(_ glyph: MenuBarGlyph) -> NSImage {
+    static func image(_ glyph: MenuBarGlyph, palette: StatusStylePalette = StatusStylePalette()) -> NSImage {
         let width = glyph.itemWidth, height = 22.0
         let layout = layout(for: glyph, height: height)
         let image = NSImage(size: NSSize(width: width, height: height))
@@ -35,7 +35,7 @@ enum StatusGlyphRenderer {
             x: layout.dotX,
             y: layout.dotY,
             width: layout.dotDiameter, height: layout.dotDiameter))
-        nsColor(glyph.tone).setFill()
+        nsColor(glyph.tone, palette: palette).setFill()
         dot.fill()
         let text = NSAttributedString(string: glyph.primaryText, attributes: [
             .font: NSFont.systemFont(ofSize: layout.fontSize, weight: .regular),
@@ -48,13 +48,29 @@ enum StatusGlyphRenderer {
         return image
     }
 
-    private static func nsColor(_ tone: LatencyTone) -> NSColor {
-        switch tone {
-        case .neutral: return .secondaryLabelColor
-        case .good: return .systemGreen
-        case .warn: return .systemYellow
-        case .bad: return .systemRed
-        }
+    private static func nsColor(_ tone: LatencyTone, palette: StatusStylePalette) -> NSColor {
+        NSColor(hex: palette.colorHex(for: DisplayTone(latencyTone: tone))) ?? {
+            switch tone {
+            case .neutral: return .secondaryLabelColor
+            case .good: return .systemGreen
+            case .warn: return .systemYellow
+            case .bad: return .systemRed
+            }
+        }()
+    }
+}
+
+private extension NSColor {
+    convenience init?(hex: String) {
+        var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+        self.init(
+            red: CGFloat((number >> 16) & 0xff) / 255,
+            green: CGFloat((number >> 8) & 0xff) / 255,
+            blue: CGFloat(number & 0xff) / 255,
+            alpha: 1
+        )
     }
 }
 
@@ -102,6 +118,7 @@ struct SlotPopover: View {
             if selectedGraphRange != nil { rangePicker }
             ScrollView(.vertical) {
                 SurfaceView(plan: surface.plan, data: surface.data)
+                    .environment(\.statusStylePalette, viewModel.statusStylePalette)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .id(Self.scrollContentIdentity(for: slotID))
             }
@@ -151,11 +168,11 @@ struct SlotPopover: View {
                 Text(focusReadout.text).font(.system(size: 25, weight: .bold))
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(DisplayTone(latencyTone: focusReadout.tone).color)
+                        .fill(DisplayTone(latencyTone: focusReadout.tone).color(using: viewModel.statusStylePalette))
                         .frame(width: 9, height: 9)
                     Text(focusReadout.statusLabel)
                         .font(.system(size: 13))
-                        .foregroundStyle(DisplayTone(latencyTone: focusReadout.tone).color)
+                        .foregroundStyle(DisplayTone(latencyTone: focusReadout.tone).color(using: viewModel.statusStylePalette))
                 }
             }
             Button { viewModel.toggleOverlay?() } label: {

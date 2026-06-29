@@ -231,7 +231,7 @@ private final class StatusBarController: NSObject {
     private func updateGlyph(_ glyph: MenuBarGlyph) {
         let slot = viewModel.slots.first(where: { $0.id == slotID })
         let title = slot?.title ?? slotID.rawValue
-        statusItem.button?.image = StatusGlyphRenderer.image(glyph)
+        statusItem.button?.image = StatusGlyphRenderer.image(glyph, palette: viewModel.statusStylePalette)
         statusItem.button?.toolTip = "\(title) · \(glyph.primaryText)"
     }
 }

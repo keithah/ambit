@@ -3,6 +3,7 @@ import AmbitCore
 
 /// A bounded value as a ring/donut. Uses SwiftUI Gauge on macOS 13.
 public struct GaugeCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     let title: String?
     let readout: EntityReadout
     public init(title: String?, readout: EntityReadout) {
@@ -17,7 +18,7 @@ public struct GaugeCard: View {
                 Text(readout.text).font(.system(size: 12, weight: .semibold, design: .monospaced))
             }
             .gaugeStyle(.accessoryCircular)
-            .tint(readout.tone.color)
+            .tint(readout.tone.color(using: statusStylePalette))
             if let title {
                 Text(title).font(.system(size: 12)).foregroundStyle(.secondary)
             }

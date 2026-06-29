@@ -5,6 +5,7 @@ import AmbitCore
 /// P6 adds table-valued entities; the legacy label/value initializer remains for simple grouped
 /// readouts and existing callers.
 public struct StatTableCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     public struct Row: Identifiable, Equatable {
         public var id: String
         public var label: String
@@ -147,7 +148,7 @@ public struct StatTableCard: View {
                     let alignment = model.columns.indices.contains(cellIndex) ? model.columns[cellIndex].alignment : .leading
                     Text(cell.text)
                         .font(.system(size: 12.5, design: .monospaced))
-                        .foregroundStyle(cell.tone.color)
+                        .foregroundStyle(cell.tone.color(using: statusStylePalette))
                         .lineLimit(cell.isSingleLine ? 1 : nil)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: alignment.swiftUIAlignment)

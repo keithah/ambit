@@ -4,6 +4,7 @@ import AmbitCore
 /// A top-level summary message bound to a summary "status" entity (P2 binds pingscope's
 /// diagnosis to this). Generic — no provider-specific model.
 public struct StatusBannerCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     public struct Model: Equatable {
         public var title: String?
         public var detail: String?
@@ -69,7 +70,7 @@ public struct StatusBannerCard: View {
     public var body: some View {
         let model = model
         HStack(spacing: 9) {
-            Image(systemName: model.iconName).foregroundStyle(tone.color)
+            Image(systemName: model.iconName).foregroundStyle(tone.color(using: statusStylePalette))
             VStack(alignment: .leading, spacing: 1) {
                 if let title = model.primaryLine {
                     Text(title)
@@ -88,6 +89,6 @@ public struct StatusBannerCard: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, model.verticalPadding)
-        .background(tone.color.opacity(model.isCompactReason ? 0.10 : 0.13), in: RoundedRectangle(cornerRadius: 8))
+        .background(tone.color(using: statusStylePalette).opacity(model.isCompactReason ? 0.10 : 0.13), in: RoundedRectangle(cornerRadius: 8))
     }
 }

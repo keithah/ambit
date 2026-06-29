@@ -5,12 +5,44 @@ import AmbitCore
 // harvested from pingscope's PingColors.tone.
 public extension DisplayTone {
     var color: Color {
+        color(using: StatusStylePalette())
+    }
+
+    func color(using palette: StatusStylePalette) -> Color {
+        Color(hex: palette.colorHex(for: self)) ?? defaultColor
+    }
+
+    private var defaultColor: Color {
         switch self {
         case .neutral: return .secondary
         case .good: return Color(red: 0.20, green: 0.78, blue: 0.35)
         case .warn: return Color(red: 0.90, green: 0.70, blue: 0.29)
         case .bad: return Color(red: 1.0, green: 0.32, blue: 0.28)
         }
+    }
+}
+
+private struct StatusStylePaletteKey: EnvironmentKey {
+    static let defaultValue = StatusStylePalette()
+}
+
+public extension EnvironmentValues {
+    var statusStylePalette: StatusStylePalette {
+        get { self[StatusStylePaletteKey.self] }
+        set { self[StatusStylePaletteKey.self] = newValue }
+    }
+}
+
+private extension Color {
+    init?(hex: String) {
+        var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("#") { value.removeFirst() }
+        guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+        self.init(
+            red: Double((number >> 16) & 0xff) / 255,
+            green: Double((number >> 8) & 0xff) / 255,
+            blue: Double(number & 0xff) / 255
+        )
     }
 }
 

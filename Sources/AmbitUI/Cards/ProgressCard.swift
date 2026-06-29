@@ -3,6 +3,7 @@ import AmbitCore
 
 /// A bounded value as a linear bar (battery, percent).
 public struct ProgressCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     let title: String?
     let readout: EntityReadout
     public init(title: String?, readout: EntityReadout) {
@@ -19,7 +20,7 @@ public struct ProgressCard: View {
                 Text(readout.text).font(.system(size: 13, weight: .semibold, design: .monospaced))
             }
             ProgressView(value: readout.fraction ?? 0)
-                .tint(readout.tone.color)
+                .tint(readout.tone.color(using: statusStylePalette))
         }
         .cardChrome()
     }

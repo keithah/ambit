@@ -3,6 +3,7 @@ import AmbitCore
 
 /// Dense label/value legend for sibling component metrics.
 public struct BreakdownLegendCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     public struct Model: Equatable {
         public struct Row: Identifiable, Equatable {
             public var id: String
@@ -52,7 +53,7 @@ public struct BreakdownLegendCard: View {
                     Spacer(minLength: 8)
                     Text(row.value)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(row.tone.color)
+                        .foregroundStyle(row.tone.color(using: statusStylePalette))
                 }
             }
         }

@@ -10,6 +10,11 @@ public enum AlertTarget: Codable, Equatable, Sendable {
     case providerMetric(providerID: ProviderID, metricID: String)
     case provider(ProviderID)
     case capability(ProviderCapability)
+
+    public var entityID: EntityID? {
+        if case .entity(let id) = self { return id }
+        return nil
+    }
 }
 
 public struct ResolvedAlertEvent: Equatable, Sendable {

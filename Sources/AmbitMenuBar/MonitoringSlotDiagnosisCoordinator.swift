@@ -22,12 +22,15 @@ final class MonitoringSlotDiagnosisCoordinator {
         descriptors: [ProviderInstanceID: [EntityDescriptor]],
         snapshot: StatusSnapshot,
         networkStatus: NetworkConnectivityStatus = .connected,
+        config: PresentationConfig = .empty,
         now: Date,
         range: TimeRange,
         historySamples: @escaping HistorySamples
     ) async -> MonitoringSlotDiagnosisResult {
         let sensitivity = Self.diagnosisSensitivity(from: activeRecords)
         alertStateMachine.sensitivity = sensitivity
+        alertStateMachine.alertKindOverrides = config.alertKindOverrides
+        alertStateMachine.entityAlertKindOverrides = config.entityAlertKindOverrides
 
         let flatDescriptors = descriptors.values.flatMap { $0 }
         let descriptorsByInstance = Dictionary(grouping: flatDescriptors, by: { $0.instanceID.integrationInstanceID })

@@ -3,6 +3,7 @@ import AmbitCore
 
 /// Compact grid of homogeneous per-core/per-channel measurements.
 public struct CoreGridCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     public struct Model: Equatable {
         public struct Cell: Identifiable, Equatable {
             public var id: String
@@ -64,7 +65,7 @@ public struct CoreGridCard: View {
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.08))
                             RoundedRectangle(cornerRadius: 5)
-                                .fill(cell.tone.color.opacity(cell.isUnavailable ? 0.18 : 0.85))
+                                .fill(cell.tone.color(using: statusStylePalette).opacity(cell.isUnavailable ? 0.18 : 0.85))
                                 .frame(height: 30 * CGFloat(cell.fraction ?? 0))
                         }
                         .frame(height: 30)

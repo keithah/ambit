@@ -2,6 +2,7 @@ import SwiftUI
 import AmbitCore
 
 public struct SampleHistoryCard: View {
+    @Environment(\.statusStylePalette) private var statusStylePalette
     public struct Model: Equatable {
         public struct Column: Equatable {
             public var id: String
@@ -96,7 +97,7 @@ public struct SampleHistoryCard: View {
                             let alignment = model.columns.indices.contains(cellIndex) ? model.columns[cellIndex].alignment : .leading
                             Text(cell.text)
                                 .font(.system(size: Model.rowFontSize, design: .monospaced))
-                                .foregroundStyle(cell.tone.color)
+                                .foregroundStyle(cell.tone.color(using: statusStylePalette))
                                 .lineLimit(cell.isSingleLine ? 1 : nil)
                                 .truncationMode(.tail)
                                 .frame(maxWidth: .infinity, alignment: alignment.swiftUIAlignment)

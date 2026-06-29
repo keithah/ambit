@@ -147,10 +147,50 @@ public struct OverlayPresentationConfig: Equatable, Sendable, Codable {
     }
 }
 
+public struct AlertKindOverride: Equatable, Sendable, Codable {
+    public var enabled: Bool?
+
+    public init(enabled: Bool? = nil) {
+        self.enabled = enabled
+    }
+}
+
+public struct StatusStyleOverride: Equatable, Sendable, Codable {
+    public var colorHex: String?
+
+    public init(colorHex: String? = nil) {
+        self.colorHex = colorHex
+    }
+}
+
+public struct StatusStylePalette: Equatable, Sendable {
+    public var overrides: [DisplayTone: StatusStyleOverride]
+
+    public init(overrides: [DisplayTone: StatusStyleOverride] = [:]) {
+        self.overrides = overrides
+    }
+
+    public func colorHex(for tone: DisplayTone) -> String {
+        overrides[tone]?.colorHex ?? Self.defaultColorHex(for: tone)
+    }
+
+    public static func defaultColorHex(for tone: DisplayTone) -> String {
+        switch tone {
+        case .neutral: return "#8E8E93"
+        case .good: return "#34C759"
+        case .warn: return "#E6B34A"
+        case .bad: return "#FF5147"
+        }
+    }
+}
+
 public struct PresentationConfig: Equatable, Sendable, Codable {
     public var entityOverrides: [EntityID: EntityPresentationOverride]
     public var integrationOverrides: [IntegrationInstanceID: IntegrationPresentationOverride]
     public var slotOverrides: [SlotID: SlotPresentationOverride]
+    public var alertKindOverrides: [AlertKindID: AlertKindOverride]
+    public var entityAlertKindOverrides: [EntityID: [AlertKindID: AlertKindOverride]]
+    public var statusStyleOverrides: [DisplayTone: StatusStyleOverride]
     public var slots: [Slot]
     public var overlay: OverlayPresentationConfig
 
@@ -158,12 +198,18 @@ public struct PresentationConfig: Equatable, Sendable, Codable {
         entityOverrides: [EntityID: EntityPresentationOverride] = [:],
         integrationOverrides: [IntegrationInstanceID: IntegrationPresentationOverride] = [:],
         slotOverrides: [SlotID: SlotPresentationOverride] = [:],
+        alertKindOverrides: [AlertKindID: AlertKindOverride] = [:],
+        entityAlertKindOverrides: [EntityID: [AlertKindID: AlertKindOverride]] = [:],
+        statusStyleOverrides: [DisplayTone: StatusStyleOverride] = [:],
         slots: [Slot] = [],
         overlay: OverlayPresentationConfig = OverlayPresentationConfig()
     ) {
         self.entityOverrides = entityOverrides
         self.integrationOverrides = integrationOverrides
         self.slotOverrides = slotOverrides
+        self.alertKindOverrides = alertKindOverrides
+        self.entityAlertKindOverrides = entityAlertKindOverrides
+        self.statusStyleOverrides = statusStyleOverrides
         self.slots = slots
         self.overlay = overlay
     }
@@ -171,13 +217,19 @@ public struct PresentationConfig: Equatable, Sendable, Codable {
     // Forward-compatible decode: every field is optional-with-default, so a config saved by an
     // older or newer build (missing or with extra keys) loads instead of failing. encode(to:)
     // is synthesized from these keys.
-    private enum CodingKeys: String, CodingKey { case entityOverrides, integrationOverrides, slotOverrides, slots, overlay }
+    private enum CodingKeys: String, CodingKey {
+        case entityOverrides, integrationOverrides, slotOverrides, alertKindOverrides,
+             entityAlertKindOverrides, statusStyleOverrides, slots, overlay
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         entityOverrides = try container.decodeIfPresent([EntityID: EntityPresentationOverride].self, forKey: .entityOverrides) ?? [:]
         integrationOverrides = try container.decodeIfPresent([IntegrationInstanceID: IntegrationPresentationOverride].self, forKey: .integrationOverrides) ?? [:]
         slotOverrides = try container.decodeIfPresent([SlotID: SlotPresentationOverride].self, forKey: .slotOverrides) ?? [:]
+        alertKindOverrides = try container.decodeIfPresent([AlertKindID: AlertKindOverride].self, forKey: .alertKindOverrides) ?? [:]
+        entityAlertKindOverrides = try container.decodeIfPresent([EntityID: [AlertKindID: AlertKindOverride]].self, forKey: .entityAlertKindOverrides) ?? [:]
+        statusStyleOverrides = try container.decodeIfPresent([DisplayTone: StatusStyleOverride].self, forKey: .statusStyleOverrides) ?? [:]
         slots = try container.decodeIfPresent([Slot].self, forKey: .slots) ?? []
         overlay = try container.decodeIfPresent(OverlayPresentationConfig.self, forKey: .overlay) ?? OverlayPresentationConfig()
     }

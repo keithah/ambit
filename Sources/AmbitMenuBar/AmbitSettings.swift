@@ -11,18 +11,18 @@ private enum SettingsSelection: Hashable {
     case diagnostics
 }
 
-private func statusColor(_ status: IntegrationInstanceStatus) -> Color {
+private func statusColor(_ status: IntegrationInstanceStatus, palette: StatusStylePalette = StatusStylePalette()) -> Color {
     switch status.severity {
     case .down, .alerting:
-        return .red
+        return DisplayTone.bad.color(using: palette)
     case .degraded:
-        return .orange
+        return DisplayTone.warn.color(using: palette)
     case .elevated:
-        return .yellow
+        return DisplayTone.warn.color(using: palette)
     case .normal:
-        return status.availability == .online ? .green : .gray
+        return (status.availability == .online ? DisplayTone.good : DisplayTone.neutral).color(using: palette)
     case nil:
-        return status.availability == .online ? .green : .gray
+        return (status.availability == .online ? DisplayTone.good : DisplayTone.neutral).color(using: palette)
     }
 }
 
@@ -139,7 +139,7 @@ struct AmbitSettings: View {
         } label: {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(statusColor(group.status))
+                    .fill(statusColor(group.status, palette: viewModel.statusStylePalette))
                     .frame(width: 8, height: 8)
                     .accessibilityLabel(group.status.text)
                 VStack(alignment: .leading, spacing: 1) {
@@ -220,7 +220,7 @@ private struct IntegrationSettingsDetail: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Circle()
-                    .fill(statusColor(group.status))
+                    .fill(statusColor(group.status, palette: viewModel.statusStylePalette))
                     .frame(width: 9, height: 9)
                 Text(group.displayName).font(.system(size: 22, weight: .bold))
                 if group.isPrimary {

@@ -39,6 +39,10 @@ struct AppSettingsDetail: View {
 
             notificationControls
 
+            alertKindControls
+
+            statusStyleControls
+
             localNetworkHints
 
             appAboutControls
@@ -89,6 +93,69 @@ struct AppSettingsDetail: View {
                 Text(notificationMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var alertKindControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Alert Kinds")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            let rows = viewModel.alertKindSettingsRows()
+            if rows.isEmpty {
+                Text("No provider-declared alert kinds are available.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { row in
+                    Toggle(isOn: Binding {
+                        row.enabled
+                    } set: { enabled in
+                        viewModel.setAlertKindEnabled(row.kindID, enabled)
+                    }) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.title)
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("\(row.integrationName) · \(row.detail)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+            }
+        }
+    }
+
+    private var statusStyleControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Status Colors")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ForEach([DisplayTone.good, .warn, .bad, .neutral], id: \.self) { tone in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(tone.color(using: viewModel.statusStylePalette))
+                        .frame(width: 10, height: 10)
+                    Text(tone.label)
+                        .font(.system(size: 12))
+                        .frame(width: 56, alignment: .leading)
+                    TextField(
+                        StatusStylePalette.defaultColorHex(for: tone),
+                        text: Binding {
+                            viewModel.statusStylePalette.overrides[tone]?.colorHex ?? ""
+                        } set: { value in
+                            viewModel.setStatusStyleOverride(tone, colorHex: value.isEmpty ? nil : value)
+                        }
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    Button("Reset") {
+                        viewModel.setStatusStyleOverride(tone, colorHex: nil)
+                    }
+                }
             }
         }
     }
@@ -310,6 +377,17 @@ struct AppSettingsDetail: View {
             Task { @MainActor in
                 await viewModel.setStartAtLoginEnabled(enabled)
             }
+        }
+    }
+}
+
+private extension DisplayTone {
+    var label: String {
+        switch self {
+        case .neutral: return "Neutral"
+        case .good: return "Good"
+        case .warn: return "Warn"
+        case .bad: return "Bad"
         }
     }
 }

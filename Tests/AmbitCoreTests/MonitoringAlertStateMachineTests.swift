@@ -141,6 +141,46 @@ final class MonitoringAlertStateMachineTests: XCTestCase {
         XCTAssertEqual(fired.map(\.ruleID), ["ping.internetLoss"])
     }
 
+    func testAlertKindOverrideSuppressesOnlyMatchingKind() {
+        var machine = MonitoringAlertStateMachine(
+            declarations: declarations(),
+            alertKindOverrides: ["fixture.hostDown": AlertKindOverride(enabled: false)],
+            warmUpCycles: 0
+        )
+
+        _ = machine.evaluate(members: [member(status: .healthy)], diagnosis: healthyDiagnosis(), now: at(0))
+        let hostDown = machine.evaluate(members: [member(status: .down)], diagnosis: healthyDiagnosis(), now: at(1))
+        let network = machine.evaluate(members: [], diagnosis: networkDiagnosis(.upstreamDown, confidence: .high), now: at(2))
+
+        XCTAssertTrue(hostDown.isEmpty)
+        XCTAssertEqual(network.map(\.ruleID), ["ping.upstreamDown"])
+    }
+
+    func testEntityAlertKindOverrideSuppressesOnlyMatchingEntity() {
+        var disabledMachine = MonitoringAlertStateMachine(
+            declarations: declarations(),
+            entityAlertKindOverrides: [
+                EntityID(rawValue: "one/status"): ["fixture.hostDown": AlertKindOverride(enabled: false)]
+            ],
+            warmUpCycles: 0
+        )
+        _ = disabledMachine.evaluate(members: [member(id: "one", name: "One", status: .healthy)], diagnosis: healthyDiagnosis(), now: at(0))
+        let disabled = disabledMachine.evaluate(members: [member(id: "one", name: "One", status: .down)], diagnosis: healthyDiagnosis(), now: at(1))
+
+        var enabledMachine = MonitoringAlertStateMachine(
+            declarations: declarations(),
+            entityAlertKindOverrides: [
+                EntityID(rawValue: "one/status"): ["fixture.hostDown": AlertKindOverride(enabled: false)]
+            ],
+            warmUpCycles: 0
+        )
+        _ = enabledMachine.evaluate(members: [member(id: "two", name: "Two", status: .healthy)], diagnosis: healthyDiagnosis(), now: at(0))
+        let enabled = enabledMachine.evaluate(members: [member(id: "two", name: "Two", status: .down)], diagnosis: healthyDiagnosis(), now: at(1))
+
+        XCTAssertTrue(disabled.isEmpty)
+        XCTAssertEqual(enabled.map(\.ruleID), ["fixture.hostDown.two"])
+    }
+
     private func at(_ offset: TimeInterval) -> Date {
         t0.addingTimeInterval(offset)
     }
