@@ -17,6 +17,17 @@ public enum MonitoringRole: String, Codable, Sendable, CaseIterable {
     case upstreamInternet
     case remoteService
     case endpoint
+
+    public var displayName: String {
+        switch self {
+        case .localLink: return "Local link"
+        case .localGateway: return "Local network"
+        case .accessNetwork: return "ISP path"
+        case .upstreamInternet: return "Upstream"
+        case .remoteService: return "Remote service"
+        case .endpoint: return "Endpoint"
+        }
+    }
 }
 
 public enum DiagnosticSummaryRole: String, Codable, Sendable {
@@ -218,6 +229,7 @@ public struct MonitoringEvidence: Equatable, Codable, Sendable {
     public var healthy: Int
     public var degraded: Int
     public var down: Int
+    public var status: HealthStatus
     public var summary: String
 
     public init(
@@ -226,6 +238,7 @@ public struct MonitoringEvidence: Equatable, Codable, Sendable {
         healthy: Int,
         degraded: Int,
         down: Int,
+        status: HealthStatus,
         summary: String
     ) {
         self.role = role
@@ -233,6 +246,7 @@ public struct MonitoringEvidence: Equatable, Codable, Sendable {
         self.healthy = healthy
         self.degraded = degraded
         self.down = down
+        self.status = status
         self.summary = summary
     }
 }

@@ -10,7 +10,7 @@ struct PingDiagnosisResult: Equatable {
 final class PingDiagnosisCoordinator {
     typealias HistorySamples = (EntityID, Date) async -> [Sample]
 
-    private let diagnoser = NetworkPerspectiveDiagnoser()
+    private let monitoringCoordinator = MonitoringPerspectiveCoordinator()
     private let tierClassifier = NetworkTierClassifier()
     private var alertMonitor = PingAlertMonitor()
 
@@ -22,7 +22,8 @@ final class PingDiagnosisCoordinator {
         range: TimeRange,
         historySamples: @escaping HistorySamples
     ) async -> PingDiagnosisResult {
-        alertMonitor.sensitivity = Self.diagnosisSensitivity(from: activeRecords)
+        let sensitivity = Self.diagnosisSensitivity(from: activeRecords)
+        alertMonitor.sensitivity = sensitivity
 
         var diagnosisHosts: [DiagnosisHost] = []
         var alertHosts: [AlertHost] = []
@@ -47,7 +48,14 @@ final class PingDiagnosisCoordinator {
             ))
         }
 
-        var diagnosis = diagnoser.diagnose(hosts: diagnosisHosts, networkStatus: networkStatus)
+        let perspective = MonitoringPerspective(
+            id: "ping.default",
+            title: "Ping",
+            members: diagnosisHosts.map(Self.monitoringMember),
+            linkStatus: networkStatus,
+            sensitivity: sensitivity
+        )
+        var diagnosis = monitoringCoordinator.legacyNetworkDiagnosis(for: perspective)
         if case .monitoringStalled = diagnosis.verdict {
             let age = Int(now.timeIntervalSince(newestSample ?? now).rounded())
             diagnosis.detail = "Monitoring paused — data is \(age)s old."
@@ -64,5 +72,26 @@ final class PingDiagnosisCoordinator {
         if values.contains("standard") { return .balanced }
         if values.contains("conservative") { return .conservative }
         return .balanced
+    }
+
+    nonisolated private static func monitoringMember(_ host: DiagnosisHost) -> MonitoringPerspectiveMember {
+        MonitoringPerspectiveMember(
+            entityID: EntityID(rawValue: host.id),
+            instanceID: IntegrationInstanceID(rawValue: host.id),
+            displayName: host.id,
+            role: monitoringRole(for: host.tier),
+            status: host.status,
+            isStale: host.isStale,
+            consecutiveFailures: host.consecutiveFailures
+        )
+    }
+
+    nonisolated private static func monitoringRole(for tier: NetworkTier) -> MonitoringRole {
+        switch tier {
+        case .localGateway: return .localGateway
+        case .ispEdge: return .accessNetwork
+        case .upstream: return .upstreamInternet
+        case .remoteService: return .remoteService
+        }
     }
 }
