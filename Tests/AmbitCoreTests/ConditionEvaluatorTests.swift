@@ -95,7 +95,7 @@ final class ConditionEvaluatorTests: XCTestCase {
         XCTAssertTrue(evaluator.evaluate(increasingFast, input: input, now: t0))
     }
 
-    func testMetricThresholdCompilesToComparisonWrappedInHeldFor() {
+    func testMetricThresholdCompilesToComparisonWrappedInConsecutiveSamples() {
         let policy = EntityAlertPolicy(
             threshold: AlertThreshold(comparison: .greaterThanOrEqual, value: 250),
             consecutive: 3
@@ -104,9 +104,27 @@ final class ConditionEvaluatorTests: XCTestCase {
 
         XCTAssertEqual(condition, .temporal(Temporal(
             condition: .comparison(Comparison(lhs: .address(id), comparison: .greaterThanOrEqual, rhs: .literal(.number(250)))),
-            op: .heldFor(4),
+            op: .consecutiveSamples(3),
             edge: .level
         )))
+    }
+
+    func testConsecutiveSamplesMatchesCountBasedSemanticsWithIrregularSamples() {
+        let condition = AlertTriggerDeclaration.metricThreshold(EntityAlertPolicy(
+            threshold: AlertThreshold(comparison: .greaterThanOrEqual, value: 250),
+            consecutive: 3
+        )).compile(metricEntityID: id)
+        var evaluator = ConditionEvaluator()
+
+        let first = ConditionEvaluator.Input(states: [id: EntityState(id: id, value: .number(300), availability: .online)])
+        let second = ConditionEvaluator.Input(states: [id: EntityState(id: id, value: .number(275), availability: .online)])
+        let third = ConditionEvaluator.Input(states: [id: EntityState(id: id, value: .number(260), availability: .online)])
+        let reset = ConditionEvaluator.Input(states: [id: EntityState(id: id, value: .number(100), availability: .online)])
+
+        XCTAssertFalse(evaluator.evaluate(condition, input: first, now: t0))
+        XCTAssertFalse(evaluator.evaluate(condition, input: second, now: t0.addingTimeInterval(97)))
+        XCTAssertTrue(evaluator.evaluate(condition, input: third, now: t0.addingTimeInterval(98)))
+        XCTAssertFalse(evaluator.evaluate(condition, input: reset, now: t0.addingTimeInterval(99)))
     }
 
     func testConditionCodableRoundTrips() throws {
@@ -198,6 +216,28 @@ final class ConditionEvaluatorTests: XCTestCase {
         XCTAssertEqual(compiledEvents, legacyEvents)
     }
 
+    func testMonitoringAlertStateMachineConsumesCompiledConditionPath() {
+        let impossibleCondition = Condition.comparison(Comparison(lhs: .literal(.bool(false)), comparison: .equal, rhs: .literal(.bool(true))))
+        let declaration = AlertKindDeclaration(
+            id: "fixture.hostDown",
+            titleTemplate: "{hostName} is down",
+            messageTemplate: "No response from {hostName}.",
+            severity: .critical,
+            defaultEnabled: true,
+            target: .entity(id),
+            trigger: .healthTransition(to: .down),
+            condition: impossibleCondition,
+            recovery: AlertRecoveryDeclaration(titleTemplate: "{hostName} recovered", messageTemplate: "{hostName} is reachable again."),
+            cooldown: 60
+        )
+        var machine = MonitoringAlertStateMachine(declarations: [declaration], warmUpCycles: 0)
+
+        _ = machine.evaluate(members: [alertMember(status: .healthy)], diagnosis: healthyDiagnosis(), now: t0)
+        let events = machine.evaluate(members: [alertMember(status: .down)], diagnosis: healthyDiagnosis(), now: t0.addingTimeInterval(1))
+
+        XCTAssertTrue(events.isEmpty)
+    }
+
     private struct EventSnapshot: Equatable {
         var ruleID: String
         var providerID: String
@@ -274,6 +314,18 @@ final class ConditionEvaluatorTests: XCTestCase {
             target: .entity(id),
             notifyOnRecovery: true,
             cooldown: 60
+        )
+    }
+
+    private func healthyDiagnosis() -> MonitoringDiagnosis {
+        MonitoringDiagnosis(
+            perspectiveID: "fixture",
+            verdict: MonitoringVerdict(kind: .allReachable),
+            severity: .normal,
+            confidence: .high,
+            affectedEntityIDs: [],
+            title: "All reachable",
+            detail: "All reachable"
         )
     }
 }

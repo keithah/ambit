@@ -17,6 +17,7 @@ public struct NotificationIntent: Equatable, Identifiable, Sendable {
     public var entityIDs: Set<EntityID>
     public var phase: AlertEventPhase
     public var triggeredAt: Date
+    public var actions: [CommandInvocation]
 
     public init(
         id: String,
@@ -25,7 +26,8 @@ public struct NotificationIntent: Equatable, Identifiable, Sendable {
         severity: Severity,
         entityIDs: Set<EntityID>,
         phase: AlertEventPhase,
-        triggeredAt: Date
+        triggeredAt: Date,
+        actions: [CommandInvocation] = []
     ) {
         self.id = id
         self.title = title
@@ -34,6 +36,7 @@ public struct NotificationIntent: Equatable, Identifiable, Sendable {
         self.entityIDs = entityIDs
         self.phase = phase
         self.triggeredAt = triggeredAt
+        self.actions = actions
     }
 }
 

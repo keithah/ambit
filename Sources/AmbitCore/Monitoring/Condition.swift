@@ -37,6 +37,7 @@ public enum Edge: String, Equatable, Codable, Sendable {
 
 public enum TemporalOp: Equatable, Codable, Sendable {
     case heldFor(TimeInterval)
+    case consecutiveSamples(Int)
     case withinWindow(TimeInterval)
     case rateOfChange(per: TimeInterval, AlertComparison, ConditionValue)
 }
@@ -101,6 +102,7 @@ public struct ConditionEvaluator: Sendable {
     private struct TemporalState: Sendable {
         var startedAt: Date?
         var lastLevel = false
+        var consecutiveCount = 0
     }
 
     private var temporalState: [String: TemporalState] = [:]
@@ -191,6 +193,15 @@ public struct ConditionEvaluator: Sendable {
                 state.startedAt = nil
                 rawLevel = false
             }
+            let result = edgeResult(edge: temporal.edge, level: rawLevel, previous: state.lastLevel)
+            state.lastLevel = rawLevel
+            temporalState[keyPath] = state
+            return result
+        case .consecutiveSamples(let count):
+            let child = evaluate(temporal.condition, input: input, now: now, keyPath: "\(keyPath).consecutiveSamples")
+            var state = temporalState[keyPath] ?? TemporalState()
+            state.consecutiveCount = child ? state.consecutiveCount + 1 : 0
+            rawLevel = state.consecutiveCount >= max(1, count)
             let result = edgeResult(edge: temporal.edge, level: rawLevel, previous: state.lastLevel)
             state.lastLevel = rawLevel
             temporalState[keyPath] = state
@@ -316,8 +327,7 @@ public extension AlertTriggerDeclaration {
                 comparison: threshold.comparison,
                 rhs: .literal(.number(threshold.value))
             ))
-            let duration = TimeInterval(max(0, policy.consecutive - 1)) * sampleInterval
-            return .temporal(Temporal(condition: comparison, op: .heldFor(duration), edge: .level))
+            return .temporal(Temporal(condition: comparison, op: .consecutiveSamples(policy.consecutive), edge: .level))
         }
     }
 }

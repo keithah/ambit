@@ -54,6 +54,7 @@ public struct MonitoringAlertStateMachine: Sendable {
     private var deliveredHostDownIDs: Set<String> = []
     private var warmUpEvaluations = 0
     private var pendingHostDownIDs: Set<String> = []
+    private var conditionEvaluators: [AlertKindID: ConditionEvaluator] = [:]
 
     public init(
         declarations: [AlertKindDeclaration] = [],
@@ -92,6 +93,7 @@ public struct MonitoringAlertStateMachine: Sendable {
             } else if member.status == .down, previous != .down {
                 pendingHostDownIDs.insert(member.id)
                 if isEnabled(declaration, target: member.target),
+                   conditionMatches(declaration, member: member, members: members, diagnosis: diagnosis, now: now),
                    !warmingUp,
                    fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
                     hostEvents.append(hostDownEvent(member, now: now))
@@ -101,6 +103,7 @@ public struct MonitoringAlertStateMachine: Sendable {
             } else if member.status == .down,
                       pendingHostDownIDs.contains(member.id),
                       isEnabled(declaration, target: member.target),
+                      conditionMatches(declaration, member: member, members: members, diagnosis: diagnosis, now: now),
                       !warmingUp,
                       fire("hostDown:\(member.id)", cooldown: member.cooldown, now: now) {
                 hostEvents.append(hostDownEvent(member, now: now))
@@ -274,6 +277,10 @@ public struct MonitoringAlertStateMachine: Sendable {
             }
             return nil
         }
+        if let declaration = diagnosisDeclaration(for: diagnosis.verdict.kind),
+           !conditionMatches(declaration, members: members, diagnosis: diagnosis, now: now) {
+            return nil
+        }
 
         let key = verdictKey(diagnosis.verdict)
         if key == lastVerdictKey {
@@ -360,8 +367,13 @@ public struct MonitoringAlertStateMachine: Sendable {
     }
 
     private mutating func internetLossSafetyNet(members: [MonitoringAlertMember], now: Date) -> AlertEvent? {
+        let declaration = declarations.first {
+            if case .allMembersFailing = $0.trigger { return true }
+            return false
+        }
         guard members.count >= 2,
               members.allSatisfy({ $0.status == .down }),
+              declaration.map({ conditionMatches($0, members: members, diagnosis: nil, now: now) }) ?? true,
               fire("internetLoss", cooldown: networkCooldown, now: now)
         else { return nil }
         deliveredNetworkAlert = true
@@ -404,6 +416,49 @@ public struct MonitoringAlertStateMachine: Sendable {
         if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
         lastSent[key] = now
         return true
+    }
+
+    private mutating func conditionMatches(
+        _ declaration: AlertKindDeclaration,
+        member: MonitoringAlertMember? = nil,
+        members: [MonitoringAlertMember],
+        diagnosis: MonitoringDiagnosis?,
+        now: Date
+    ) -> Bool {
+        let condition = declaration.compiledCondition()
+        let input = conditionInput(member: member, members: members, diagnosis: diagnosis)
+        var evaluator = conditionEvaluators[declaration.id] ?? ConditionEvaluator()
+        let result = evaluator.evaluate(condition, input: input, now: now)
+        conditionEvaluators[declaration.id] = evaluator
+        return result
+    }
+
+    private func conditionInput(
+        member: MonitoringAlertMember?,
+        members: [MonitoringAlertMember],
+        diagnosis: MonitoringDiagnosis?
+    ) -> ConditionEvaluator.Input {
+        var statuses = Dictionary(uniqueKeysWithValues: members.map { ($0.id, $0.status) })
+        if let member {
+            statuses[member.id] = member.status
+        }
+        let totalCount = statuses.isEmpty && member != nil ? 1 : statuses.count
+        let failingCount = statuses.values.filter { $0 == .down }.count
+        return ConditionEvaluator.Input(
+            memberStatuses: statuses,
+            diagnosis: diagnosis,
+            totalMemberCount: totalCount,
+            failingMemberCount: failingCount
+        )
+    }
+
+    private func diagnosisDeclaration(for kind: MonitoringVerdict.Kind) -> AlertKindDeclaration? {
+        declarations.first {
+            if case .diagnosisVerdict(let declaredKind) = $0.trigger {
+                return declaredKind == kind
+            }
+            return false
+        }
     }
 
     private var isWarmingUp: Bool {

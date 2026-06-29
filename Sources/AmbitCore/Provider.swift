@@ -291,7 +291,7 @@ public enum CommandParameterKind: Equatable, Sendable {
     case number
 }
 
-public struct CommandArguments: Equatable, Sendable {
+public struct CommandArguments: Equatable, Sendable, Codable {
     public var values: [String: JSONValue]
 
     public init(values: [String: JSONValue] = [:]) {
