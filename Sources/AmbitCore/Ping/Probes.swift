@@ -15,8 +15,12 @@ public struct UnavailableProbe: PingProbe {
         self.reason = reason
     }
 
-    public func measure(_ host: PingHostConfig) async -> ProbeResult {
+    public func measure() async -> ProbeResult {
         ProbeResult(timestamp: Date(), failureReason: reason, note: "Probe method unavailable in this build")
+    }
+
+    public func measure(_ host: PingHostConfig) async -> ProbeResult {
+        await measure()
     }
 }
 

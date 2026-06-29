@@ -19,7 +19,7 @@ final class PingProbesTests: XCTestCase {
         let factory = DefaultProbeFactory(allowsICMP: false)
         let probe = factory.makeProbe(for: host(.icmp))
         XCTAssertTrue(probe is UnavailableProbe)
-        let result = await probe.measure(host(.icmp))
+        let result = await (probe as! UnavailableProbe).measure()
         XCTAssertEqual(result.failureReason, .icmpUnavailable)
         XCTAssertNil(result.latencyMs)
     }
