@@ -625,7 +625,7 @@ private extension GenericMonitoringParityCharacterizationTests {
 
     func monitoringDiagnosis(_ kind: MonitoringVerdict.Kind) -> MonitoringDiagnosis {
         MonitoringDiagnosis(
-            perspectiveID: "monitoring.default",
+            perspectiveID: "ping.default",
             verdict: MonitoringVerdict(kind: kind, affectedRole: kind == .localNetworkDown ? .localGateway : nil),
             severity: DiagnosticSummaryEntity.severity(for: kind) ?? .normal,
             confidence: .high,

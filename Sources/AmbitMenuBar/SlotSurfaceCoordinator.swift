@@ -163,6 +163,7 @@ final class SlotSurfaceCoordinator {
 
         var diagnosticEntityID: EntityID?
         if let monitoringDiagnosis,
+           Self.resolvedDescriptors(shownResolved, own: monitoringDiagnosis),
            let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(monitoringDiagnosis, owner: .ping) {
             diagnosticEntityID = diagnosisDescriptor.id
             descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
@@ -232,6 +233,15 @@ final class SlotSurfaceCoordinator {
         records: [IntegrationInstanceRecord]
     ) -> Bool {
         !records.isEmpty && resolved.contains { isPrimaryMeasurement($0, allowCategoryPrimary: records.count > 1) }
+    }
+
+    nonisolated private static func resolvedDescriptors(
+        _ descriptors: [EntityDescriptor],
+        own diagnosis: MonitoringDiagnosis
+    ) -> Bool {
+        descriptors.contains { descriptor in
+            descriptor.monitoring?.perspectiveID == diagnosis.perspectiveID
+        }
     }
 
     nonisolated private static func instanceSubtitle(_ record: IntegrationInstanceRecord, descriptors: [EntityDescriptor]) -> String? {

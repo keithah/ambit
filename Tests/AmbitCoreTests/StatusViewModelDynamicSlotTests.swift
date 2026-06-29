@@ -590,6 +590,57 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testSystemLikeSlotIgnoresUnownedConnectivityDiagnosis() async {
+        let coordinator = SlotSurfaceCoordinator()
+        let cpu = EntityDescriptor(
+            id: "system@local/overview.cpu_usage_percent",
+            instanceID: ProviderInstanceIDs.systemOverview,
+            name: "CPU",
+            kind: .sensor,
+            deviceClass: .percent,
+            category: .primary,
+            capability: "system.cpu",
+            stateClass: .measurement,
+            graphStyle: .gauge,
+            isPrimary: true
+        )
+        let sample = Sample(timestamp: now, value: 34, ok: true)
+        let connectivityDiagnoses: [MonitoringDiagnosis] = [
+            monitoringDiagnosis(.localNetworkDown),
+            monitoringDiagnosis(.upstreamDown)
+        ]
+
+        for diagnosis in connectivityDiagnoses {
+            let surface = await coordinator.buildSurface(
+                slot: Slot(id: "system@local", title: "System", selection: .integration("system@local")),
+                monitoringDiagnosis: diagnosis,
+                allRegistryRecords: [
+                    IntegrationInstanceRecord(
+                        id: "system@local",
+                        integrationID: IntegrationIDs.system,
+                        displayName: "System",
+                        enabled: true,
+                        config: [:]
+                    )
+                ],
+                allDescriptors: [ProviderInstanceIDs.systemOverview: [cpu]],
+                allStates: [cpu.id: state(cpu.id, value: 34, severity: .normal)],
+                firedAlertEvents: [],
+                slotFocus: [:],
+                fallbackGraphRange: .m5,
+                config: .empty,
+                now: now,
+                historySamples: { id, _ in id == cpu.id ? [sample] : [] }
+            )
+
+            XCTAssertEqual(surface.primaryEntityID, cpu.id, "Diagnosis \(diagnosis.verdict.kind) should not own system descriptors")
+            XCTAssertEqual(surface.glyph.primaryText, "34%")
+            XCTAssertEqual(surface.glyph.tone, .good)
+            XCTAssertNil(surface.data.descriptors[DiagnosticSummaryEntity.Owner.ping.entityID])
+        }
+    }
+
+    @MainActor
     func testMonitoringSlotDiagnosisCoordinatorBuildsStalledDiagnosisWithSampleAge() async {
         let coordinator = MonitoringSlotDiagnosisCoordinator()
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443, interval: 1)
@@ -612,8 +663,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { (_: EntityID, _: Date) in [staleSample] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict.kind, .monitoringStalled)
-        XCTAssertEqual(result.diagnosis.detail, "Monitoring paused — data is 12s old.")
+        XCTAssertEqual(result.diagnosis?.verdict.kind, .monitoringStalled)
+        XCTAssertEqual(result.diagnosis?.detail, "Monitoring paused — data is 12s old.")
         XCTAssertTrue(result.events.isEmpty)
     }
 
@@ -640,8 +691,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: nil, ok: false, metadata: "timeout")] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict.kind, .upstreamDown)
-        XCTAssertEqual(result.diagnosis.title, "No internet")
+        XCTAssertEqual(result.diagnosis?.verdict.kind, .upstreamDown)
+        XCTAssertEqual(result.diagnosis?.title, "No internet")
         XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
         XCTAssertTrue(result.events.isEmpty)
     }
@@ -678,10 +729,120 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: 900, ok: true)] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict.kind, .localNetworkDown)
-        XCTAssertEqual(result.diagnosis.title, "Local network down")
-        XCTAssertEqual(result.diagnosis.detail, "No network link.")
+        XCTAssertEqual(result.diagnosis?.verdict.kind, .localNetworkDown)
+        XCTAssertEqual(result.diagnosis?.title, "Local network down")
+        XCTAssertEqual(result.diagnosis?.detail, "No network link.")
         XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
+    }
+
+    @MainActor
+    func testMonitoringSlotDiagnosisCoordinatorReturnsNoDiagnosisWithoutPerspectiveMembers() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
+
+        let result = await coordinator.evaluate(
+            activeRecords: [],
+            descriptors: [:],
+            snapshot: StatusSnapshot(),
+            networkStatus: .notConnected,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { (_: EntityID, _: Date) in [] }
+        )
+
+        XCTAssertNil(result.diagnosis)
+        XCTAssertTrue(result.events.isEmpty)
+    }
+
+    @MainActor
+    func testNonPingFixtureWithoutPerspectiveGetsNoConnectivityVerdict() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
+        let record = IntegrationInstanceRecord(
+            id: "fixture@local",
+            integrationID: "fixture.monitor",
+            displayName: "Fixture Monitor",
+            enabled: true,
+            config: [:]
+        )
+        let descriptor = EntityDescriptor(
+            id: "fixture@local/wan.status",
+            instanceID: "fixture@local/status",
+            name: "Fixture WAN",
+            kind: .sensor,
+            deviceClass: .connectivity,
+            category: .primary,
+            capability: "fixture.wan",
+            stateClass: .measurement,
+            graphStyle: GraphStyle.none,
+            isPrimary: true
+        )
+        let snapshot = StatusSnapshot(
+            providers: [
+                descriptor.instanceID: SourceState(value: ProviderSnapshot(health: .down))
+            ]
+        )
+
+        let result = await coordinator.evaluate(
+            activeRecords: [record],
+            descriptors: [descriptor.instanceID: [descriptor]],
+            snapshot: snapshot,
+            networkStatus: .notConnected,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: nil, ok: false)] }
+        )
+
+        XCTAssertNil(result.diagnosis)
+        XCTAssertTrue(result.events.isEmpty)
+    }
+
+    @MainActor
+    func testNonPingFixtureWithPerspectiveGetsConnectivityVerdict() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
+        let record = IntegrationInstanceRecord(
+            id: "fixture@local",
+            integrationID: "fixture.monitor",
+            displayName: "Fixture Monitor",
+            enabled: true,
+            config: [:]
+        )
+        let descriptor = EntityDescriptor(
+            id: "fixture@local/wan.status",
+            instanceID: "fixture@local/status",
+            name: "Fixture WAN",
+            kind: .sensor,
+            deviceClass: .connectivity,
+            category: .primary,
+            capability: "fixture.wan",
+            stateClass: .measurement,
+            graphStyle: GraphStyle.none,
+            isPrimary: true,
+            monitoring: MonitoringMetadata(
+                role: .upstreamInternet,
+                perspectiveID: "fixture.wan",
+                diagnosticSummary: .member,
+                address: MonitoredAddress(rawValue: "203.0.113.10")
+            )
+        )
+        let snapshot = StatusSnapshot(
+            providers: [
+                descriptor.instanceID: SourceState(value: ProviderSnapshot(health: .ok))
+            ]
+        )
+
+        let result = await coordinator.evaluate(
+            activeRecords: [record],
+            descriptors: [descriptor.instanceID: [descriptor]],
+            snapshot: snapshot,
+            networkStatus: .noInternet,
+            now: now,
+            range: .fiveMinutes,
+            historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: 1, ok: true)] }
+        )
+
+        XCTAssertEqual(result.diagnosis?.perspectiveID, "fixture.wan")
+        XCTAssertEqual(result.diagnosis?.verdict.kind, .upstreamDown)
+        XCTAssertEqual(result.diagnosis?.title, "No internet")
+        XCTAssertTrue(result.events.isEmpty)
     }
 
     @MainActor
@@ -2115,7 +2276,18 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
                 stateClass: .measurement,
                 graphStyle: .sparkline,
                 isPrimary: index == 0,
-                priority: index == 0 ? 10 : 0
+                priority: index == 0 ? 10 : 0,
+                monitoring: MonitoringMetadata(
+                    role: AddressClassifier.derivedRole(for: hosts[index].address),
+                    perspectiveID: "ping.default",
+                    alertKindIDs: ["ping.hostDown"],
+                    diagnosticSummary: .member,
+                    address: MonitoredAddress(rawValue: hosts[index].address),
+                    roleAssignment: MonitoringRoleAssignment(
+                        derivedRole: AddressClassifier.derivedRole(for: hosts[index].address),
+                        source: .addressClassifier
+                    )
+                )
             )
             descriptorsByProvider[provider] = [descriptor]
             states[latencyID] = state(latencyID, value: index == 0 ? 12 : 24, severity: .normal)
@@ -2147,13 +2319,17 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             title = "Local network down"
             detail = "1/1 gateway host(s) unreachable."
             affectedRole = .localGateway
+        case .upstreamDown:
+            title = "No internet"
+            detail = "No internet connection."
+            affectedRole = .upstreamInternet
         default:
             title = "All reachable"
             detail = "2/2 monitored hosts healthy."
             affectedRole = nil
         }
         return MonitoringDiagnosis(
-            perspectiveID: "monitoring.default",
+            perspectiveID: "ping.default",
             verdict: MonitoringVerdict(kind: verdict, affectedRole: affectedRole),
             severity: DiagnosticSummaryEntity.severity(for: verdict) ?? .normal,
             confidence: .high,

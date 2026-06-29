@@ -2,7 +2,7 @@ import AmbitCore
 import Foundation
 
 struct MonitoringSlotDiagnosisResult: Equatable {
-    var diagnosis: MonitoringDiagnosis
+    var diagnosis: MonitoringDiagnosis?
     var events: [AlertEvent]
 }
 
@@ -67,6 +67,10 @@ final class MonitoringSlotDiagnosisCoordinator {
             ))
         }
 
+        guard !members.isEmpty else {
+            return MonitoringSlotDiagnosisResult(diagnosis: nil, events: [])
+        }
+
         let perspective = MonitoringPerspective(
             id: flatDescriptors.compactMap { $0.monitoring?.perspectiveID }.first ?? "monitoring.default",
             title: "Monitoring",
@@ -101,7 +105,7 @@ final class MonitoringSlotDiagnosisCoordinator {
         if let primary = monitored.first(where: \.isPrimary) { return primary }
         if let measured = monitored.first(where: { $0.stateClass == .measurement }) { return measured }
         if let any = monitored.first { return any }
-        return descriptors.first { $0.instanceID.integrationInstanceID == record.id && $0.isPrimary }
+        return nil
     }
 
     nonisolated private static func interval(from config: JSONObject) -> TimeInterval {
