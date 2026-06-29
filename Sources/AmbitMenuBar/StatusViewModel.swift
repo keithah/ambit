@@ -166,9 +166,7 @@ final class StatusViewModel: ObservableObject {
         self.startAtLoginEnabled = startAtLoginCoordinator.isEnabled()
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
-        Self.migrateRetiredPingscopeRecords(integrationRegistry)
-        Self.seedIntegrationRegistryIfNeeded(integrationRegistry, settings: settings)
-        Self.dedupePingHostsByAddress(integrationRegistry)
+        IntegrationConfigMigrator(settings: settings).migrate(integrationRegistry)
         self.slots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
         if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
             fallbackGraphRange = GraphRange(timeRange: range)
@@ -238,77 +236,6 @@ final class StatusViewModel: ObservableObject {
 
     private static func autoSlot(for record: IntegrationInstanceRecord) -> Slot {
         Slot(id: SlotID(rawValue: record.id.rawValue), title: record.displayName, selection: .integration(record.id), barReadout: .dynamic)
-    }
-
-    /// First-run seed: the built-in integrations are listed (so they remain toggleable) but
-    /// disabled at the integration-type level, leaving only pingscope active (pingscope hosts
-    /// are seeded in M1). Existing installs keep their saved state.
-    private static func seedIntegrationRegistryIfNeeded(_ registry: any IntegrationRegistry, settings: AppSettings) {
-        guard ((try? registry.instances()) ?? []).isEmpty else { return }
-        // Built-ins listed but disabled (toggleable later); pingscope seeded with sensible
-        // default public DNS hosts so the app isn't empty. The detected gateway is added
-        // asynchronously on start (it needs network detection).
-        let builtIns = BuiltInIntegrationSeed.records(ecoflowEnabled: settings.ecoflowEnabled, includeActiveMeasurement: true)
-        let defaultHosts = [
-            PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
-            PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
-        ]
-        try? registry.save(builtIns + defaultHosts.map { IntegrationInstanceRecord.ping($0) })
-        try? registry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
-    }
-
-    /// One-shot RESET migration for the "pingscope" → "ping" rename. Records saved under the
-    /// now-retired "pingscope" integration id no longer resolve to any integration, so drop them
-    /// — scoped to that explicit id, NOT a blanket "unregistered integration" sweep (which would
-    /// nuke installed/manifest providers that merely failed to load this launch). If dropping
-    /// them leaves no ping hosts, reseed the ping defaults so the app isn't empty (the first-run
-    /// seed guard won't fire while built-in records are present). Old "pingscope@…" history is
-    /// disposable dev data — orphaned and pruned by retention. Self-removing: a no-op once gone.
-    private static func migrateRetiredPingscopeRecords(_ registry: any IntegrationRegistry) {
-        // Part A: drop retired-basic-ping artifacts — records under the renamed "pingscope" id,
-        // AND the old basic-ping built-in *instance* (id == "ping"; real ping hosts are "ping@…").
-        // That stale instance carries integrationID "ping" with empty config, so it produces no
-        // provider yet would mask the "no ping hosts" check below. Reseed ping defaults if dropping
-        // them leaves no ping hosts (so the app isn't empty).
-        let isRetiredPingArtifact: (IntegrationInstanceRecord) -> Bool = {
-            $0.integrationID == "pingscope" || $0.id == IntegrationInstanceIDs.ping
-        }
-        if let all = try? registry.instances(), all.contains(where: isRetiredPingArtifact) {
-            var kept = all.filter { !isRetiredPingArtifact($0) }
-            if !kept.contains(where: { $0.integrationID == IntegrationIDs.ping }) {
-                let defaultHosts = [
-                    PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443),
-                    PingHostConfig(displayName: "Google DNS", address: "8.8.8.8", method: .tcp, port: 443)
-                ]
-                kept += defaultHosts.map { IntegrationInstanceRecord.ping($0) }
-            }
-            try? registry.save(kept)
-        }
-        // Part B (independent of Part A — a half-migrated install may have already dropped the
-        // pingscope records): the retired basic-ping built-in was default-disabled under "ping",
-        // so the persisted disabled set can still carry it. Ping is now pingscope's successor and
-        // the active reference integration (pingscope was never type-disabled), so drop the stale
-        // "ping" from the disabled set. Self-removing once gone.
-        if let disabled = try? registry.disabledIntegrationIDs(), disabled.contains(IntegrationIDs.ping) {
-            try? registry.setDisabledIntegrationIDs(disabled.subtracting([IntegrationIDs.ping]))
-        }
-    }
-
-    /// Remove pingscope hosts that target an address already monitored (keeping the primary,
-    /// else the first), cleaning up duplicates left by earlier seeding changes.
-    private static func dedupePingHostsByAddress(_ registry: any IntegrationRegistry) {
-        guard let all = try? registry.instances() else { return }
-        let hosts = all.filter { $0.integrationID == IntegrationIDs.ping }
-        let primary = (try? registry.primaryInstanceID()) ?? nil
-        let ordered = hosts.filter { $0.id == primary } + hosts.filter { $0.id != primary }
-        var seen = Set<String>()
-        var removeIDs = Set<IntegrationInstanceID>()
-        for record in ordered {
-            guard let address = PingHostConfig(configObject: record.config)?.address else { continue }
-            if seen.contains(address) { removeIDs.insert(record.id) } else { seen.insert(address) }
-        }
-        guard !removeIDs.isEmpty else { return }
-        try? registry.save(all.filter { !removeIDs.contains($0.id) })
     }
 
     nonisolated static func reconciledGatewaySeedRecords(

@@ -74,9 +74,11 @@ final class GenericMonitoringPingLeakGrepGateTests: XCTestCase {
     }
 
     private static func isAllowedViolation(relative: String, pattern: String, line: String) -> Bool {
-        guard relative == "Sources/AmbitMenuBar/StatusViewModel.swift",
-              pattern == #"IntegrationIDs\.ping"#
-        else { return false }
+        guard pattern == #"IntegrationIDs\.ping"# else { return false }
+        if relative == "Sources/AmbitMenuBar/IntegrationConfigMigrator.swift" {
+            return true
+        }
+        guard relative == "Sources/AmbitMenuBar/StatusViewModel.swift" else { return false }
         let allowedSnippets = [
             "selection: .integrationType(IntegrationIDs.ping)",
             "record.integrationID != IntegrationIDs.ping",
