@@ -71,8 +71,13 @@ struct OverlayView: View {
         VStack(spacing: 5) {
             SurfaceView(plan: SurfacePlan(cards: compactCards), data: surface.data)
         }
-        .padding(8)
-        .frame(minWidth: 180, maxWidth: .infinity, minHeight: 64, maxHeight: .infinity)
+        .padding(viewModel.overlayConfig.compactMode ? 5 : 8)
+        .frame(
+            minWidth: viewModel.overlayConfig.compactMode ? 160 : 180,
+            maxWidth: .infinity,
+            minHeight: viewModel.overlayConfig.compactMode ? 52 : 64,
+            maxHeight: .infinity
+        )
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12)))
         .contextMenu {
@@ -108,31 +113,67 @@ struct OverlayView: View {
 }
 
 @MainActor
-final class OverlayController {
+final class OverlayController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private let viewModel: StatusViewModel
     private let onOpenPopover: (SlotID?) -> Void
+    private var applyingConfig = false
 
     init(viewModel: StatusViewModel, onOpenPopover: @escaping (SlotID?) -> Void) {
         self.viewModel = viewModel
         self.onOpenPopover = onOpenPopover
+        super.init()
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
-    func toggle() { isVisible ? hide() : show() }
+    func toggle() {
+        viewModel.setOverlayVisible(!isVisible)
+    }
 
     func show() {
         let panel = panel ?? makePanel()
         self.panel = panel
-        if let screen = NSScreen.main {
+        if let frame = viewModel.overlayConfig.frame {
+            panel.setFrame(NSRect(overlayFrame: frame), display: true)
+        } else if let screen = NSScreen.main {
             let frame = screen.visibleFrame
             panel.setFrameOrigin(NSPoint(x: frame.maxX - panel.frame.width - 24, y: frame.minY + 24))
         }
         panel.orderFrontRegardless()
     }
 
-    func hide() { panel?.orderOut(nil) }
+    func hide() {
+        panel?.orderOut(nil)
+    }
+
+    func apply(_ config: OverlayPresentationConfig) {
+        applyingConfig = true
+        defer { applyingConfig = false }
+        let panel = panel ?? (config.isVisible ? makePanel() : nil)
+        if let panel {
+            self.panel = panel
+            panel.level = config.alwaysOnTop ? .floating : .normal
+            panel.alphaValue = config.opacity
+            if let frame = config.frame {
+                panel.setFrame(NSRect(overlayFrame: frame), display: true)
+            }
+            config.isVisible ? show() : hide()
+        }
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        persistCurrentFrame()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        persistCurrentFrame()
+    }
+
+    private func persistCurrentFrame() {
+        guard !applyingConfig, let panel else { return }
+        viewModel.setOverlayFrame(OverlayFrame(frame: panel.frame))
+    }
 
     private func makePanel() -> NSPanel {
         // Titled + resizable (with the title bar hidden/transparent) so macOS shows the
@@ -143,7 +184,8 @@ final class OverlayController {
             backing: .buffered,
             defer: false
         )
-        panel.level = .floating
+        panel.level = viewModel.overlayConfig.alwaysOnTop ? .floating : .normal
+        panel.alphaValue = viewModel.overlayConfig.opacity
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -155,12 +197,25 @@ final class OverlayController {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.minSize = NSSize(width: 180, height: 64)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let content = OverlayView(openPopover: onOpenPopover, close: { [weak self] in self?.hide() })
+        panel.delegate = self
+        let content = OverlayView(openPopover: onOpenPopover, close: { [weak self] in self?.viewModel.setOverlayVisible(false) })
             .environmentObject(viewModel)
         let hosting = NSHostingView(rootView: content)
         hosting.frame = panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 284, height: 108)
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
         return panel
+    }
+}
+
+private extension NSRect {
+    init(overlayFrame: OverlayFrame) {
+        self.init(x: overlayFrame.x, y: overlayFrame.y, width: overlayFrame.width, height: overlayFrame.height)
+    }
+}
+
+private extension OverlayFrame {
+    init(frame: NSRect) {
+        self.init(x: frame.origin.x, y: frame.origin.y, width: frame.size.width, height: frame.size.height)
     }
 }

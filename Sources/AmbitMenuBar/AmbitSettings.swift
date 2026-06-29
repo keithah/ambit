@@ -1147,6 +1147,14 @@ private struct SlotItemsEditor: View {
                 }
                 Spacer()
                 HStack(spacing: 6) {
+                    Picker("Range", selection: graphRange) {
+                        Text("Default").tag(GraphRange?.none)
+                        ForEach(GraphRange.allCases, id: \.self) { range in
+                            Text(range.label).tag(Optional(range))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 100)
                     Stepper("Table rows \(viewModel.slotTableRowLimit(slot.id))", value: tableRowLimit, in: 1...25)
                         .font(.system(size: 11))
                     Button("Default") {
@@ -1278,6 +1286,14 @@ private struct SlotItemsEditor: View {
             viewModel.slotTableRowLimit(slot.id)
         } set: { limit in
             viewModel.setSlotTableRowLimit(slot.id, limit)
+        }
+    }
+
+    private var graphRange: Binding<GraphRange?> {
+        Binding {
+            viewModel.slotGraphRange(slot.id)
+        } set: { range in
+            viewModel.setSlotGraphRange(slot.id, range)
         }
     }
 

@@ -28,6 +28,8 @@ struct AppSettingsDetail: View {
                 }
             }
 
+            overlayControls
+
             notificationControls
 
             localNetworkHints
@@ -60,6 +62,65 @@ struct AppSettingsDetail: View {
                 Text(notificationMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var overlayControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Overlay")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Toggle("Show floating overlay", isOn: Binding {
+                viewModel.overlayConfig.isVisible
+            } set: { value in
+                viewModel.setOverlayVisible(value)
+            })
+            .toggleStyle(.switch)
+
+            Picker("Slot", selection: Binding {
+                viewModel.overlayConfig.selectedSlotID
+            } set: { value in
+                viewModel.selectOverlaySlot(value)
+            }) {
+                ForEach(viewModel.slots) { slot in
+                    Text(slot.title ?? slot.id.rawValue).tag(Optional(slot.id))
+                }
+            }
+            .frame(width: 260)
+
+            Toggle("Always on top", isOn: Binding {
+                viewModel.overlayConfig.alwaysOnTop
+            } set: { value in
+                viewModel.setOverlayAlwaysOnTop(value)
+            })
+            .toggleStyle(.checkbox)
+
+            Toggle("Compact mode", isOn: Binding {
+                viewModel.overlayConfig.compactMode
+            } set: { value in
+                viewModel.setOverlayCompactMode(value)
+            })
+            .toggleStyle(.checkbox)
+
+            HStack(spacing: 8) {
+                Text("Opacity")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Slider(value: Binding {
+                    viewModel.overlayConfig.opacity
+                } set: { value in
+                    viewModel.setOverlayOpacity(value)
+                }, in: 0.25...1)
+                .frame(width: 180)
+                Text("\(Int(viewModel.overlayConfig.opacity * 100))%")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 42, alignment: .trailing)
+            }
+
+            Button("Reset Overlay Position") {
+                viewModel.resetOverlayPosition()
             }
         }
     }

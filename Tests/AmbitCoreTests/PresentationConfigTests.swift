@@ -7,6 +7,7 @@ final class PresentationConfigTests: XCTestCase {
         XCTAssertTrue(c.entityOverrides.isEmpty)
         XCTAssertTrue(c.integrationOverrides.isEmpty)
         XCTAssertTrue(c.slotOverrides.isEmpty)
+        XCTAssertEqual(c.overlay, OverlayPresentationConfig())
     }
 
     func testConfigRoundTripsThroughCodable() throws {
@@ -21,6 +22,14 @@ final class PresentationConfigTests: XCTestCase {
             selectedInstanceID: IntegrationInstanceID(rawValue: "system@local"),
             primaryInstanceID: IntegrationInstanceID(rawValue: "system@local"),
             showsAllInstances: false
+        )
+        c.overlay = OverlayPresentationConfig(
+            selectedSlotID: "system@local",
+            isVisible: true,
+            alwaysOnTop: false,
+            compactMode: true,
+            opacity: 0.72,
+            frame: OverlayFrame(x: 10, y: 20, width: 300, height: 140)
         )
         let data = try JSONEncoder().encode(c)
         let decoded = try JSONDecoder().decode(PresentationConfig.self, from: data)
@@ -43,5 +52,29 @@ final class PresentationConfigTests: XCTestCase {
         XCTAssertNil(override.selectedInstanceID)
         XCTAssertNil(override.primaryInstanceID)
         XCTAssertFalse(override.showsAllInstances)
+    }
+
+    func testOverlayConfigDecodesWithDefaults() throws {
+        let json = #"{"slots":[]}"#.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(PresentationConfig.self, from: json)
+
+        XCTAssertEqual(decoded.overlay, OverlayPresentationConfig())
+        XCTAssertFalse(decoded.overlay.isVisible)
+        XCTAssertTrue(decoded.overlay.alwaysOnTop)
+        XCTAssertFalse(decoded.overlay.compactMode)
+        XCTAssertEqual(decoded.overlay.opacity, 1)
+        XCTAssertNil(decoded.overlay.frame)
+    }
+
+    func testOverlayConfigClampsOpacityAndFrameSize() {
+        let config = OverlayPresentationConfig(
+            opacity: 2,
+            frame: OverlayFrame(x: 0, y: 0, width: 20, height: 10)
+        )
+
+        XCTAssertEqual(config.opacity, 1)
+        XCTAssertEqual(config.frame?.width, 180)
+        XCTAssertEqual(config.frame?.height, 64)
     }
 }

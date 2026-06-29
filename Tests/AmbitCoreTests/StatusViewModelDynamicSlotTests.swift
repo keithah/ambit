@@ -2107,6 +2107,50 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
+    func testOverlayConfigPersistsAndReconcilesSelectedSlot() {
+        var config = PresentationConfig.empty
+        config.slots = [
+            Slot(id: "ping", title: "Ping", selection: .integrationType(IntegrationIDs.ping)),
+            Slot(id: "system@local", title: "System", selection: .integration(IntegrationInstanceIDs.systemLocal))
+        ]
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.setOverlayVisible(true)
+        viewModel.setOverlayAlwaysOnTop(false)
+        viewModel.setOverlayCompactMode(true)
+        viewModel.setOverlayOpacity(0.42)
+        viewModel.selectOverlaySlot("system@local")
+        viewModel.setOverlayFrame(OverlayFrame(x: 10, y: 20, width: 320, height: 160))
+
+        XCTAssertEqual(store.config.overlay.selectedSlotID, "system@local")
+        XCTAssertEqual(store.config.overlay.isVisible, true)
+        XCTAssertEqual(store.config.overlay.alwaysOnTop, false)
+        XCTAssertEqual(store.config.overlay.compactMode, true)
+        XCTAssertEqual(store.config.overlay.opacity, 0.42)
+        XCTAssertEqual(store.config.overlay.frame, OverlayFrame(x: 10, y: 20, width: 320, height: 160))
+        XCTAssertEqual(viewModel.overlaySlotID, "system@local")
+
+        viewModel.selectOverlaySlot("missing")
+
+        XCTAssertEqual(store.config.overlay.selectedSlotID, "ping")
+        XCTAssertEqual(viewModel.overlaySlotID, "ping")
+    }
+
+    @MainActor
+    func testOverlayResetPositionClearsSavedFrame() {
+        var config = PresentationConfig.empty
+        config.overlay = OverlayPresentationConfig(frame: OverlayFrame(x: 10, y: 20, width: 300, height: 120))
+        let store = MemoryPresentationConfigStore(config: config)
+        let viewModel = makeViewModel(configStore: store)
+
+        viewModel.resetOverlayPosition()
+
+        XCTAssertNil(store.config.overlay.frame)
+        XCTAssertNil(viewModel.overlayConfig.frame)
+    }
+
+    @MainActor
     func testSelectInstancePersistsFocusedHostForSlot() {
         let store = MemoryPresentationConfigStore()
         let viewModel = makeViewModel(configStore: store)

@@ -103,6 +103,7 @@ final class StatusViewModel: ObservableObject {
     @Published var slotFocus: [SlotID: IntegrationInstanceID] = [:]
     /// Floating overlay selected slot. Nil reconciles to the first available slot.
     @Published var overlaySlotID: SlotID?
+    @Published var overlayConfig = OverlayPresentationConfig()
     @Published var startAtLoginEnabled = false
     @Published var startAtLoginMessage: String?
 
@@ -167,7 +168,12 @@ final class StatusViewModel: ObservableObject {
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
         IntegrationConfigMigrator(settings: settings).migrate(integrationRegistry)
-        self.slots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
+        let seededSlots = Self.loadOrSeedSlots(configStore, registry: integrationRegistry)
+        self.slots = seededSlots
+        let loadedPresentationConfig = configStore.load()
+        let overlay = Self.reconciledOverlayConfig(loadedPresentationConfig.overlay, slots: seededSlots)
+        self.overlayConfig = overlay
+        self.overlaySlotID = overlay.selectedSlotID
         if let raw = UserDefaults.standard.string(forKey: "pingRange"), let range = TimeRange(rawValue: raw) {
             fallbackGraphRange = GraphRange(timeRange: range)
         }
@@ -668,7 +674,44 @@ final class StatusViewModel: ObservableObject {
     }
 
     func selectOverlaySlot(_ slot: SlotID?) {
-        overlaySlotID = OverlaySlotSelection.reconciled(slot, slots: slots)
+        mutateOverlayConfig { overlay in
+            overlay.selectedSlotID = OverlaySlotSelection.reconciled(slot, slots: slots)
+        }
+    }
+
+    func setOverlayVisible(_ visible: Bool) {
+        mutateOverlayConfig { $0.isVisible = visible }
+    }
+
+    func setOverlayAlwaysOnTop(_ enabled: Bool) {
+        mutateOverlayConfig { $0.alwaysOnTop = enabled }
+    }
+
+    func setOverlayCompactMode(_ enabled: Bool) {
+        mutateOverlayConfig { $0.compactMode = enabled }
+    }
+
+    func setOverlayOpacity(_ opacity: Double) {
+        mutateOverlayConfig { overlay in
+            overlay = OverlayPresentationConfig(
+                selectedSlotID: overlay.selectedSlotID,
+                isVisible: overlay.isVisible,
+                alwaysOnTop: overlay.alwaysOnTop,
+                compactMode: overlay.compactMode,
+                opacity: opacity,
+                frame: overlay.frame
+            )
+        }
+    }
+
+    func setOverlayFrame(_ frame: OverlayFrame?) {
+        mutateOverlayConfig { overlay in
+            overlay.frame = frame
+        }
+    }
+
+    func resetOverlayPosition() {
+        setOverlayFrame(nil)
     }
 
     /// Rebuild diagnosis/alerts, then build per-slot surfaces.
@@ -909,6 +952,10 @@ final class StatusViewModel: ObservableObject {
 
     func slotTableRowLimit(_ slotID: SlotID) -> Int {
         configStore.load().slotOverrides[slotID]?.tableRowLimit ?? StatTableCard.Model.defaultRowLimit
+    }
+
+    func slotGraphRange(_ slotID: SlotID) -> GraphRange? {
+        configStore.load().slotOverrides[slotID]?.graphRange
     }
 
     func setSlotTableRowLimit(_ slotID: SlotID, _ limit: Int?) {
@@ -1178,6 +1225,24 @@ final class StatusViewModel: ObservableObject {
         }
         configStore.save(config)
         rebuildPresentationSettings(config: config)
+    }
+
+    private func mutateOverlayConfig(_ mutate: (inout OverlayPresentationConfig) -> Void) {
+        var config = configStore.load()
+        var overlay = Self.reconciledOverlayConfig(config.overlay, slots: slots)
+        mutate(&overlay)
+        overlay = Self.reconciledOverlayConfig(overlay, slots: slots)
+        config.overlay = overlay
+        configStore.save(config)
+        overlayConfig = overlay
+        overlaySlotID = overlay.selectedSlotID
+        rebuildPresentationSettings(config: config)
+    }
+
+    nonisolated private static func reconciledOverlayConfig(_ overlay: OverlayPresentationConfig, slots: [Slot]) -> OverlayPresentationConfig {
+        var copy = overlay
+        copy.selectedSlotID = OverlaySlotSelection.reconciled(copy.selectedSlotID, slots: slots)
+        return copy
     }
 
     private func rebuildPresentationSettings(config: PresentationConfig) {

@@ -67,6 +67,7 @@ private final class MenuBarAppModel: ObservableObject {
     private let statusItemCoordinator: MenuBarStatusItemCoordinator
     private let overlayController: OverlayController
     private let settingsController: SettingsWindowController
+    private var cancellables: Set<AnyCancellable> = []
 
     init() {
         let viewModel = StatusViewModel()
@@ -85,6 +86,11 @@ private final class MenuBarAppModel: ObservableObject {
         let settingsController = SettingsWindowController(viewModel: viewModel)
         self.settingsController = settingsController
         viewModel.toggleOverlay = { [weak overlayController] in overlayController?.toggle() }
+        viewModel.$overlayConfig
+            .sink { [weak overlayController] config in
+                overlayController?.apply(config)
+            }
+            .store(in: &cancellables)
         viewModel.showPopover = { [weak statusItemCoordinator] in statusItemCoordinator?.firstController?.showPopover() }
         viewModel.openSettings = { [weak viewModel, weak settingsController] in
             viewModel?.refreshPresentationSettingsFromRegistry()
