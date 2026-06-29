@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ambit Settings — UX v0 mocks</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<style>
+:root{
+  --bg-app:#1c1c1e; --surface-1:#2a2a2d; --surface-2:#323236; --surface-3:#3a3a3f;
+  --text-primary:#f2f2f7; --text-secondary:#b7b7be; --text-muted:#8a8a90;
+  --accent:#3b9dff; --bg-accent:rgba(59,157,255,.16); --fill-accent:#3b9dff;
+  --success:#34c759; --warning:#ffb02e; --danger:#ff453a;
+  --border:#3a3a3f; --border-strong:#4a4a50; --radius:12px; --radius-sm:8px;
+  --shadow:0 18px 60px rgba(0,0,0,.5); --titlebar:#343438;
+}
+html[data-theme="light"]{
+  --bg-app:#d7d7db; --surface-1:#ffffff; --surface-2:#f4f4f6; --surface-3:#e9e9ed;
+  --text-primary:#1c1c1e; --text-secondary:#55555c; --text-muted:#8a8a90;
+  --accent:#0a84ff; --bg-accent:rgba(10,132,255,.12); --fill-accent:#0a84ff;
+  --success:#28a745; --warning:#e08e00; --danger:#e23b34;
+  --border:#dcdce0; --border-strong:#c6c6cc; --shadow:0 18px 60px rgba(0,0,0,.22); --titlebar:#ececef;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-app);color:var(--text-primary);
+  font:13.5px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;}
+h1,h2,h3{margin:0;font-weight:600}
+.page{max-width:1120px;margin:0 auto;padding:22px 22px 80px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
+.brand i{color:var(--accent)}
+.controls{display:flex;gap:8px;align-items:center}
+.themebtn{cursor:pointer;border:1px solid var(--border-strong);background:var(--surface-1);
+  color:var(--text-primary);border-radius:999px;padding:7px 14px;font-size:12.5px;display:flex;gap:6px;align-items:center}
+.intro{color:var(--text-secondary);margin:0 0 14px;max-width:720px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.tabs button{cursor:pointer;border:1px solid var(--border);background:var(--surface-1);color:var(--text-secondary);
+  padding:7px 13px;border-radius:999px;font-size:12.5px;display:flex;gap:6px;align-items:center}
+.tabs button:hover{color:var(--text-primary)}
+.tabs button.on{background:var(--bg-accent);border-color:var(--accent);color:var(--text-primary);font-weight:600}
+/* mac window */
+.mac{border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);background:var(--surface-1)}
+.titlebar{height:42px;background:var(--titlebar);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;padding:0 14px;position:relative}
+.lights{display:flex;gap:8px}
+.lights span{width:12px;height:12px;border-radius:50%}
+.lights .r{background:#ff5f57}.lights .y{background:#febc2e}.lights .g{background:#28c840}
+.titlebar .ttl{position:absolute;left:0;right:0;text-align:center;font-size:12.5px;color:var(--text-secondary);font-weight:600;pointer-events:none}
+.screen{display:none}
+.screen.on{display:block}
+.win{display:grid;grid-template-columns:256px 1fr;min-height:560px}
+.win.solo{grid-template-columns:1fr}
+.rail{background:var(--surface-2);border-right:1px solid var(--border);padding:12px 10px;overflow:auto}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface-1);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:7px 10px;color:var(--text-muted);margin-bottom:10px}
+.search input{border:0;background:transparent;color:var(--text-primary);outline:none;width:100%;font-size:13px}
+.grouphdr{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:10.5px;
+  letter-spacing:.07em;text-transform:uppercase;padding:12px 8px 4px;font-weight:700}
+.grouphdr .count{margin-left:auto;font-weight:600}
+.railrow{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-sm);
+  color:var(--text-secondary);cursor:pointer;font-size:13px;user-select:none}
+.railrow:hover{background:var(--surface-3)}
+.railrow.active{background:var(--bg-accent);color:var(--text-primary);font-weight:600}
+.railrow i.lead{color:var(--text-muted);width:16px;text-align:center;flex:none}
+.railrow.active i.lead{color:var(--accent)}
+.railrow .chev{margin-left:auto;color:var(--text-muted);font-size:13px}
+.railrow .num{color:var(--text-muted);font-size:11px;margin-left:auto}
+.railrow .num+.dot{margin-left:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.lg{width:11px;height:11px}
+.dot.ok{background:var(--success)} .dot.warn{background:var(--warning)} .dot.bad{background:var(--danger)}
+.dot.off{background:var(--text-muted)}
+.nest{margin-left:15px;border-left:1px solid var(--border);padding-left:6px}
+.pane{padding:22px 26px;overflow:auto}
+.crumbs{color:var(--text-muted);font-size:12px;margin-bottom:4px}
+.pane h1{font-size:20px;display:flex;align-items:center;gap:10px}
+.pane .sub{color:var(--text-secondary);margin:4px 0 16px;font-size:13px}
+.sectlabel{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);
+  font-weight:700;margin:22px 0 10px;display:flex;align-items:center;gap:8px}
+.sectlabel .hint{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text-muted);font-size:11px}
+.card{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;margin-bottom:12px}
+.card.flat{padding:6px 12px}
+.metric{display:grid;grid-template-columns:36px 1fr auto;gap:14px;align-items:center}
+.metric .ic{width:36px;height:36px;border-radius:9px;background:var(--surface-3);
+  display:grid;place-items:center;color:var(--accent);font-size:18px}
+.metric .name{font-weight:600}
+.metric .meta{color:var(--text-muted);font-size:12px}
+.spark{height:26px;width:120px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;border-radius:999px;
+  border:1px solid var(--border-strong);background:var(--surface-1);color:var(--text-secondary);cursor:pointer;user-select:none}
+.chip.on{background:var(--bg-accent);border-color:var(--accent);color:var(--text-primary)}
+.chip.dis{opacity:.45;cursor:not-allowed}
+.chip i{font-size:14px}
+.adv{margin-top:12px;border-top:1px solid var(--border);padding-top:10px;color:var(--text-secondary);
+  font-size:12.5px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.value{font-variant-numeric:tabular-nums}
+.macbar{display:flex;align-items:center;gap:16px;justify-content:flex-end;
+  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(0,0,0,.07));
+  border:1px solid var(--border);border-radius:10px;padding:8px 16px;margin-bottom:16px}
+.macbar .mbitem{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-primary);font-variant-numeric:tabular-nums;cursor:default}
+.macbar .mbitem i{color:var(--text-secondary)}
+.macbar .clock{color:var(--text-secondary)}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:999px;overflow:hidden;margin-bottom:14px}
+.seg button{border:0;background:var(--surface-1);color:var(--text-secondary);padding:7px 16px;font-size:12.5px;cursor:pointer}
+.seg button.on{background:var(--bg-accent);color:var(--text-primary);font-weight:600}
+.builditem{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.builditem .bh{display:flex;align-items:center;gap:10px;font-weight:600}
+.builditem .bh .grip{color:var(--text-muted);cursor:grab}
+.builditem .bh .prev{margin-left:auto;color:var(--text-secondary);font-size:12.5px;font-variant-numeric:tabular-nums}
+.tokens{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.token{display:inline-flex;align-items:center;gap:7px;background:var(--surface-1);border:1px solid var(--border-strong);
+  border-radius:999px;padding:5px 10px;font-size:12px}
+.token i.x{color:var(--text-muted);cursor:pointer}
+.token .src{color:var(--text-muted)}
+.addtoken{border:1px dashed var(--border-strong);color:var(--text-muted);background:transparent;cursor:pointer}
+.btn{border:1px solid var(--border-strong);background:var(--surface-1);color:var(--text-primary);
+  border-radius:var(--radius-sm);padding:7px 14px;font-size:12.5px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:#fff}
+.permrow{display:flex;align-items:center;gap:12px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;margin-bottom:16px}
+.permrow .ok{color:var(--success);font-size:20px}
+.permrow .btn{margin-left:auto}
+.alertrow{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border)}
+.alertrow:last-child{border-bottom:0}
+.alertrow .ai{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:16px;flex:none}
+.ai.warn{background:rgba(255,176,46,.16);color:var(--warning)}
+.ai.bad{background:rgba(255,69,58,.16);color:var(--danger)}
+.ai.ok{background:rgba(52,199,89,.16);color:var(--success)}
+.ai.mut{background:var(--surface-3);color:var(--text-muted)}
+.alertrow .at{font-weight:600}.alertrow .ad{color:var(--text-muted);font-size:12px}
+.alertrow .go{margin-left:auto;color:var(--text-muted)}
+.toggle{margin-left:auto;width:42px;height:25px;border-radius:999px;background:var(--surface-3);position:relative;cursor:pointer;flex:none;transition:.15s}
+.toggle.on{background:var(--accent)}
+.toggle::after{content:"";position:absolute;top:2.5px;left:2.5px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+.toggle.on::after{left:19px}
+.rule{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;font-size:13px}
+.pill{background:var(--surface-1);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:5px 10px}
+.pill.k{color:var(--accent);border-color:var(--accent);background:var(--bg-accent)}
+.pill.sel{cursor:pointer}
+.arrow{color:var(--text-muted)}
+.swatch{width:14px;height:14px;border-radius:4px;display:inline-block;vertical-align:-2px;margin-right:6px}
+.gridcols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.note{display:flex;gap:10px;background:var(--bg-accent);border:1px solid var(--accent);border-radius:var(--radius);
+  padding:11px 14px;margin:6px 0 16px;font-size:12.5px;color:var(--text-primary)}
+.note i{color:var(--accent);font-size:16px;margin-top:1px}
+.ccgrid{display:grid;grid-template-columns:repeat(2,160px);gap:12px}
+.ccw{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:13px 14px;min-height:78px;position:relative}
+.ccw .lab{color:var(--text-secondary);font-size:11px;display:flex;align-items:center;gap:6px}
+.ccw .big{font-size:24px;font-weight:600;margin-top:8px;font-variant-numeric:tabular-nums}
+.ccw .dot{position:absolute;top:13px;right:13px}
+.intlist .introw{display:flex;align-items:center;gap:13px;padding:13px 6px;border-bottom:1px solid var(--border)}
+.intlist .introw:last-child{border-bottom:0}
+.introw .glyph{width:38px;height:38px;border-radius:10px;background:var(--surface-3);display:grid;place-items:center;font-size:19px;color:var(--accent);flex:none}
+.introw .nm{font-weight:600}.introw .ds{color:var(--text-muted);font-size:12px}
+.introw .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.badge{font-size:11px;color:var(--text-muted);background:var(--surface-3);border-radius:999px;padding:3px 9px}
+@media(max-width:780px){.win{grid-template-columns:1fr}.rail{display:none}.gridcols,.ccgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <div class="brand"><i class="ti ti-radar-2"></i> Ambit — Settings UX (v0 mocks)</div>
+    <div class="controls">
+      <button class="themebtn" id="themebtn"><i class="ti ti-contrast-2"></i><span>Light / dark</span></button>
+    </div>
+  </div>
+  <p class="intro">Interactive click-through. Switch screens with the tabs; chips, toggles, and segmented
+  switches actually respond. The model (see <code>spec.md</code>): enable usages in the provider, then
+  compose them in surfaces.</p>
+  <div class="tabs" id="tabs">
+    <button data-s="integrations" class="on"><i class="ti ti-apps"></i> Integrations</button>
+    <button data-s="instance"><i class="ti ti-router"></i> Instance detail</button>
+    <button data-s="surfaces"><i class="ti ti-layout-navbar"></i> Surfaces</button>
+    <button data-s="notifications"><i class="ti ti-bell"></i> Notifications</button>
+    <button data-s="contexts"><i class="ti ti-map-pin"></i> Contexts</button>
+    <button data-s="picker"><i class="ti ti-pointer"></i> Picker / expression</button>
+    <button data-s="inspector"><i class="ti ti-zoom-scan"></i> Why-active inspector</button>
+    <button data-s="scale"><i class="ti ti-stack-2"></i> Rail at scale</button>
+    <button data-s="overview"><i class="ti ti-sitemap"></i> Model &amp; decisions</button>
+  </div>
+
+  <div class="mac">
+    <div class="titlebar">
+      <div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+      <div class="ttl">Ambit Settings</div>
+    </div>
+
+    <style>
+      .tree{font-size:13px}
+      .tnode{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-sm);cursor:pointer}
+      .tnode:hover{background:var(--surface-3)}
+      .tnode .addr{margin-left:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--text-muted)}
+      .tnode .vt{font-size:10.5px;color:var(--text-secondary);background:var(--surface-3);border-radius:999px;padding:2px 8px;margin-left:auto}
+      .tnode .vt+.addr{margin-left:10px}
+      .tindent{margin-left:16px;border-left:1px solid var(--border);padding-left:8px}
+      .leaf{color:var(--text-secondary)}
+      .expr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:var(--surface-3);
+        border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;white-space:pre-wrap;color:var(--text-primary)}
+      .trace{display:flex;flex-direction:column;gap:0}
+      .layer{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface-1)}
+      .layer.win{border-color:var(--accent);background:var(--bg-accent)}
+      .layer.muted{opacity:.55}
+      .layer .lv{margin-left:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+      .layer .tag{font-size:11px;color:var(--text-muted);background:var(--surface-3);border-radius:999px;padding:2px 9px}
+    </style>
+    <!-- ===== INTEGRATIONS ===== -->
+    <div class="screen on" data-screen="integrations">
+      <div class="win">
+        <aside class="rail">
+          <div class="search"><i class="ti ti-search"></i><input placeholder="Search…"></div>
+          <div class="grouphdr">Monitors <span class="count">6</span></div>
+          <div class="railrow active"><i class="lead ti ti-apps"></i> All integrations</div>
+          <div class="railrow"><i class="lead ti ti-cpu"></i> System <span class="dot ok" style="margin-left:auto"></span></div>
+          <div class="railrow"><i class="lead ti ti-router"></i> Ping <span class="num">3</span><span class="dot warn"></span></div>
+          <div class="railrow" style="color:var(--accent)"><i class="lead ti ti-plus"></i> Add monitor</div>
+          <div class="grouphdr">Surfaces</div>
+          <div class="railrow"><i class="lead ti ti-layout-navbar"></i> Menu bar</div>
+          <div class="railrow"><i class="lead ti ti-adjustments"></i> Control Center</div>
+          <div class="grouphdr">Alerts</div>
+          <div class="railrow"><i class="lead ti ti-bell"></i> Notifications</div>
+          <div class="grouphdr">App</div>
+          <div class="railrow"><i class="lead ti ti-settings"></i> General</div>
+          <div class="railrow"><i class="lead ti ti-history"></i> History</div>
+          <div class="railrow"><i class="lead ti ti-stethoscope"></i> Diagnostics</div>
+        </aside>
+        <div class="pane">
+          <h1>Integrations</h1>
+          <div class="sub">What Ambit is watching. Enable an integration, then choose how each metric is used.</div>
+          <div class="sectlabel">Enabled</div>
+          <div class="card intlist">
+            <div class="introw"><div class="glyph"><i class="ti ti-cpu"></i></div>
+              <div><div class="nm">System</div><div class="ds">CPU, memory, disk, battery, network — this Mac</div></div>
+              <div class="right"><span class="badge">5 metrics</span><span class="dot lg ok"></span><div class="toggle on"></div></div></div>
+            <div class="introw"><div class="glyph"><i class="ti ti-router"></i></div>
+              <div><div class="nm">Ping</div><div class="ds">3 hosts · 1 warning</div></div>
+              <div class="right"><span class="badge">3 hosts</span><span class="dot lg warn"></span><div class="toggle on"></div></div></div>
+          </div>
+          <div class="sectlabel">Add monitor <span class="hint">click a type to configure</span></div>
+          <div class="gridcols">
+            <div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+              <div class="glyph" style="width:34px;height:34px;font-size:17px"><i class="ti ti-router"></i></div>
+              <div><div style="font-weight:600">Ping host</div><div class="ds" style="color:var(--text-muted);font-size:12px">ICMP / TCP reachability &amp; latency</div></div></div>
+            <div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+              <div class="glyph" style="width:34px;height:34px;font-size:17px"><i class="ti ti-world-www"></i></div>
+              <div><div style="font-weight:600">HTTP endpoint</div><div class="ds" style="color:var(--text-muted);font-size:12px">Status code, response time, SSL</div></div></div>
+            <div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+              <div class="glyph" style="width:34px;height:34px;font-size:17px"><i class="ti ti-wifi"></i></div>
+              <div><div style="font-weight:600">GL.iNet router</div><div class="ds" style="color:var(--text-muted);font-size:12px">Clients, throughput, signal</div></div></div>
+            <div class="card" style="display:flex;gap:12px;align-items:center;cursor:pointer">
+              <div class="glyph" style="width:34px;height:34px;font-size:17px"><i class="ti ti-dots"></i></div>
+              <div><div style="font-weight:600">Browse all…</div><div class="ds" style="color:var(--text-muted);font-size:12px">Starlink, EcoFlow, databases, sensors…</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== INSTANCE DETAIL ===== -->
+    <div class="screen" data-screen="instance">
+      <div class="win">
+        <aside class="rail">
+          <div class="search"><i class="ti ti-search"></i><input placeholder="Search…"></div>
+          <div class="grouphdr">Monitors <span class="count">6</span></div>
+          <div class="railrow"><i class="lead ti ti-cpu"></i> System <span class="dot ok" style="margin-left:auto"></span></div>
+          <div class="railrow active"><i class="lead ti ti-router"></i> Ping <i class="chev ti ti-chevron-down"></i></div>
+          <div class="nest">
+            <div class="railrow active"><span class="dot ok"></span> 1.1.1.1</div>
+            <div class="railrow"><span class="dot ok"></span> 8.8.8.8</div>
+            <div class="railrow"><span class="dot warn"></span> Gateway</div>
+          </div>
+          <div class="grouphdr">Surfaces</div>
+          <div class="railrow"><i class="lead ti ti-layout-navbar"></i> Menu bar</div>
+          <div class="railrow"><i class="lead ti ti-adjustments"></i> Control Center</div>
+          <div class="grouphdr">Alerts</div>
+          <div class="railrow"><i class="lead ti ti-bell"></i> Notifications</div>
+        </aside>
+        <div class="pane">
+          <div class="crumbs">Monitors › Ping</div>
+          <h1><i class="ti ti-router" style="color:var(--accent)"></i> 1.1.1.1 <span class="dot lg ok"></span></h1>
+          <div class="sub">Cloudflare DNS · responding in 12 ms · checked 3s ago</div>
+          <div class="sectlabel">Metrics <span class="hint">toggle where each one is allowed to appear</span></div>
+          <div class="card">
+            <div class="metric">
+              <div class="ic"><i class="ti ti-activity-heartbeat"></i></div>
+              <div><div class="name">Latency</div><div class="meta">round-trip time · 12 ms now</div></div>
+              <svg class="spark" viewBox="0 0 120 26"><polyline fill="none" stroke="var(--accent)" stroke-width="2"
+                points="0,18 12,16 24,19 36,14 48,17 60,12 72,15 84,11 96,14 108,10 120,13"/></svg>
+            </div>
+            <div class="chips">
+              <span class="chip on"><i class="ti ti-layout-navbar"></i> Menu bar</span>
+              <span class="chip on"><i class="ti ti-window-maximize"></i> Popover</span>
+              <span class="chip on"><i class="ti ti-bell"></i> Alerts</span>
+              <span class="chip"><i class="ti ti-adjustments"></i> Control Center</span>
+              <span class="chip dis"><i class="ti ti-device-mobile"></i> Dynamic Island · iOS</span>
+              <span class="chip dis"><i class="ti ti-clock-play"></i> Live Activity · iOS</span>
+            </div>
+            <div style="margin-top:10px;font-size:12px;color:var(--text-muted)">
+              <i class="ti ti-arrow-down-right"></i> Added to <b style="color:var(--text-secondary)">Menu bar · Popover · Alerts</b> —
+              <a href="#" style="color:var(--accent)">arrange in Surfaces</a></div>
+            <div class="adv"><i class="ti ti-chevron-right"></i> Advanced — Warn above 120 ms · Down after 3 failed checks · Role: Auto</div>
+          </div>
+          <div class="card">
+            <div class="metric">
+              <div class="ic"><i class="ti ti-arrows-up-down"></i></div>
+              <div><div class="name">Packet loss</div><div class="meta">0% over last 5 min</div></div>
+              <svg class="spark" viewBox="0 0 120 26"><polyline fill="none" stroke="var(--success)" stroke-width="2"
+                points="0,22 24,22 48,22 72,22 96,22 120,22"/></svg>
+            </div>
+            <div class="chips">
+              <span class="chip"><i class="ti ti-layout-navbar"></i> Menu bar</span>
+              <span class="chip on"><i class="ti ti-window-maximize"></i> Popover</span>
+              <span class="chip on"><i class="ti ti-bell"></i> Alerts</span>
+              <span class="chip"><i class="ti ti-adjustments"></i> Control Center</span>
+              <span class="chip dis"><i class="ti ti-device-mobile"></i> Dynamic Island · iOS</span>
+              <span class="chip dis"><i class="ti ti-clock-play"></i> Live Activity · iOS</span>
+            </div>
+          </div>
+          <div class="note"><i class="ti ti-info-circle"></i>
+            <div><b>Decision — capability defaults.</b> These usage choices become the default for new Ping hosts.
+            <a href="#" style="color:var(--accent)">Apply to all 3 hosts now</a>, or leave per-host.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SURFACES ===== -->
+    <div class="screen" data-screen="surfaces">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Surfaces</h1>
+          <div class="sub">A graphical canvas per surface. It shows <b>everything you enabled for it across all
+          instances</b> — you only arrange (group, reorder, combine/split). Membership is set on each metric in its instance.</div>
+          <div class="tabs" data-subtabs>
+            <button class="on" data-sub="menubar"><i class="ti ti-layout-navbar"></i> Menu bar</button>
+            <button data-sub="cc"><i class="ti ti-adjustments"></i> Control Center</button>
+            <button class="chip dis" style="cursor:not-allowed"><i class="ti ti-device-mobile"></i> Dynamic Island · iOS</button>
+            <button class="chip dis" style="cursor:not-allowed"><i class="ti ti-clock-play"></i> Live Activity · iOS</button>
+          </div>
+
+          <div data-subscreen="menubar">
+            <div class="sectlabel">Preview</div>
+            <div class="macbar">
+              <span class="mbitem"><i class="ti ti-cpu"></i> 18%</span>
+              <span class="mbitem"><i class="ti ti-router"></i> 12 ms</span>
+              <span class="mbitem"><i class="ti ti-battery-3"></i> 84%</span>
+              <span class="clock">9:41</span>
+            </div>
+            <div class="note"><i class="ti ti-info-circle"></i>
+              <div><b>Decision — combined vs separate.</b> A per-surface default below; any item can still be split or merged individually.</div></div>
+            <div class="seg"><button class="on">Separate items</button><button>Combine into one</button></div>
+            <div class="sectlabel">Items <span class="hint">everything enabled for Menu bar · drag to reorder, merge to combine</span></div>
+            <div class="builditem">
+              <div class="bh"><i class="grip ti ti-grip-vertical"></i> System CPU <span class="prev">18%</span></div>
+              <div class="tokens"><span class="token"><i class="ti ti-cpu"></i> CPU load <span class="src">· System</span> <i class="x ti ti-x"></i></span>
+                <span class="token addtoken"><i class="ti ti-plus"></i> Add metric</span></div></div>
+            <div class="builditem">
+              <div class="bh"><i class="grip ti ti-grip-vertical"></i> Ping <span class="prev">12 ms</span></div>
+              <div class="tokens"><span class="token"><i class="ti ti-activity-heartbeat"></i> 1.1.1.1 latency <span class="src">· Ping</span> <i class="x ti ti-x"></i></span>
+                <span class="token addtoken"><i class="ti ti-plus"></i> Add metric</span></div></div>
+            <div class="builditem">
+              <div class="bh"><i class="grip ti ti-grip-vertical"></i> Battery <span class="prev">84%</span></div>
+              <div class="tokens"><span class="token"><i class="ti ti-battery-3"></i> Charge <span class="src">· System</span> <i class="x ti ti-x"></i></span>
+                <span class="token addtoken"><i class="ti ti-plus"></i> Add metric</span></div></div>
+            <button class="btn"><i class="ti ti-plus"></i> Add menu-bar item</button>
+          </div>
+
+          <div data-subscreen="cc" style="display:none">
+            <div class="sectlabel">Preview <span class="hint">Control Center widgets</span></div>
+            <div class="ccgrid">
+              <div class="ccw"><div class="lab"><i class="ti ti-cpu"></i> CPU</div><div class="big">18%</div><span class="dot ok"></span></div>
+              <div class="ccw"><div class="lab"><i class="ti ti-router"></i> Ping</div><div class="big">12 ms</div><span class="dot ok"></span></div>
+              <div class="ccw"><div class="lab"><i class="ti ti-battery-3"></i> Battery</div><div class="big">84%</div><span class="dot ok"></span></div>
+              <div class="ccw" style="border-style:dashed;display:grid;place-items:center;color:var(--text-muted);cursor:pointer">
+                <div style="text-align:center"><i class="ti ti-plus" style="font-size:20px"></i><div style="font-size:12px;margin-top:4px">Add widget</div></div></div>
+            </div>
+            <div class="sectlabel">Available <span class="hint">only metrics enabled for Control Center</span></div>
+            <div class="tokens">
+              <span class="token"><i class="ti ti-server-bolt"></i> Memory <span class="src">· System</span></span>
+              <span class="token"><i class="ti ti-network"></i> Network <span class="src">· System</span></span>
+              <span class="token"><i class="ti ti-database"></i> Disk <span class="src">· System</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== NOTIFICATIONS ===== -->
+    <div class="screen" data-screen="notifications">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Notifications</h1>
+          <div class="sub">Three layers over one alert engine: provider built-ins, your custom rules, and global behavior.</div>
+          <div class="permrow">
+            <i class="ok ti ti-circle-check"></i>
+            <div><div style="font-weight:600">Notifications are allowed</div>
+            <div style="color:var(--text-muted);font-size:12px">Ambit can post banners to macOS Notification Center</div></div>
+            <button class="btn">Send a test</button>
+          </div>
+          <div class="sectlabel">Built-in alerts <span class="hint">declared by each provider</span></div>
+          <div class="card">
+            <div class="grouphdr" style="padding-top:0"><i class="ti ti-router"></i> Ping</div>
+            <div class="alertrow"><div class="ai bad"><i class="ti ti-plug-connected-x"></i></div>
+              <div><div class="at">Host down</div><div class="ad">No response past the failure threshold</div></div><div class="toggle on"></div></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-plug-connected"></i></div>
+              <div><div class="at">Host recovered</div><div class="ad">Responding again after being down</div></div><div class="toggle on"></div></div>
+            <div class="alertrow"><div class="ai warn"><i class="ti ti-clock-exclamation"></i></div>
+              <div><div class="at">High latency</div><div class="ad">Round-trip above the warn threshold</div></div><div class="toggle"></div></div>
+            <div class="alertrow"><div class="ai bad"><i class="ti ti-world-x"></i></div>
+              <div><div class="at">Internet loss</div><div class="ad">All upstream hosts unreachable</div></div><div class="toggle on"></div></div>
+          </div>
+          <div class="card">
+            <div class="grouphdr" style="padding-top:0"><i class="ti ti-cpu"></i> System</div>
+            <div class="alertrow"><div class="ai warn"><i class="ti ti-cpu"></i></div>
+              <div><div class="at">CPU high</div><div class="ad">Sustained load above threshold</div></div><div class="toggle on"></div></div>
+            <div class="alertrow"><div class="ai warn"><i class="ti ti-server-bolt"></i></div>
+              <div><div class="at">Memory pressure</div><div class="ad">Free memory critically low</div></div><div class="toggle"></div></div>
+            <div class="alertrow"><div class="ai bad"><i class="ti ti-battery-1"></i></div>
+              <div><div class="at">Battery low</div><div class="ad">Charge below threshold on battery</div></div><div class="toggle on"></div></div>
+          </div>
+          <div class="sectlabel">Custom rules <span class="hint">when a metric does X, do Y</span></div>
+          <div class="rule"><span class="pill">When</span><span class="pill k sel">System · CPU load</span>
+            <span class="pill sel">is above</span><span class="pill sel">90%</span><span class="pill">for</span><span class="pill sel">5 min</span>
+            <span class="arrow"><i class="ti ti-arrow-right"></i></span><span class="pill"><i class="ti ti-bell"></i> Notify me</span>
+            <span class="toggle on" style="margin-left:auto"></span></div>
+          <!-- expanded editor -->
+          <div class="card" style="border-color:var(--accent)">
+            <div style="font-weight:600;margin-bottom:10px"><i class="ti ti-pencil" style="color:var(--accent)"></i> New rule — "When it rains"</div>
+            <div class="rule" style="border:0;background:transparent;padding:0;margin:0">
+              <span class="pill">When</span>
+              <span class="pill k sel">Weather · Condition ▾</span>
+              <span class="pill sel">is Rain ▾</span>
+              <span class="pill">held</span><span class="pill sel">1 min ▾</span>
+            </div>
+            <div class="sectlabel" style="margin:14px 0 8px">Then — reactions <span class="hint">runs while the condition holds</span></div>
+            <div class="builditem">
+              <div class="bh"><i class="grip ti ti-grip-vertical"></i> <i class="ti ti-photo" style="color:var(--accent)"></i> Change menu-bar icon
+                <span class="prev">☁︎ → 🌧</span></div></div>
+            <div class="builditem">
+              <div class="bh"><i class="grip ti ti-grip-vertical"></i> <i class="ti ti-bell" style="color:var(--accent)"></i> Notify
+                <span class="prev">persist until it stops</span></div>
+              <div class="tokens">
+                <span class="token"><i class="ti ti-car"></i> Close Tesla windows <span class="src">· Tesla</span></span>
+                <span class="token"><i class="ti ti-windmill"></i> Close skylight <span class="src">· Skylight</span></span>
+                <span class="token addtoken"><i class="ti ti-plus"></i> Add action button</span></div></div>
+            <div class="tokens" style="margin-top:4px">
+              <span class="token addtoken"><i class="ti ti-bell"></i> Notify</span>
+              <span class="token addtoken"><i class="ti ti-photo"></i> Change surface</span>
+              <span class="token addtoken"><i class="ti ti-player-play"></i> Run command</span>
+              <span class="token addtoken"><i class="ti ti-square-rounded-letter-s"></i> Run Shortcut</span>
+              <span class="token addtoken"><i class="ti ti-map-pin"></i> Apply context</span></div>
+            <div style="color:var(--text-muted);font-size:12px;margin-top:10px">
+              Action buttons (Close windows…) come from commands that providers declare. "Persist until it stops"
+              binds the notification to the condition's state, not a one-off ping.</div>
+            <div style="margin-top:12px;display:flex;gap:8px"><button class="btn accent">Add rule</button><button class="btn">Cancel</button></div>
+          </div>
+          <div class="sectlabel">Global</div>
+          <div class="card">
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-zzz"></i></div>
+              <div><div class="at">Quiet hours</div><div class="ad">Silence non-critical alerts 10pm–7am</div></div><div class="toggle on"></div></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-refresh-alert"></i></div>
+              <div><div class="at">Default cooldown</div><div class="ad">Don't repeat the same alert within 10 min</div></div><div class="toggle on"></div></div>
+            <div class="alertrow"><div class="ai mut"><i class="ti ti-bell-off"></i></div>
+              <div><div class="at">Snooze all</div><div class="ad">Pause every notification temporarily</div></div><div class="toggle"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PICKER / EXPRESSION ===== -->
+    <div class="screen" data-screen="picker">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Choose a signal</h1>
+          <div class="sub">Any readout from any provider is a valid trigger — the list is generated from the
+          registry, so signals we never explicitly designed for show up here automatically. Same picker for
+          commands and settable properties.</div>
+          <div class="seg"><button class="on">Signals</button><button>Commands</button><button>Properties</button></div>
+          <div class="search"><i class="ti ti-search"></i><input placeholder="Filter signals… (e.g. latency, rain, battery)"></div>
+          <div class="card tree">
+            <div class="tnode"><i class="ti ti-chevron-down"></i><i class="ti ti-cpu" style="color:var(--accent)"></i> System</div>
+            <div class="tindent">
+              <div class="tnode leaf"><i class="ti ti-cpu"></i> CPU load <span class="vt">number · %</span><span class="addr">system/cpu.load</span></div>
+              <div class="tnode leaf"><i class="ti ti-server-bolt"></i> Memory pressure <span class="vt">number · %</span><span class="addr">system/memory.pressure</span></div>
+              <div class="tnode leaf"><i class="ti ti-battery-3"></i> Battery charge <span class="vt">number · %</span><span class="addr">system/battery.charge</span></div>
+            </div>
+            <div class="tnode"><i class="ti ti-chevron-down"></i><i class="ti ti-router" style="color:var(--accent)"></i> Ping</div>
+            <div class="tindent">
+              <div class="tnode leaf"><i class="ti ti-activity-heartbeat"></i> 1.1.1.1 · latency <span class="vt">number · ms</span><span class="addr">ping@1.1.1.1:443/latency_ms</span></div>
+              <div class="tnode leaf"><i class="ti ti-plug-connected"></i> Gateway · reachable <span class="vt">bool</span><span class="addr">ping@gw/reachable</span></div>
+            </div>
+            <div class="tnode"><i class="ti ti-chevron-down"></i><i class="ti ti-cloud-rain" style="color:var(--accent)"></i> Weather</div>
+            <div class="tindent">
+              <div class="tnode leaf" style="background:var(--bg-accent)"><i class="ti ti-cloud"></i> Condition <span class="vt">enum · clear/cloud/rain/snow</span><span class="addr">weather@home/condition</span></div>
+              <div class="tnode leaf"><i class="ti ti-temperature"></i> Temperature <span class="vt">number · °C</span><span class="addr">weather@home/temp_c</span></div>
+            </div>
+          </div>
+          <div class="adv"><i class="ti ti-chevron-down"></i> Advanced — edit the raw expression</div>
+          <div class="expr">when  weather@home/condition  transitionedTo  "rain"
+      held 60s
+  and  any(
+         system/battery.charge  &lt;  20,
+         ping@gw/reachable  ==  false
+       )</div>
+          <div style="color:var(--text-muted);font-size:12px;margin-top:10px">
+            The expression and the visual builder are two views of the same <code>Condition</code> tree. Autocomplete
+            offers every address in the registry.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== INSPECTOR ===== -->
+    <div class="screen" data-screen="inspector">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Why is this active?</h1>
+          <div class="sub">The state surface for a big ruleset: what's active, who wins a conflict, and the trace
+          that produced the final value.</div>
+          <div class="sectlabel">Active now</div>
+          <div class="card flat">
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-home"></i></div><div><div class="at">Context · Home</div><div class="ad">priority 1 · SSID "HomeWiFi" held 4m</div></div><span class="tag">overlay applied</span></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-moon"></i></div><div><div class="at">Context · Evening</div><div class="ad">priority 5 · schedule 18:00–23:00</div></div><span class="tag">overlay applied</span></div>
+            <div class="alertrow"><div class="ai warn"><i class="ti ti-cloud-rain"></i></div><div><div class="at">Rule · when-it-rains</div><div class="ad">condition true · 3m · reactions running</div></div><span class="tag">firing</span></div>
+            <div class="alertrow"><div class="ai mut"><i class="ti ti-plug-connected-x"></i></div><div><div class="at">Rule · gateway-down</div><div class="ad">condition false · idle</div></div><span class="tag">idle</span></div>
+          </div>
+          <div class="sectlabel">Trace <span class="hint">surface:menubar/item.weather#icon</span></div>
+          <div class="card trace">
+            <div class="layer muted"><span class="tag">base</span> default presentation <span class="lv">icon: cloud</span></div>
+            <div class="layer muted"><span class="tag">overlay · Home (p1)</span> shows Weather, no icon change <span class="lv">— </span></div>
+            <div class="layer muted"><span class="tag">overlay · Evening (p5)</span> dims menu bar <span class="lv">— </span></div>
+            <div class="layer win"><span class="tag">reaction · when-it-rains</span> mutateSurface while raining <span class="lv">icon: cloud-rain ✓</span></div>
+          </div>
+          <div class="note"><i class="ti ti-arrows-shuffle"></i>
+            <div><b>Conflict resolved.</b> Two writers set this icon; the rain rule wins by precedence over the base.
+            Highest-priority last-writer wins, base underneath — deterministic and the same function the goldens test.</div></div>
+          <div class="card" style="display:flex;align-items:center;gap:12px">
+            <div class="ai ok"><i class="ti ti-shield-check"></i></div>
+            <div><div class="at">No cycles detected</div><div class="ad">12 rules · 4 contexts evaluated in 0.8 ms · all conditions debounced</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== CONTEXTS ===== -->
+    <div class="screen" data-screen="contexts">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Contexts</h1>
+          <div class="sub">Detected situations that change what you see and which alerts run. Several can be
+          active at once — they stack by priority over your base setup.</div>
+          <div class="note"><i class="ti ti-map-pin"></i>
+            <div><b>Active now:</b> <span class="pill k" style="padding:3px 9px">● Home</span>
+            <span class="pill" style="padding:3px 9px">● Evening</span> — Work, Car inactive.</div></div>
+          <div class="sectlabel">Contexts <span class="hint">drag to set priority · higher wins on conflict</span></div>
+
+          <div class="card" style="border-color:var(--accent)">
+            <div class="alertrow" style="border:0;padding:0 0 8px">
+              <div class="ai ok"><i class="ti ti-home"></i></div>
+              <div><div class="at">Home <span class="dot ok"></span></div><div class="ad">active now · priority 1</div></div>
+              <div class="toggle on"></div></div>
+            <div class="rule" style="margin:6px 0 0">
+              <span class="pill">When</span><span class="pill k sel">Network · SSID is "HomeWiFi"</span>
+              <span class="pill">or</span><span class="pill k sel">Location in "Home"</span>
+              <span class="pill">held</span><span class="pill sel">30 s</span></div>
+            <div class="sectlabel" style="margin:14px 0 8px">While active</div>
+            <div class="chips" style="margin-top:0">
+              <span class="chip on"><i class="ti ti-cloud-rain"></i> Show Weather</span>
+              <span class="chip on"><i class="ti ti-bolt"></i> Show EcoFlow</span>
+              <span class="chip"><i class="ti ti-briefcase"></i> Hide Work hosts</span>
+              <span class="chip on"><i class="ti ti-bell-off"></i> Mute Ping latency alerts</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="alertrow" style="border:0;padding:0 0 8px">
+              <div class="ai mut"><i class="ti ti-briefcase"></i></div>
+              <div><div class="at">Work</div><div class="ad">inactive · priority 2</div></div>
+              <div class="toggle on"></div></div>
+            <div class="rule" style="margin:6px 0 0">
+              <span class="pill">When</span><span class="pill k sel">Calendar is busy</span>
+              <span class="pill">or</span><span class="pill k sel">Schedule "Work hours"</span></div>
+          </div>
+
+          <div class="card">
+            <div class="alertrow" style="border:0;padding:0 0 8px">
+              <div class="ai mut"><i class="ti ti-car"></i></div>
+              <div><div class="at">Car</div><div class="ad">inactive · priority 3</div></div>
+              <div class="toggle on"></div></div>
+            <div class="rule" style="margin:6px 0 0">
+              <span class="pill">When</span><span class="pill k sel">Network · SSID is "Tesla"</span></div>
+          </div>
+
+          <button class="btn"><i class="ti ti-plus"></i> New context</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== RAIL AT SCALE ===== -->
+    <div class="screen" data-screen="scale">
+      <div class="win">
+        <aside class="rail">
+          <div class="search"><i class="ti ti-search"></i><input placeholder="Search 41 monitors…"></div>
+          <div class="grouphdr">Monitors <span class="count">41</span></div>
+          <div class="railrow"><i class="lead ti ti-cpu"></i> System <span class="dot ok" style="margin-left:auto"></span></div>
+          <div class="railrow active"><i class="lead ti ti-router"></i> Ping <span class="num">12</span><span class="dot bad"></span></div>
+          <div class="railrow"><i class="lead ti ti-wifi"></i> GL.iNet routers <span class="num">4</span><span class="dot ok"></span></div>
+          <div class="railrow"><i class="lead ti ti-satellite"></i> Starlink <span class="dot warn" style="margin-left:auto"></span></div>
+          <div class="railrow"><i class="lead ti ti-server-2"></i> Hosts (HTTP) <span class="num">9</span><span class="dot ok"></span></div>
+          <div class="railrow"><i class="lead ti ti-database"></i> Databases <span class="num">5</span><span class="dot ok"></span></div>
+          <div class="railrow"><i class="lead ti ti-bolt"></i> EcoFlow <span class="num">3</span><span class="dot ok"></span></div>
+          <div class="railrow"><i class="lead ti ti-temperature"></i> Sensors <span class="num">6</span><span class="dot ok"></span></div>
+          <div class="railrow" style="color:var(--accent)"><i class="lead ti ti-plus"></i> Add monitor</div>
+          <div class="grouphdr">Surfaces</div>
+          <div class="railrow"><i class="lead ti ti-layout-navbar"></i> Menu bar</div>
+          <div class="railrow"><i class="lead ti ti-adjustments"></i> Control Center</div>
+          <div class="railrow" style="opacity:.5"><i class="lead ti ti-device-mobile"></i> Dynamic Island</div>
+          <div class="grouphdr">Alerts</div>
+          <div class="railrow"><i class="lead ti ti-bell"></i> Notifications</div>
+        </aside>
+        <div class="pane">
+          <div class="crumbs">Monitors › Ping</div>
+          <h1><i class="ti ti-router" style="color:var(--accent)"></i> Ping <span class="dot lg bad"></span></h1>
+          <div class="sub">12 hosts · 1 down (Gateway), 1 high latency · expand the group in the rail to drill in</div>
+          <div class="card" style="display:flex;align-items:center;gap:12px">
+            <div class="ai bad"><i class="ti ti-alert-triangle"></i></div>
+            <div><div class="at">Gateway is down</div><div class="ad">No response for 47s · 16 failed checks</div></div>
+            <button class="btn" style="margin-left:auto">View</button></div>
+          <div class="card" style="display:flex;align-items:center;gap:12px">
+            <div class="ai warn"><i class="ti ti-clock-exclamation"></i></div>
+            <div><div class="at">8.8.8.8 latency elevated</div><div class="ad">182 ms · warn threshold 120 ms</div></div>
+            <button class="btn" style="margin-left:auto">View</button></div>
+          <div class="note"><i class="ti ti-info-circle"></i>
+            <div>At scale, groups stay collapsed and a failing instance bubbles a red dot up to its group, so the
+            one problem in 41 monitors is visible without scrolling.</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MODEL & DECISIONS ===== -->
+    <div class="screen" data-screen="overview">
+      <div class="win solo">
+        <div class="pane">
+          <h1>Model &amp; decisions</h1>
+          <div class="sub">How the pieces fit, and where the v0 open questions landed.</div>
+          <div class="sectlabel">The flow</div>
+          <div class="card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span class="token"><i class="ti ti-circle-1"></i> Enable the integration</span>
+            <i class="arrow ti ti-arrow-right"></i>
+            <span class="token"><i class="ti ti-circle-2"></i> Enable how it's used (per metric)</span>
+            <i class="arrow ti ti-arrow-right"></i>
+            <span class="token"><i class="ti ti-circle-3"></i> Compose it in surfaces &amp; alerts</span>
+          </div>
+          <div class="gridcols">
+            <div>
+              <div class="sectlabel">Usages (the gate)</div>
+              <div class="card">
+                <div class="chips" style="margin-top:0">
+                  <span class="chip on"><i class="ti ti-layout-navbar"></i> Menu bar</span>
+                  <span class="chip on"><i class="ti ti-window-maximize"></i> Popover</span>
+                  <span class="chip on"><i class="ti ti-bell"></i> Alerts</span>
+                  <span class="chip"><i class="ti ti-adjustments"></i> Control Center</span>
+                  <span class="chip dis"><i class="ti ti-device-mobile"></i> Dynamic Island</span>
+                  <span class="chip dis"><i class="ti ti-clock-play"></i> Live Activity</span>
+                </div>
+                <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Set per metric in the provider. Nothing shows anywhere until enabled here.</div>
+              </div>
+            </div>
+            <div>
+              <div class="sectlabel">Surfaces (the family)</div>
+              <div class="card flat">
+                <div class="alertrow"><div class="ai ok"><i class="ti ti-layout-navbar"></i></div><div><div class="at">Menu bar</div><div class="ad">macOS · 3 items</div></div><i class="go ti ti-chevron-right"></i></div>
+                <div class="alertrow"><div class="ai ok"><i class="ti ti-adjustments"></i></div><div><div class="at">Control Center</div><div class="ad">macOS · 3 widgets</div></div><i class="go ti ti-chevron-right"></i></div>
+                <div class="alertrow"><div class="ai ok"><i class="ti ti-bell"></i></div><div><div class="at">Notifications</div><div class="ad">Alerts · all platforms</div></div><i class="go ti ti-chevron-right"></i></div>
+                <div class="alertrow" style="opacity:.5"><div class="ai mut"><i class="ti ti-device-mobile"></i></div><div><div class="at">Dynamic Island</div><div class="ad">iOS · later</div></div></div>
+                <div class="alertrow" style="opacity:.5"><div class="ai mut"><i class="ti ti-clock-play"></i></div><div><div class="at">Live Activity</div><div class="ad">iOS · later</div></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="sectlabel">Decisions (v0)</div>
+          <div class="card">
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-check"></i></div>
+              <div><div class="at">Menu bar lives only under Surfaces</div><div class="ad">No duplicate quick-link group — keeps the rail clean</div></div></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-check"></i></div>
+              <div><div class="at">Custom rules stay in Notifications for now</div><div class="ad">They graduate to an Automations pane once actions go beyond Notify</div></div></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-check"></i></div>
+              <div><div class="at">Usage choices default per integration</div><div class="ad">New instances inherit; each instance can override; "Apply to all" offered</div></div></div>
+            <div class="alertrow"><div class="ai ok"><i class="ti ti-check"></i></div>
+              <div><div class="at">Combined vs separate = per-surface default + per-item override</div><div class="ad">One switch sets the default; any item can still be split or merged</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /mac -->
+</div><!-- /page -->
+<script>
+(function(){
+  var root=document.documentElement;
+  // theme
+  document.getElementById('themebtn').addEventListener('click',function(){
+    root.dataset.theme = root.dataset.theme==='dark'?'light':'dark';
+  });
+  // top tabs -> screens
+  var tabs=document.getElementById('tabs');
+  tabs.addEventListener('click',function(e){
+    var b=e.target.closest('button[data-s]'); if(!b) return;
+    tabs.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on');
+    document.querySelectorAll('.screen').forEach(function(s){
+      s.classList.toggle('on', s.dataset.screen===b.dataset.s);
+    });
+  });
+  // sub-tabs (surfaces)
+  document.querySelectorAll('[data-subtabs]').forEach(function(st){
+    st.addEventListener('click',function(e){
+      var b=e.target.closest('button[data-sub]'); if(!b) return;
+      st.querySelectorAll('button[data-sub]').forEach(function(x){x.classList.remove('on')});
+      b.classList.add('on');
+      var scope=st.closest('.pane');
+      scope.querySelectorAll('[data-subscreen]').forEach(function(s){
+        s.style.display = s.dataset.subscreen===b.dataset.sub?'':'none';
+      });
+    });
+  });
+  // generic interactivity: toggles, chips, segmented, advanced disclosure
+  document.body.addEventListener('click',function(e){
+    var t=e.target.closest('.toggle'); if(t){t.classList.toggle('on'); return;}
+    var c=e.target.closest('.chip'); if(c && !c.classList.contains('dis') && !c.hasAttribute('data-sub')){c.classList.toggle('on'); return;}
+    var seg=e.target.closest('.seg button'); if(seg){seg.parentElement.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});seg.classList.add('on');return;}
+    var rail=e.target.closest('.railrow'); if(rail && rail.parentElement.classList.contains('nest')){
+      rail.parentElement.querySelectorAll('.railrow').forEach(function(x){x.classList.remove('active')});rail.classList.add('active');return;}
+    var adv=e.target.closest('.adv'); if(adv){var i=adv.querySelector('i');if(i){i.classList.toggle('ti-chevron-right');i.classList.toggle('ti-chevron-down');}return;}
+  });
+})();
+</script>
+</body>
+</html>
