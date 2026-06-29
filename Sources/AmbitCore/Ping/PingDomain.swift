@@ -30,6 +30,23 @@ public enum ProbeFailureReason: String, Codable, Sendable, Equatable {
     case unknown
 }
 
+private extension MonitoringRole {
+    init?(legacyNetworkTierRawValue: String) {
+        switch legacyNetworkTierRawValue {
+        case "localGateway":
+            self = .localGateway
+        case "ispEdge":
+            self = .accessNetwork
+        case "upstream":
+            self = .upstreamInternet
+        case "remoteService":
+            self = .remoteService
+        default:
+            return nil
+        }
+    }
+}
+
 /// One probe measurement. `latencyMs` present ⇔ success; failures carry a reason.
 public struct ProbeResult: Equatable, Sendable {
     public var timestamp: Date
@@ -57,7 +74,7 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
     public var timeout: TimeInterval       // seconds; min 0.25
     public var thresholds: HealthThresholds
     public var policy: AlertPolicy
-    public var tier: NetworkTier?   // explicit override; nil ⇒ classifier infers from address
+    public var tier: MonitoringRole?   // explicit override; nil ⇒ classifier infers from address
 
     public init(
         displayName: String,
@@ -68,7 +85,7 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
         timeout: TimeInterval = 2,
         thresholds: HealthThresholds = HealthThresholds(),
         policy: AlertPolicy = .preset(.balanced),
-        tier: NetworkTier? = nil
+        tier: MonitoringRole? = nil
     ) {
         self.displayName = displayName
         self.address = address
@@ -113,7 +130,13 @@ public struct PingHostConfig: Codable, Equatable, Sendable {
         timeout = try c.decodeIfPresent(TimeInterval.self, forKey: .timeout) ?? 2
         thresholds = try c.decodeIfPresent(HealthThresholds.self, forKey: .thresholds) ?? HealthThresholds()
         policy = try c.decodeIfPresent(AlertPolicy.self, forKey: .policy) ?? .preset(.balanced)
-        tier = try c.decodeIfPresent(NetworkTier.self, forKey: .tier)
+        if let role = try c.decodeIfPresent(MonitoringRole.self, forKey: .tier) {
+            tier = role
+        } else if let legacy = try c.decodeIfPresent(String.self, forKey: .tier) {
+            tier = MonitoringRole(legacyNetworkTierRawValue: legacy)
+        } else {
+            tier = nil
+        }
     }
 
     public enum ValidationError: String, Sendable, Equatable {

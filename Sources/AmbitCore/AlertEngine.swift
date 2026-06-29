@@ -56,7 +56,7 @@ public struct AlertTargetResolver: AlertTargetResolving {
 
     private func legacyTarget(for event: AlertEvent, descriptors: [EntityDescriptor]) -> AlertTarget? {
         if event.providerID == "ping.network" {
-            return .entity(DiagnosisEntity.entityID)
+            return .entity(DiagnosticSummaryEntity.Owner.ping.entityID)
         }
         let pingLatencyID = EntityID(rawValue: "\(event.providerID)/probe.latency_ms")
         if descriptors.contains(where: { $0.id == pingLatencyID }) {

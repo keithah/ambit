@@ -30,6 +30,19 @@ public enum MonitoringRole: String, Codable, Sendable, CaseIterable {
     }
 }
 
+public enum DiagnosisSensitivity: String, CaseIterable, Codable, Sendable {
+    case conservative
+    case balanced
+    case sensitive
+}
+
+public enum NetworkConnectivityStatus: String, CaseIterable, Codable, Sendable {
+    case connected
+    case noInternet
+    case noIPAddress
+    case notConnected
+}
+
 public enum DiagnosticSummaryRole: String, Codable, Sendable {
     case owner
     case member

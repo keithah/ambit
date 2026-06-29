@@ -95,7 +95,7 @@ final class StatusViewModel: ObservableObject {
     @Published var providerAlertRuleCounts: [ProviderID: Int] = [:]
 
     private var fallbackGraphRange: GraphRange = .m5
-    @Published var pingDiagnosis: NetworkPerspectiveDiagnosis?
+    @Published var monitoringDiagnosis: MonitoringDiagnosis?
     /// Per-slot surface values (plan + data + glyph + hostOptions), keyed by SlotID.
     @Published var slotSurfaces: [SlotID: SlotSurface] = [:]
     @Published var presentationSettings = PresentationSettingsModel(integrations: [], slots: [])
@@ -112,7 +112,7 @@ final class StatusViewModel: ObservableObject {
     private let configStore: any PresentationConfigStore
     let historyRetentionInterval = HistoryService.defaultRetentionInterval
 
-    private var pingDiagnosisCoordinator = PingDiagnosisCoordinator()
+    private var monitoringDiagnosisCoordinator = MonitoringSlotDiagnosisCoordinator()
 
     // Set by the app model to bridge SwiftUI actions to AppKit windows.
     var toggleOverlay: (() -> Void)?
@@ -737,14 +737,25 @@ final class StatusViewModel: ObservableObject {
     func refreshPing() async {
         let now = Date()
         let allRegistryRecords = (try? integrationRegistry.instances()) ?? []
-        let allRecords = allRegistryRecords.filter { $0.integrationID == IntegrationIDs.ping }
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
-        let activeRecords = disabledTypes.contains(IntegrationIDs.ping) ? [] : allRecords.filter(\.enabled)
 
         let loadedConfig = configStore.load()
         let diagnosisGraphRange = Self.diagnosisGraphRange(slots: slots, config: loadedConfig, fallback: fallbackGraphRange)
-        let diagnosisResult = await pingDiagnosisCoordinator.evaluate(
+        let allDescriptors = await engine.entityDescriptors()
+        let monitoringInstanceIDs = Set(
+            allDescriptors.values
+                .flatMap { $0 }
+                .filter { $0.monitoring?.diagnosticSummary == .member || $0.monitoring?.role != nil }
+                .map { $0.instanceID.integrationInstanceID }
+        )
+        let activeRecords = allRegistryRecords.filter { record in
+            record.enabled &&
+                !disabledTypes.contains(record.integrationID) &&
+                monitoringInstanceIDs.contains(record.id)
+        }
+        let diagnosisResult = await monitoringDiagnosisCoordinator.evaluate(
             activeRecords: activeRecords,
+            descriptors: allDescriptors,
             snapshot: snapshot,
             networkStatus: networkPathSnapshot.connectivityStatus,
             now: now,
@@ -752,12 +763,10 @@ final class StatusViewModel: ObservableObject {
         ) { [engine] id, since in
             await engine.historySamples(id, since: since)
         }
-        let diagnosis = diagnosisResult.diagnosis
-        pingDiagnosis = diagnosis
+        monitoringDiagnosis = diagnosisResult.diagnosis
         let events = diagnosisResult.events
 
         // Build per-slot surfaces.
-        let allDescriptors = await engine.entityDescriptors()
         await deliverAlerts(events, descriptors: allDescriptors)
         let allStates = await engine.entityStates(now: now)
         let primaryPingInstanceID = (try? integrationRegistry.primaryInstanceID()) ?? nil
@@ -773,8 +782,7 @@ final class StatusViewModel: ObservableObject {
         for slot in slots {
             let surface = await slotSurfaceCoordinator.buildSurface(
                 slot: slot,
-                diagnosis: diagnosis,
-                monitoringDiagnosis: diagnosisResult.monitoringDiagnosis,
+                monitoringDiagnosis: diagnosisResult.diagnosis,
                 allRegistryRecords: allRegistryRecords,
                 allDescriptors: allDescriptors,
                 allStates: allStates,
@@ -837,12 +845,7 @@ final class StatusViewModel: ObservableObject {
         config: PresentationConfig,
         fallback: GraphRange
     ) -> GraphRange {
-        guard let slot = slots.first(where: { slot in
-            if case .integrationType(let integrationID) = slot.selection {
-                return integrationID == IntegrationIDs.ping
-            }
-            return false
-        }) else { return fallback }
+        guard let slot = slots.first(where: { config.slotOverrides[$0.id]?.graphRange != nil }) else { return fallback }
         return config.slotOverrides[slot.id]?.graphRange ?? fallback
     }
 

@@ -11,7 +11,6 @@ final class SlotSurfaceCoordinator {
 
     func buildSurface(
         slot: Slot,
-        diagnosis: NetworkPerspectiveDiagnosis,
         monitoringDiagnosis: MonitoringDiagnosis? = nil,
         allRegistryRecords: [IntegrationInstanceRecord],
         allDescriptors: [ProviderInstanceID: [EntityDescriptor]],
@@ -66,7 +65,6 @@ final class SlotSurfaceCoordinator {
         guard !Self.hasMultiInstanceMeasurementSurface(resolved: resolved, records: resolvedRecords) else {
             return await buildMultiInstanceSurface(
                 slot: slot,
-                diagnosis: diagnosis,
                 monitoringDiagnosis: monitoringDiagnosis,
                 shownRecords: shownRecords,
                 headlineRecordID: headlineRecordID,
@@ -102,7 +100,6 @@ final class SlotSurfaceCoordinator {
 
     private func buildMultiInstanceSurface(
         slot: Slot,
-        diagnosis: NetworkPerspectiveDiagnosis,
         monitoringDiagnosis: MonitoringDiagnosis?,
         shownRecords: [IntegrationInstanceRecord],
         headlineRecordID: IntegrationInstanceID?,
@@ -165,8 +162,8 @@ final class SlotSurfaceCoordinator {
         }
 
         var diagnosticEntityID: EntityID?
-        let summaryDiagnosis = monitoringDiagnosis ?? MonitoringDiagnosis(legacy: diagnosis)
-        if let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(summaryDiagnosis, owner: .ping) {
+        if let monitoringDiagnosis,
+           let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(monitoringDiagnosis, owner: .ping) {
             diagnosticEntityID = diagnosisDescriptor.id
             descriptors[diagnosisDescriptor.id] = diagnosisDescriptor
             states[diagnosisDescriptor.id] = diagnosisState

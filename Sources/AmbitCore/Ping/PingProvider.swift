@@ -91,7 +91,7 @@ public struct PingProvider: Provider {
 
     private func monitoringMetadata() -> MonitoringMetadata {
         let derivedRole = AddressClassifier.derivedRole(for: host.address)
-        let explicitRole = host.tier.map(Self.role(for:))
+        let explicitRole = host.tier
         return MonitoringMetadata(
             role: explicitRole ?? derivedRole,
             perspectiveID: "ping.default",
@@ -106,14 +106,6 @@ public struct PingProvider: Provider {
         )
     }
 
-    private static func role(for tier: NetworkTier) -> MonitoringRole {
-        switch tier {
-        case .localGateway: return .localGateway
-        case .ispEdge: return .accessNetwork
-        case .upstream: return .upstreamInternet
-        case .remoteService: return .remoteService
-        }
-    }
 }
 
 public extension IntegrationInstanceRecord {

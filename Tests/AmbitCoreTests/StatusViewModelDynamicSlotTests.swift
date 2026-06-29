@@ -217,7 +217,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let delivered = await notifier.deliveredIntents()
         XCTAssertEqual(delivered.map(\.title), ["Network changed"])
         XCTAssertEqual(delivered.first?.body, "Gateway changed from 192.168.101.1 to 192.168.8.1.")
-        XCTAssertEqual(delivered.first?.entityIDs, [DiagnosisEntity.entityID])
+        XCTAssertEqual(delivered.first?.entityIDs, [DiagnosticSummaryEntity.Owner.ping.entityID])
     }
 
     @MainActor
@@ -239,8 +239,8 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         await networkSource.trigger(NetworkPathSnapshot(connectivityStatus: .notConnected))
 
-        XCTAssertEqual(viewModel.pingDiagnosis?.verdict, .localNetworkDown)
-        XCTAssertEqual(viewModel.pingDiagnosis?.detail, "No network link.")
+        XCTAssertEqual(viewModel.monitoringDiagnosis?.verdict.kind, .localNetworkDown)
+        XCTAssertEqual(viewModel.monitoringDiagnosis?.detail, "No network link.")
     }
 
     @MainActor
@@ -263,7 +263,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let delivered = await notifier.deliveredIntents()
         XCTAssertEqual(delivered.map(\.title), ["Local network down", "Network path recovered"])
-        XCTAssertEqual(delivered.map(\.entityIDs), [[DiagnosisEntity.entityID], [DiagnosisEntity.entityID]])
+        XCTAssertEqual(delivered.map(\.entityIDs), [[DiagnosticSummaryEntity.Owner.ping.entityID], [DiagnosticSummaryEntity.Owner.ping.entityID]])
         XCTAssertEqual(delivered.map(\.phase), [.active, .recovered])
     }
 
@@ -470,7 +470,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
     func testMonitoringStalledDiagnosisSurfacesAsElevatedCalmBannerCandidate() {
         var engine = AttentionEngine()
-        let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis(.monitoringStalled))!
+        let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(monitoringDiagnosis(.monitoringStalled), owner: .ping)!
 
         let selection = StatusSlotReadout.resolveSelection(
             candidates: [AttentionCandidate(descriptor: diagnosisDescriptor, state: diagnosisState)],
@@ -480,7 +480,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(selection.lanes.first?.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(selection.lanes.first?.id, DiagnosticSummaryEntity.Owner.ping.entityID)
         XCTAssertEqual(selection.lanes.first?.tier, .surfaced)
         XCTAssertEqual(selection.lanes.first?.reason.severity, .elevated)
         XCTAssertTrue(selection.alerted.isEmpty)
@@ -488,20 +488,20 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
     func testLocalNetworkDownDiagnosisEscalatesAsAlertedDownCandidate() {
         var engine = AttentionEngine()
-        let (diagnosisDescriptor, diagnosisState) = DiagnosisEntity.make(diagnosis(.localNetworkDown))!
+        let (diagnosisDescriptor, diagnosisState) = DiagnosticSummaryEntity.make(monitoringDiagnosis(.localNetworkDown), owner: .ping)!
 
         let selection = StatusSlotReadout.resolveSelection(
             candidates: [AttentionCandidate(descriptor: diagnosisDescriptor, state: diagnosisState)],
-            alertingIDs: [DiagnosisEntity.entityID],
+            alertingIDs: [DiagnosticSummaryEntity.Owner.ping.entityID],
             config: .empty,
             now: now,
             attentionEngine: &engine
         )
 
-        XCTAssertEqual(selection.lanes.first?.id, DiagnosisEntity.entityID)
+        XCTAssertEqual(selection.lanes.first?.id, DiagnosticSummaryEntity.Owner.ping.entityID)
         XCTAssertEqual(selection.lanes.first?.tier, .alerted)
         XCTAssertEqual(selection.lanes.first?.reason.severity, .down)
-        XCTAssertEqual(selection.alerted.map(\.id), [DiagnosisEntity.entityID])
+        XCTAssertEqual(selection.alerted.map(\.id), [DiagnosticSummaryEntity.Owner.ping.entityID])
     }
 
     func testGenericSlotSurfaceUsesResolvedDescriptorsAndStatesForReadoutAndDetail() {
@@ -564,7 +564,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         let sample = Sample(timestamp: now, value: 34, ok: true)
         let surface = await coordinator.buildSurface(
             slot: Slot(id: "system", title: "System", selection: .integration("system@local")),
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: [
                 IntegrationInstanceRecord(
                     id: "system@local",
@@ -591,11 +590,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    func testPingDiagnosisCoordinatorBuildsStalledDiagnosisWithSampleAge() async {
-        let coordinator = PingDiagnosisCoordinator()
+    func testMonitoringSlotDiagnosisCoordinatorBuildsStalledDiagnosisWithSampleAge() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443, interval: 1)
         let record = IntegrationInstanceRecord.ping(host)
         let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let descriptors = [providerInstance: PingProvider(host: host, integrationInstanceID: record.id).entityDescriptors()]
         let staleSample = Sample(timestamp: now.addingTimeInterval(-12), value: 9, ok: true)
         let snapshot = StatusSnapshot(
             providers: [
@@ -605,23 +605,25 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let result = await coordinator.evaluate(
             activeRecords: [record],
+            descriptors: descriptors,
             snapshot: snapshot,
             now: now,
             range: .fiveMinutes,
-            historySamples: { _, _ in [staleSample] }
+            historySamples: { (_: EntityID, _: Date) in [staleSample] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict, .monitoringStalled)
+        XCTAssertEqual(result.diagnosis.verdict.kind, .monitoringStalled)
         XCTAssertEqual(result.diagnosis.detail, "Monitoring paused — data is 12s old.")
-        XCTAssertEqual(result.events, [])
+        XCTAssertTrue(result.events.isEmpty)
     }
 
     @MainActor
-    func testPingDiagnosisCoordinatorUsesNetworkConnectivityStatusAndSuppressesHostAlerts() async {
-        let coordinator = PingDiagnosisCoordinator()
+    func testMonitoringSlotDiagnosisCoordinatorUsesNetworkConnectivityStatusAndSuppressesHostAlerts() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
         let record = IntegrationInstanceRecord.ping(host)
         let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let descriptors = [providerInstance: PingProvider(host: host, integrationInstanceID: record.id).entityDescriptors()]
         let snapshot = StatusSnapshot(
             providers: [
                 providerInstance: SourceState(value: ProviderSnapshot(health: .down))
@@ -630,17 +632,18 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let result = await coordinator.evaluate(
             activeRecords: [record],
+            descriptors: descriptors,
             snapshot: snapshot,
             networkStatus: .noInternet,
             now: now,
             range: .fiveMinutes,
-            historySamples: { [now] _, _ in [Sample(timestamp: now, value: nil, ok: false, metadata: "timeout")] }
+            historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: nil, ok: false, metadata: "timeout")] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict, .upstreamDown)
+        XCTAssertEqual(result.diagnosis.verdict.kind, .upstreamDown)
         XCTAssertEqual(result.diagnosis.title, "No internet")
         XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
-        XCTAssertEqual(result.events, [])
+        XCTAssertTrue(result.events.isEmpty)
     }
 
     func testNetworkPathSnapshotClassifiesSatisfiedPathWithoutUsableIPAsNoIPAddress() {
@@ -650,11 +653,12 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
     }
 
     @MainActor
-    func testPingDiagnosisCoordinatorUsesNoIPOverrideRegardlessOfHostSamples() async {
-        let coordinator = PingDiagnosisCoordinator()
+    func testMonitoringSlotDiagnosisCoordinatorUsesNoIPOverrideRegardlessOfHostSamples() async {
+        let coordinator = MonitoringSlotDiagnosisCoordinator()
         let host = PingHostConfig(displayName: "Cloudflare DNS", address: "1.1.1.1", method: .tcp, port: 443)
         let record = IntegrationInstanceRecord.ping(host)
         let providerInstance = ProviderInstanceID(rawValue: "\(record.id.rawValue)/probe")
+        let descriptors = [providerInstance: PingProvider(host: host, integrationInstanceID: record.id).entityDescriptors()]
         let snapshot = StatusSnapshot(
             providers: [
                 providerInstance: SourceState(value: ProviderSnapshot(
@@ -666,14 +670,15 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let result = await coordinator.evaluate(
             activeRecords: [record],
+            descriptors: descriptors,
             snapshot: snapshot,
             networkStatus: .noIPAddress,
             now: now,
             range: .fiveMinutes,
-            historySamples: { [now] _, _ in [Sample(timestamp: now, value: 900, ok: true)] }
+            historySamples: { [now] (_: EntityID, _: Date) in [Sample(timestamp: now, value: 900, ok: true)] }
         )
 
-        XCTAssertEqual(result.diagnosis.verdict, .localNetworkDown)
+        XCTAssertEqual(result.diagnosis.verdict.kind, .localNetworkDown)
         XCTAssertEqual(result.diagnosis.title, "Local network down")
         XCTAssertEqual(result.diagnosis.detail, "No network link.")
         XCTAssertFalse(result.events.contains { $0.ruleID.contains("hostDown") })
@@ -686,7 +691,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -726,7 +730,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -755,7 +758,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -794,7 +796,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -823,7 +824,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -856,7 +856,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -881,7 +880,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -912,7 +910,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -944,7 +941,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -972,7 +968,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1003,7 +998,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1032,7 +1026,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1066,7 +1059,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1091,7 +1083,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1115,7 +1106,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.localNetworkDown),
+            monitoringDiagnosis: monitoringDiagnosis(.localNetworkDown),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1127,7 +1118,7 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
             historySamples: { id, _ in fixtures.samples[id] ?? [] }
         )
 
-        XCTAssertEqual(surface.primaryEntityID, DiagnosisEntity.entityID)
+        XCTAssertEqual(surface.primaryEntityID, DiagnosticSummaryEntity.Owner.ping.entityID)
         XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.id, "history:\(fixtures.latencyIDs[0].rawValue)")
         XCTAssertEqual(surface.firstCard(kind: .sampleHistory)?.entities, [fixtures.latencyIDs[0]])
     }
@@ -1139,7 +1130,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: fixtures.descriptorsByProvider,
             allStates: fixtures.states,
@@ -1167,7 +1157,6 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
 
         let surface = await coordinator.buildSurface(
             slot: fixtures.slot,
-            diagnosis: diagnosis(.allReachable),
             allRegistryRecords: fixtures.records,
             allDescriptors: [provider: fixtures.descriptorsByProvider[provider] ?? []],
             allStates: [latencyID: fixtures.states[latencyID]!],
@@ -2145,16 +2134,32 @@ final class StatusViewModelDynamicSlotTests: XCTestCase {
         )
     }
 
-    private func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {
-        NetworkPerspectiveDiagnosis(
-            scope: .monitoringStalled,
-            verdict: verdict,
+    private func monitoringDiagnosis(_ verdict: MonitoringVerdict.Kind) -> MonitoringDiagnosis {
+        let title: String
+        let detail: String
+        let affectedRole: MonitoringRole?
+        switch verdict {
+        case .monitoringStalled:
+            title = "Monitoring paused"
+            detail = "Monitoring paused - data is stale."
+            affectedRole = nil
+        case .localNetworkDown:
+            title = "Local network down"
+            detail = "1/1 gateway host(s) unreachable."
+            affectedRole = .localGateway
+        default:
+            title = "All reachable"
+            detail = "2/2 monitored hosts healthy."
+            affectedRole = nil
+        }
+        return MonitoringDiagnosis(
+            perspectiveID: "monitoring.default",
+            verdict: MonitoringVerdict(kind: verdict, affectedRole: affectedRole),
+            severity: DiagnosticSummaryEntity.severity(for: verdict) ?? .normal,
             confidence: .high,
-            faultTier: nil,
-            affectedHostIDs: [],
-            title: "Monitoring paused",
-            detail: "Monitoring paused - data is stale.",
-            tierEvidence: []
+            affectedEntityIDs: [],
+            title: title,
+            detail: detail
         )
     }
 

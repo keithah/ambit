@@ -65,9 +65,9 @@ final class AlertTargetResolverTests: XCTestCase {
         XCTAssertEqual(AlertTargetResolver().resolve(event, descriptors: []), [])
     }
 
-    func testLegacyPingNetworkEventResolvesDiagnosisEntity() {
+    func testLegacyNetworkEventResolvesDiagnosticSummaryEntity() {
         let diagnosis = descriptor(
-            id: DiagnosisEntity.entityID,
+            id: DiagnosticSummaryEntity.Owner.ping.entityID,
             instanceID: ProviderInstanceID(rawValue: "ping/network"),
             metricID: "diagnosis",
             capability: "connectivity"
@@ -82,7 +82,7 @@ final class AlertTargetResolverTests: XCTestCase {
 
         let ids = AlertTargetResolver().resolve(event, descriptors: [diagnosis])
 
-        XCTAssertEqual(ids, [DiagnosisEntity.entityID])
+        XCTAssertEqual(ids, [DiagnosticSummaryEntity.Owner.ping.entityID])
     }
 
     private func descriptor(

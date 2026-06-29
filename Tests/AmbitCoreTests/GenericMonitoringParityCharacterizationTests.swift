@@ -7,72 +7,28 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000)
     private let surfaceNow = Date(timeIntervalSince1970: 20_000)
 
-    func testNetworkPerspectiveDiagnoserGoldenMatrix() throws {
-        let diagnoser = NetworkPerspectiveDiagnoser()
-        var cases: [DiagnosisGoldenCase] = []
+    func testFrozenNetworkDiagnosisMatrixMatchesTopologyEngine() throws {
+        let cases: [DiagnosisGoldenCase] = try loadGolden("network_diagnosis_matrix.json")
+        let engine = TopologyDiagnosisEngine()
 
-        for sensitivity in DiagnosisSensitivity.allCases {
-            for networkStatus in NetworkConnectivityStatus.allCases {
-                for tier in NetworkTier.allCases {
-                    for stale in [false, true] {
-                        for scenario in DiagnosisHealthScenario.allCases {
-                            let hosts = hostsForDiagnosis(tier: tier, scenario: scenario, stale: stale)
-                            let diagnosis = diagnoser.diagnose(hosts: hosts, networkStatus: networkStatus)
-                            cases.append(DiagnosisGoldenCase(
-                                id: "\(sensitivity.rawValue).\(networkStatus.rawValue).\(tier.rawValue).\(stale ? "stale" : "fresh").\(scenario.rawValue)",
-                                sensitivity: sensitivity.rawValue,
-                                networkStatus: networkStatus.rawValue,
-                                tier: tier.rawValue,
-                                stale: stale,
-                                scenario: scenario.rawValue,
-                                inputHosts: hosts.map(DiagnosisHostSnapshot.init),
-                                output: DiagnosisSnapshot(diagnosis)
-                            ))
-                        }
-                    }
-                }
-            }
+        for golden in cases {
+            let perspective = MonitoringPerspective(
+                id: "test.network",
+                title: "Test Network",
+                members: golden.inputHosts.map(MonitoringPerspectiveMember.init),
+                linkStatus: NetworkConnectivityStatus(rawValue: golden.networkStatus)!,
+                sensitivity: DiagnosisSensitivity(rawValue: golden.sensitivity)!
+            )
+
+            XCTAssertEqual(DiagnosisSnapshot(engine.diagnose(perspective)), golden.output, golden.id)
         }
-
-        try assertGolden(cases, named: "network_diagnosis_matrix.json")
     }
 
-    func testPingAlertMonitorGoldenEvents() throws {
-        let cases = [
-            hostDownRecoveryCooldown(),
-            noRecoveryWhenDisabled(),
-            highConfidenceSpecificNetworkAlerts(),
-            tentativeSensitivityMatrix(),
-            pathDegradedStreaks(),
-            networkCooldownSuppression(),
-            internetLossSafetyNet(),
-            remoteServiceAdditionalHostsCopy(),
-            pathRecoveredOnlyAfterDeliveredNetworkAlert(),
-            networkStatusTransitionAlerts(),
-            networkChangeEventCopy()
-        ].flatMap { $0 }
+    func testFrozenAlertEventsMatchMonitoringAlertStateMachine() throws {
+        let expected: [AlertGoldenCase] = try loadGolden("ping_alert_monitor_events.json")
+        let actual = genericAlertGoldenCases()
 
-        try assertGolden(cases, named: "ping_alert_monitor_events.json")
-    }
-
-    func testMonitoringAlertStateMachineMatchesPingAlertMonitorGoldenEvents() {
-        let cases = [
-            hostDownRecoveryCooldownDifferential(),
-            noRecoveryWhenDisabledDifferential(),
-            highConfidenceSpecificNetworkAlertsDifferential(),
-            tentativeSensitivityMatrixDifferential(),
-            pathDegradedStreaksDifferential(),
-            networkCooldownSuppressionDifferential(),
-            internetLossSafetyNetDifferential(),
-            remoteServiceAdditionalHostsCopyDifferential(),
-            pathRecoveredOnlyAfterDeliveredNetworkAlertDifferential(),
-            networkStatusTransitionAlertsDifferential(),
-            networkChangeEventCopyDifferential()
-        ].flatMap { $0 }
-
-        for alertCase in cases {
-            XCTAssertEqual(alertCase.old, alertCase.new, alertCase.id)
-        }
+        XCTAssertEqual(actual, expected)
     }
 
     @MainActor
@@ -101,20 +57,20 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
             Sample(timestamp: surfaceNow.addingTimeInterval(-2), value: nil, ok: false, metadata: "timeout")
         ]
 
-        let scenarios: [(String, PingSurfaceFixtures, NetworkPerspectiveDiagnosis, PresentationConfig)] = [
-            ("singleHostDefault", fixtures, diagnosis(.allReachable), .empty),
-            ("allHostsCombined", fixtures, diagnosis(.allReachable), allHostsConfig),
-            ("focusedHost", fixtures, diagnosis(.allReachable), focusedConfig),
-            ("primaryDown", primaryDownFixtures, diagnosis(.allReachable), .empty),
-            ("diagnosisBanner", fixtures, diagnosis(.localNetworkDown), .empty),
-            ("recovered", fixtures, diagnosis(.allReachable), .empty)
+        let scenarios: [(String, PingSurfaceFixtures, MonitoringDiagnosis?, PresentationConfig)] = [
+            ("singleHostDefault", fixtures, nil, .empty),
+            ("allHostsCombined", fixtures, nil, allHostsConfig),
+            ("focusedHost", fixtures, nil, focusedConfig),
+            ("primaryDown", primaryDownFixtures, nil, .empty),
+            ("diagnosisBanner", fixtures, monitoringDiagnosis(.localNetworkDown), .empty),
+            ("recovered", fixtures, nil, .empty)
         ]
 
         var golden: [SurfaceGoldenCase] = []
         for (id, scenarioFixtures, diagnosis, config) in scenarios {
             let surface = await coordinator.buildSurface(
                 slot: scenarioFixtures.slot,
-                diagnosis: diagnosis,
+                monitoringDiagnosis: diagnosis,
                 allRegistryRecords: scenarioFixtures.records,
                 allDescriptors: scenarioFixtures.descriptorsByProvider,
                 allStates: scenarioFixtures.states,
@@ -168,14 +124,6 @@ final class GenericMonitoringParityCharacterizationTests: XCTestCase {
     }
 }
 
-private enum DiagnosisHealthScenario: String, CaseIterable {
-    case healthySingle
-    case degradedSingle
-    case downSingle
-    case downMixed
-    case noDataSingle
-}
-
 private struct DiagnosisGoldenCase: Codable, Equatable {
     var id: String
     var sensitivity: String
@@ -193,14 +141,6 @@ private struct DiagnosisHostSnapshot: Codable, Equatable {
     var status: String
     var consecutiveFailures: Int
     var isStale: Bool
-
-    init(_ host: DiagnosisHost) {
-        id = host.id
-        tier = host.tier.rawValue
-        status = String(describing: host.status)
-        consecutiveFailures = host.consecutiveFailures
-        isStale = host.isStale
-    }
 }
 
 private struct DiagnosisSnapshot: Codable, Equatable {
@@ -213,15 +153,52 @@ private struct DiagnosisSnapshot: Codable, Equatable {
     var detail: String
     var evidence: [TierEvidenceSnapshot]
 
-    init(_ diagnosis: NetworkPerspectiveDiagnosis) {
-        scope = diagnosis.scope.rawValue
-        verdict = String(describing: diagnosis.verdict)
+    init(_ diagnosis: MonitoringDiagnosis) {
+        scope = Self.scope(for: diagnosis.verdict.kind)
+        verdict = Self.verdict(for: diagnosis.verdict, affected: diagnosis.affectedEntityIDs)
         confidence = diagnosis.confidence.rawValue
-        faultTier = diagnosis.faultTier?.rawValue
-        affectedHostIDs = diagnosis.affectedHostIDs
+        faultTier = diagnosis.verdict.affectedRole.map(Self.legacyTier(for:))
+        affectedHostIDs = diagnosis.affectedEntityIDs.map(\.rawValue)
         title = diagnosis.title
         detail = diagnosis.detail
-        evidence = diagnosis.tierEvidence.map(TierEvidenceSnapshot.init)
+        evidence = diagnosis.evidence.map(TierEvidenceSnapshot.init)
+    }
+
+    private static func scope(for kind: MonitoringVerdict.Kind) -> String {
+        switch kind {
+        case .noData: return "noData"
+        case .monitoringStalled: return "monitoringStalled"
+        case .allReachable: return "allReachable"
+        case .localNetworkDown: return "localNetwork"
+        case .accessNetworkDown, .upstreamDown: return "upstream"
+        case .remoteServiceDown: return "remoteService"
+        case .partialDegradation: return "partialDegradation"
+        }
+    }
+
+    private static func verdict(for verdict: MonitoringVerdict, affected: [EntityID]) -> String {
+        switch verdict.kind {
+        case .noData: return "noData"
+        case .monitoringStalled: return "monitoringStalled"
+        case .allReachable: return "allReachable"
+        case .localNetworkDown: return "localNetworkDown"
+        case .accessNetworkDown: return "ispPathDown"
+        case .upstreamDown: return "upstreamDown"
+        case .remoteServiceDown:
+            return "remoteServiceDown(hostIDs: \(affected.map(\.rawValue)))"
+        case .partialDegradation:
+            return "partialDegradation(tier: AmbitCore.NetworkTier.\(legacyTier(for: verdict.affectedRole)))"
+        }
+    }
+
+    fileprivate static func legacyTier(for role: MonitoringRole?) -> String {
+        switch role {
+        case .localGateway, .localLink: return "localGateway"
+        case .accessNetwork: return "ispEdge"
+        case .upstreamInternet: return "upstream"
+        case .remoteService, .endpoint: return "remoteService"
+        case nil: return "upstream"
+        }
     }
 }
 
@@ -234,13 +211,13 @@ private struct TierEvidenceSnapshot: Codable, Equatable {
     var status: String
     var summary: String
 
-    init(_ evidence: NetworkPerspectiveDiagnosis.TierEvidence) {
-        tier = evidence.tier.rawValue
+    init(_ evidence: MonitoringEvidence) {
+        tier = DiagnosisSnapshot.legacyTier(for: evidence.role)
         total = evidence.total
         healthy = evidence.healthy
         degraded = evidence.degraded
         down = evidence.down
-        status = String(describing: evidence.status)
+        status = evidence.status.rawValue
         summary = evidence.summary
     }
 }
@@ -248,12 +225,6 @@ private struct TierEvidenceSnapshot: Codable, Equatable {
 private struct AlertGoldenCase: Codable, Equatable {
     var id: String
     var events: [AlertEventSnapshot]
-}
-
-private struct AlertDifferentialCase {
-    var id: String
-    var old: [AlertEventSnapshot]
-    var new: [AlertEventSnapshot]
 }
 
 private struct AlertEventSnapshot: Codable, Equatable {
@@ -377,102 +348,20 @@ private struct PingSurfaceFixtures {
 private extension GenericMonitoringParityCharacterizationTests {
     func at(_ offset: TimeInterval) -> Date { t0.addingTimeInterval(offset) }
 
-    func hostsForDiagnosis(tier: NetworkTier, scenario: DiagnosisHealthScenario, stale: Bool) -> [DiagnosisHost] {
-        var hosts = lowerTierHealthyHosts(before: tier)
-        let id = "\(tier.rawValue).primary"
-        switch scenario {
-        case .healthySingle:
-            hosts.append(DiagnosisHost(id: id, tier: tier, status: .healthy, consecutiveFailures: 0, isStale: stale))
-        case .degradedSingle:
-            hosts.append(DiagnosisHost(id: id, tier: tier, status: .degraded, consecutiveFailures: 1, isStale: stale))
-        case .downSingle:
-            hosts.append(DiagnosisHost(id: id, tier: tier, status: .down, consecutiveFailures: 3, isStale: stale))
-        case .downMixed:
-            hosts.append(DiagnosisHost(id: id, tier: tier, status: .down, consecutiveFailures: 3, isStale: stale))
-            hosts.append(DiagnosisHost(id: "\(tier.rawValue).peer", tier: tier, status: .healthy, consecutiveFailures: 0, isStale: stale))
-        case .noDataSingle:
-            hosts.append(DiagnosisHost(id: id, tier: tier, status: .noData, consecutiveFailures: 0, isStale: stale))
-        }
-        return hosts
-    }
-
-    func lowerTierHealthyHosts(before tier: NetworkTier) -> [DiagnosisHost] {
-        NetworkTier.allCases
-            .filter { $0.depth < tier.depth }
-            .map { DiagnosisHost(id: "\($0.rawValue).healthy", tier: $0, status: .healthy) }
-    }
-
-    func healthyDiagnosis() -> NetworkPerspectiveDiagnosis {
-        NetworkPerspectiveDiagnosis(
-            scope: .allReachable,
-            verdict: .allReachable,
-            confidence: .high,
-            faultTier: nil,
-            affectedHostIDs: [],
-            title: "All reachable",
-            detail: "2/2 monitored hosts healthy.",
-            tierEvidence: []
-        )
-    }
-
-    func diagnosis(_ verdict: NetworkPerspectiveDiagnosis.Verdict) -> NetworkPerspectiveDiagnosis {
-        let scope: NetworkPerspectiveDiagnosis.Scope
-        let title: String
-        let detail: String
-        let faultTier: NetworkTier?
-        switch verdict {
-        case .allReachable:
-            scope = .allReachable
-            title = "All reachable"
-            detail = "2/2 monitored hosts healthy."
-            faultTier = nil
-        case .localNetworkDown:
-            scope = .localNetwork
-            title = "Local network down"
-            detail = "1/1 gateway host(s) unreachable."
-            faultTier = .localGateway
-        default:
-            scope = .monitoringStalled
-            title = "Monitoring paused"
-            detail = "Monitoring paused - data is stale."
-            faultTier = nil
-        }
-        return NetworkPerspectiveDiagnosis(
-            scope: scope,
-            verdict: verdict,
-            confidence: .high,
-            faultTier: faultTier,
-            affectedHostIDs: [],
-            title: title,
-            detail: detail,
-            tierEvidence: []
-        )
-    }
-
-    func alertHost(_ id: String = "cf", name: String = "Cloudflare", status: HealthStatus, recovery: Bool = true, cooldown: TimeInterval = 60) -> AlertHost {
-        AlertHost(id: id, name: name, status: status, notifyOnRecovery: recovery, cooldown: cooldown)
-    }
-
-    func alertDiagnosis(
-        _ verdict: NetworkPerspectiveDiagnosis.Verdict,
-        _ confidence: NetworkPerspectiveDiagnosis.Confidence,
-        tier: NetworkTier = .upstream,
-        detail: String = "d"
-    ) -> NetworkPerspectiveDiagnosis {
-        NetworkPerspectiveDiagnosis(
-            scope: .upstream,
-            verdict: verdict,
-            confidence: confidence,
-            faultTier: tier,
-            affectedHostIDs: [],
-            title: "t",
-            detail: detail,
-            tierEvidence: []
-        )
-    }
-
-    func alertCase(_ id: String, _ events: [AlertEvent?]) -> AlertGoldenCase {
-        AlertGoldenCase(id: id, events: events.compactMap { $0 }.map { AlertEventSnapshot($0) })
+    func genericAlertGoldenCases() -> [AlertGoldenCase] {
+        [
+            hostDownRecoveryCooldown(),
+            noRecoveryWhenDisabled(),
+            highConfidenceSpecificNetworkAlerts(),
+            tentativeSensitivityMatrix(),
+            pathDegradedStreaks(),
+            networkCooldownSuppression(),
+            internetLossSafetyNet(),
+            remoteServiceAdditionalHostsCopy(),
+            pathRecoveredOnlyAfterDeliveredNetworkAlert(),
+            networkStatusTransitionAlerts(),
+            networkChangeEventCopy()
+        ].flatMap { $0 }
     }
 
     func alertCase(_ id: String, _ events: [AlertEvent]) -> AlertGoldenCase {
@@ -480,152 +369,7 @@ private extension GenericMonitoringParityCharacterizationTests {
     }
 
     func alertCaseStableTime(_ id: String, _ events: [AlertEvent?]) -> AlertGoldenCase {
-        AlertGoldenCase(id: id, events: events.compactMap { event in
-            event.map { AlertEventSnapshot($0, triggeredAtOverride: 0) }
-        })
-    }
-
-    func hostDownRecoveryCooldown() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor()
-        _ = monitor.evaluate(hosts: [alertHost(status: .healthy)], diagnosis: healthyDiagnosis(), now: at(0))
-        let down = monitor.evaluate(hosts: [alertHost(status: .down)], diagnosis: healthyDiagnosis(), now: at(1))
-        let stillDown = monitor.evaluate(hosts: [alertHost(status: .down)], diagnosis: healthyDiagnosis(), now: at(2))
-        let recovered = monitor.evaluate(hosts: [alertHost(status: .healthy)], diagnosis: healthyDiagnosis(), now: at(70))
-        return [
-            alertCase("hostDownRecovery.down", down),
-            alertCase("hostDownRecovery.stillDown", stillDown),
-            alertCase("hostDownRecovery.recovered", recovered)
-        ]
-    }
-
-    func noRecoveryWhenDisabled() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor()
-        _ = monitor.evaluate(hosts: [alertHost(status: .down, recovery: false)], diagnosis: healthyDiagnosis(), now: at(0))
-        return [alertCase("noRecoveryWhenDisabled", monitor.evaluate(hosts: [alertHost(status: .healthy, recovery: false)], diagnosis: healthyDiagnosis(), now: at(5)))]
-    }
-
-    func highConfidenceSpecificNetworkAlerts() -> [AlertGoldenCase] {
-        [
-            (.localNetworkDown, "localNetworkDown"),
-            (.ispPathDown, "ispPathDown"),
-            (.upstreamDown, "upstreamDown"),
-            (.remoteServiceDown(hostIDs: ["cf"]), "remoteServiceDown")
-        ].map { verdict, id in
-            var monitor = PingAlertMonitor(sensitivity: .balanced)
-            return alertCase("highConfidence.\(id)", monitor.evaluate(hosts: [], diagnosis: alertDiagnosis(verdict, .high), now: at(0)))
-        }
-    }
-
-    func tentativeSensitivityMatrix() -> [AlertGoldenCase] {
-        DiagnosisSensitivity.allCases.map { sensitivity in
-            var monitor = PingAlertMonitor(sensitivity: sensitivity)
-            return alertCase(
-                "tentative.\(sensitivity.rawValue)",
-                monitor.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .tentative), now: at(0))
-            )
-        }
-    }
-
-    func pathDegradedStreaks() -> [AlertGoldenCase] {
-        DiagnosisSensitivity.allCases.flatMap { sensitivity in
-            var monitor = PingAlertMonitor(sensitivity: sensitivity, pathDegradedConsecutive: 3)
-            let diagnosis = alertDiagnosis(.partialDegradation(tier: .upstream), .tentative)
-            return [
-                alertCase("pathDegraded.\(sensitivity.rawValue).first", monitor.evaluate(hosts: [], diagnosis: diagnosis, now: at(0))),
-                alertCase("pathDegraded.\(sensitivity.rawValue).second", monitor.evaluate(hosts: [], diagnosis: diagnosis, now: at(1))),
-                alertCase("pathDegraded.\(sensitivity.rawValue).third", monitor.evaluate(hosts: [], diagnosis: diagnosis, now: at(2)))
-            ]
-        }
-    }
-
-    func networkCooldownSuppression() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        let first = monitor.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .high), now: at(0))
-        let suppressed = monitor.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .high), now: at(30))
-        return [
-            alertCase("networkCooldown.first", first),
-            alertCase("networkCooldown.suppressed", suppressed)
-        ]
-    }
-
-    func internetLossSafetyNet() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor(sensitivity: .conservative, networkCooldown: 300)
-        let events = monitor.evaluate(
-            hosts: [
-                alertHost(status: .down),
-                alertHost("gw", name: "Gateway", status: .down)
-            ],
-            diagnosis: healthyDiagnosis(),
-            now: at(0)
-        )
-        return [alertCase("internetLossSafetyNet", events)]
-    }
-
-    func remoteServiceAdditionalHostsCopy() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        let hosts = [
-            alertHost("cf", name: "Cloudflare DNS", status: .degraded),
-            alertHost("gg", name: "Google DNS", status: .degraded),
-            alertHost("svc", name: "Service API", status: .degraded)
-        ]
-        let diagnosis = NetworkPerspectiveDiagnosis(
-            scope: .remoteService,
-            verdict: .remoteServiceDown(hostIDs: ["cf", "gg", "svc"]),
-            confidence: .high,
-            faultTier: .remoteService,
-            affectedHostIDs: ["cf", "gg", "svc"],
-            title: "Remote service down",
-            detail: "3/3 remote host(s) unreachable.",
-            tierEvidence: []
-        )
-        return [alertCase("remoteServiceAdditionalHostsCopy", monitor.evaluate(hosts: hosts, diagnosis: diagnosis, now: at(0)))]
-    }
-
-    func pathRecoveredOnlyAfterDeliveredNetworkAlert() -> [AlertGoldenCase] {
-        var monitor = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        let noPrior = monitor.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(0))
-        _ = monitor.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .high), now: at(10))
-        let recovered = monitor.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(20))
-        let repeated = monitor.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(30))
-        return [
-            alertCase("pathRecovered.noPrior", noPrior),
-            alertCase("pathRecovered.afterDelivered", recovered),
-            alertCase("pathRecovered.repeated", repeated)
-        ]
-    }
-
-    func networkStatusTransitionAlerts() -> [AlertGoldenCase] {
-        NetworkConnectivityStatus.allCases.flatMap { status in
-            guard status != .connected else { return [AlertGoldenCase]() }
-            var monitor = NetworkStatusAlertMonitor(cooldown: 300)
-            let down = monitor.evaluate(previous: .connected, current: status, now: at(0))
-            let repeated = monitor.evaluate(previous: status, current: status, now: at(10))
-            let recovered = monitor.evaluate(previous: status, current: .connected, now: at(20))
-            return [
-                alertCase("networkStatus.\(status.rawValue).down", [down]),
-                alertCase("networkStatus.\(status.rawValue).repeated", [repeated]),
-                alertCase("networkStatus.\(status.rawValue).recovered", [recovered])
-            ]
-        }
-    }
-
-    func networkChangeEventCopy() -> [AlertGoldenCase] {
-        [
-            alertCaseStableTime("networkChange.gatewayChanged", [
-                StatusViewModel.networkChangeEvent(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1")
-            ]),
-            alertCaseStableTime("networkChange.unchanged", [
-                StatusViewModel.networkChangeEvent(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1")
-            ])
-        ]
-    }
-
-    func diffCase(_ id: String, old: [AlertEvent], new: [AlertEvent]) -> AlertDifferentialCase {
-        AlertDifferentialCase(
-            id: id,
-            old: old.map { AlertEventSnapshot($0) },
-            new: new.map { AlertEventSnapshot($0) }
-        )
+        AlertGoldenCase(id: id, events: events.compactMap { $0 }.map { AlertEventSnapshot($0, triggeredAtOverride: 0) })
     }
 
     func monitoringMachine(
@@ -641,218 +385,181 @@ private extension GenericMonitoringParityCharacterizationTests {
         )
     }
 
-    func alertMembers(_ hosts: [AlertHost]) -> [MonitoringAlertMember] {
-        hosts.map {
-            MonitoringAlertMember(
-                id: $0.id,
-                name: $0.name,
-                status: $0.status,
-                target: .entity(EntityID(rawValue: "\($0.id)/probe.latency_ms")),
-                notifyOnRecovery: $0.notifyOnRecovery,
-                cooldown: $0.cooldown
-            )
-        }
+    func member(_ id: String = "cf", name: String = "Cloudflare", status: HealthStatus, recovery: Bool = true, cooldown: TimeInterval = 60) -> MonitoringAlertMember {
+        MonitoringAlertMember(
+            id: id,
+            name: name,
+            status: status,
+            target: .entity(EntityID(rawValue: "\(id)/probe.latency_ms")),
+            notifyOnRecovery: recovery,
+            cooldown: cooldown
+        )
     }
 
-    func monitoringDiagnosis(_ diagnosis: NetworkPerspectiveDiagnosis) -> MonitoringDiagnosis {
-        MonitoringDiagnosis(legacy: diagnosis)
+    func healthyDiagnosis() -> MonitoringDiagnosis {
+        MonitoringDiagnosis(
+            perspectiveID: "monitoring.default",
+            verdict: MonitoringVerdict(kind: .allReachable),
+            severity: .normal,
+            confidence: .high,
+            affectedEntityIDs: [],
+            title: "All reachable",
+            detail: "2/2 monitored hosts healthy."
+        )
     }
 
-    func hostDownRecoveryCooldownDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor()
-        var new = monitoringMachine()
-        let healthy = [alertHost(status: .healthy)]
-        _ = old.evaluate(hosts: healthy, diagnosis: healthyDiagnosis(), now: at(0))
-        _ = new.evaluate(members: alertMembers(healthy), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0))
-        let downHosts = [alertHost(status: .down)]
-        let down = diffCase(
-            "hostDownRecovery.down",
-            old: old.evaluate(hosts: downHosts, diagnosis: healthyDiagnosis(), now: at(1)),
-            new: new.evaluate(members: alertMembers(downHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(1))
+    func diagnosis(
+        _ kind: MonitoringVerdict.Kind,
+        _ confidence: DiagnosisConfidence,
+        role: MonitoringRole = .upstreamInternet,
+        affected: [EntityID] = [],
+        detail: String = "d"
+    ) -> MonitoringDiagnosis {
+        MonitoringDiagnosis(
+            perspectiveID: "monitoring.default",
+            verdict: MonitoringVerdict(kind: kind, affectedRole: role),
+            severity: DiagnosticSummaryEntity.severity(for: kind) ?? .normal,
+            confidence: confidence,
+            affectedEntityIDs: affected,
+            title: "t",
+            detail: detail
         )
-        let stillDown = diffCase(
-            "hostDownRecovery.stillDown",
-            old: old.evaluate(hosts: downHosts, diagnosis: healthyDiagnosis(), now: at(2)),
-            new: new.evaluate(members: alertMembers(downHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(2))
-        )
-        let recoveredHosts = [alertHost(status: .healthy)]
-        let recovered = diffCase(
-            "hostDownRecovery.recovered",
-            old: old.evaluate(hosts: recoveredHosts, diagnosis: healthyDiagnosis(), now: at(70)),
-            new: new.evaluate(members: alertMembers(recoveredHosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(70))
-        )
-        return [down, stillDown, recovered]
     }
 
-    func noRecoveryWhenDisabledDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor()
-        var new = monitoringMachine()
-        let down = [alertHost(status: .down, recovery: false)]
-        _ = old.evaluate(hosts: down, diagnosis: healthyDiagnosis(), now: at(0))
-        _ = new.evaluate(members: alertMembers(down), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0))
-        let healthy = [alertHost(status: .healthy, recovery: false)]
+    func hostDownRecoveryCooldown() -> [AlertGoldenCase] {
+        var machine = monitoringMachine()
+        _ = machine.evaluate(members: [member(status: .healthy)], diagnosis: healthyDiagnosis(), now: at(0))
+        let down = machine.evaluate(members: [member(status: .down)], diagnosis: healthyDiagnosis(), now: at(1))
+        let stillDown = machine.evaluate(members: [member(status: .down)], diagnosis: healthyDiagnosis(), now: at(2))
+        let recovered = machine.evaluate(members: [member(status: .healthy)], diagnosis: healthyDiagnosis(), now: at(70))
         return [
-            diffCase(
-                "noRecoveryWhenDisabled",
-                old: old.evaluate(hosts: healthy, diagnosis: healthyDiagnosis(), now: at(5)),
-                new: new.evaluate(members: alertMembers(healthy), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(5))
-            )
+            alertCase("hostDownRecovery.down", down),
+            alertCase("hostDownRecovery.stillDown", stillDown),
+            alertCase("hostDownRecovery.recovered", recovered)
         ]
     }
 
-    func highConfidenceSpecificNetworkAlertsDifferential() -> [AlertDifferentialCase] {
+    func noRecoveryWhenDisabled() -> [AlertGoldenCase] {
+        var machine = monitoringMachine()
+        _ = machine.evaluate(members: [member(status: .down, recovery: false)], diagnosis: healthyDiagnosis(), now: at(0))
+        return [alertCase("noRecoveryWhenDisabled", machine.evaluate(members: [member(status: .healthy, recovery: false)], diagnosis: healthyDiagnosis(), now: at(5)))]
+    }
+
+    func highConfidenceSpecificNetworkAlerts() -> [AlertGoldenCase] {
         [
-            (.localNetworkDown, "localNetworkDown"),
-            (.ispPathDown, "ispPathDown"),
-            (.upstreamDown, "upstreamDown"),
-            (.remoteServiceDown(hostIDs: ["cf"]), "remoteServiceDown")
-        ].map { verdict, id in
-            var old = PingAlertMonitor(sensitivity: .balanced)
-            var new = monitoringMachine(sensitivity: .balanced)
-            let diagnosis = alertDiagnosis(verdict, .high)
-            return diffCase(
-                "highConfidence.\(id)",
-                old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
-                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))
-            )
+            (MonitoringVerdict.Kind.localNetworkDown, "localNetworkDown", MonitoringRole.localGateway),
+            (.accessNetworkDown, "ispPathDown", .accessNetwork),
+            (.upstreamDown, "upstreamDown", .upstreamInternet),
+            (.remoteServiceDown, "remoteServiceDown", .remoteService)
+        ].map { kind, id, role in
+            var machine = monitoringMachine(sensitivity: .balanced)
+            let affected: [EntityID] = kind == .remoteServiceDown ? ["cf"] : []
+            return alertCase("highConfidence.\(id)", machine.evaluate(members: [], diagnosis: diagnosis(kind, .high, role: role, affected: affected), now: at(0)))
         }
     }
 
-    func tentativeSensitivityMatrixDifferential() -> [AlertDifferentialCase] {
+    func tentativeSensitivityMatrix() -> [AlertGoldenCase] {
         DiagnosisSensitivity.allCases.map { sensitivity in
-            var old = PingAlertMonitor(sensitivity: sensitivity)
-            var new = monitoringMachine(sensitivity: sensitivity)
-            let diagnosis = alertDiagnosis(.upstreamDown, .tentative)
-            return diffCase(
+            var machine = monitoringMachine(sensitivity: sensitivity)
+            return alertCase(
                 "tentative.\(sensitivity.rawValue)",
-                old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
-                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))
+                machine.evaluate(members: [], diagnosis: diagnosis(.upstreamDown, .tentative), now: at(0))
             )
         }
     }
 
-    func pathDegradedStreaksDifferential() -> [AlertDifferentialCase] {
+    func pathDegradedStreaks() -> [AlertGoldenCase] {
         DiagnosisSensitivity.allCases.flatMap { sensitivity in
-            var old = PingAlertMonitor(sensitivity: sensitivity, pathDegradedConsecutive: 3)
-            var new = monitoringMachine(sensitivity: sensitivity, pathDegradedConsecutive: 3)
-            let diagnosis = alertDiagnosis(.partialDegradation(tier: .upstream), .tentative)
+            var machine = monitoringMachine(sensitivity: sensitivity, pathDegradedConsecutive: 3)
+            let diag = diagnosis(.partialDegradation, .tentative)
             return [
-                diffCase("pathDegraded.\(sensitivity.rawValue).first",
-                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
-                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))),
-                diffCase("pathDegraded.\(sensitivity.rawValue).second",
-                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(1)),
-                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(1))),
-                diffCase("pathDegraded.\(sensitivity.rawValue).third",
-                         old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(2)),
-                         new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(2)))
+                alertCase("pathDegraded.\(sensitivity.rawValue).first", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+                alertCase("pathDegraded.\(sensitivity.rawValue).second", machine.evaluate(members: [], diagnosis: diag, now: at(1))),
+                alertCase("pathDegraded.\(sensitivity.rawValue).third", machine.evaluate(members: [], diagnosis: diag, now: at(2)))
             ]
         }
     }
 
-    func networkCooldownSuppressionDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
-        let diagnosis = alertDiagnosis(.upstreamDown, .high)
+    func networkCooldownSuppression() -> [AlertGoldenCase] {
+        var machine = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let diag = diagnosis(.upstreamDown, .high)
         return [
-            diffCase("networkCooldown.first",
-                     old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(0)),
-                     new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(0))),
-            diffCase("networkCooldown.suppressed",
-                     old: old.evaluate(hosts: [], diagnosis: diagnosis, now: at(30)),
-                     new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(diagnosis), now: at(30)))
+            alertCase("networkCooldown.first", machine.evaluate(members: [], diagnosis: diag, now: at(0))),
+            alertCase("networkCooldown.suppressed", machine.evaluate(members: [], diagnosis: diag, now: at(30)))
         ]
     }
 
-    func internetLossSafetyNetDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor(sensitivity: .conservative, networkCooldown: 300)
-        var new = monitoringMachine(sensitivity: .conservative, networkCooldown: 300)
-        let hosts = [
-            alertHost(status: .down),
-            alertHost("gw", name: "Gateway", status: .down)
-        ]
+    func internetLossSafetyNet() -> [AlertGoldenCase] {
+        var machine = monitoringMachine(sensitivity: .conservative, networkCooldown: 300)
         return [
-            diffCase("internetLossSafetyNet",
-                     old: old.evaluate(hosts: hosts, diagnosis: healthyDiagnosis(), now: at(0)),
-                     new: new.evaluate(members: alertMembers(hosts), diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0)))
+            alertCase(
+                "internetLossSafetyNet",
+                machine.evaluate(
+                    members: [
+                        member(status: .down),
+                        member("gw", name: "Gateway", status: .down)
+                    ],
+                    diagnosis: healthyDiagnosis(),
+                    now: at(0)
+                )
+            )
         ]
     }
 
-    func remoteServiceAdditionalHostsCopyDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
-        let hosts = [
-            alertHost("cf", name: "Cloudflare DNS", status: .degraded),
-            alertHost("gg", name: "Google DNS", status: .degraded),
-            alertHost("svc", name: "Service API", status: .degraded)
+    func remoteServiceAdditionalHostsCopy() -> [AlertGoldenCase] {
+        var machine = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let members = [
+            member("cf", name: "Cloudflare DNS", status: .degraded),
+            member("gg", name: "Google DNS", status: .degraded),
+            member("svc", name: "Service API", status: .degraded)
         ]
-        let diagnosis = NetworkPerspectiveDiagnosis(
-            scope: .remoteService,
-            verdict: .remoteServiceDown(hostIDs: ["cf", "gg", "svc"]),
-            confidence: .high,
-            faultTier: .remoteService,
-            affectedHostIDs: ["cf", "gg", "svc"],
-            title: "Remote service down",
-            detail: "3/3 remote host(s) unreachable.",
-            tierEvidence: []
+        let diag = diagnosis(
+            .remoteServiceDown,
+            .high,
+            role: .remoteService,
+            affected: ["cf", "gg", "svc"],
+            detail: "3/3 remote host(s) unreachable."
         )
+        return [alertCase("remoteServiceAdditionalHostsCopy", machine.evaluate(members: members, diagnosis: diag, now: at(0)))]
+    }
+
+    func pathRecoveredOnlyAfterDeliveredNetworkAlert() -> [AlertGoldenCase] {
+        var machine = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
+        let noPrior = machine.evaluate(members: [], diagnosis: healthyDiagnosis(), now: at(0))
+        _ = machine.evaluate(members: [], diagnosis: diagnosis(.upstreamDown, .high), now: at(10))
+        let recovered = machine.evaluate(members: [], diagnosis: healthyDiagnosis(), now: at(20))
+        let repeated = machine.evaluate(members: [], diagnosis: healthyDiagnosis(), now: at(30))
         return [
-            diffCase("remoteServiceAdditionalHostsCopy",
-                     old: old.evaluate(hosts: hosts, diagnosis: diagnosis, now: at(0)),
-                     new: new.evaluate(members: alertMembers(hosts), diagnosis: monitoringDiagnosis(diagnosis), now: at(0)))
+            alertCase("pathRecovered.noPrior", noPrior),
+            alertCase("pathRecovered.afterDelivered", recovered),
+            alertCase("pathRecovered.repeated", repeated)
         ]
     }
 
-    func pathRecoveredOnlyAfterDeliveredNetworkAlertDifferential() -> [AlertDifferentialCase] {
-        var old = PingAlertMonitor(sensitivity: .balanced, networkCooldown: 300)
-        var new = monitoringMachine(sensitivity: .balanced, networkCooldown: 300)
-        let noPrior = diffCase("pathRecovered.noPrior",
-                               old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(0)),
-                               new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(0)))
-        _ = old.evaluate(hosts: [], diagnosis: alertDiagnosis(.upstreamDown, .high), now: at(10))
-        _ = new.evaluate(members: [], diagnosis: monitoringDiagnosis(alertDiagnosis(.upstreamDown, .high)), now: at(10))
-        let recovered = diffCase("pathRecovered.afterDelivered",
-                                 old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(20)),
-                                 new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(20)))
-        let repeated = diffCase("pathRecovered.repeated",
-                                old: old.evaluate(hosts: [], diagnosis: healthyDiagnosis(), now: at(30)),
-                                new: new.evaluate(members: [], diagnosis: monitoringDiagnosis(healthyDiagnosis()), now: at(30)))
-        return [noPrior, recovered, repeated]
-    }
-
-    func networkStatusTransitionAlertsDifferential() -> [AlertDifferentialCase] {
+    func networkStatusTransitionAlerts() -> [AlertGoldenCase] {
         NetworkConnectivityStatus.allCases.flatMap { status in
-            guard status != .connected else { return [AlertDifferentialCase]() }
-            var old = NetworkStatusAlertMonitor(cooldown: 300)
-            var new = MonitoringAlertStateMachine(networkAwarenessConfig: NetworkAwarenessConfig(cooldown: 300))
-            let down = diffCase("networkStatus.\(status.rawValue).down",
-                                old: [old.evaluate(previous: .connected, current: status, now: at(0))].compactMap { $0 },
-                                new: [new.evaluateNetworkStatus(previous: .connected, current: status, now: at(0))].compactMap { $0 })
-            let repeated = diffCase("networkStatus.\(status.rawValue).repeated",
-                                    old: [old.evaluate(previous: status, current: status, now: at(10))].compactMap { $0 },
-                                    new: [new.evaluateNetworkStatus(previous: status, current: status, now: at(10))].compactMap { $0 })
-            let recovered = diffCase("networkStatus.\(status.rawValue).recovered",
-                                     old: [old.evaluate(previous: status, current: .connected, now: at(20))].compactMap { $0 },
-                                     new: [new.evaluateNetworkStatus(previous: status, current: .connected, now: at(20))].compactMap { $0 })
-            return [down, repeated, recovered]
+            guard status != .connected else { return [AlertGoldenCase]() }
+            var machine = MonitoringAlertStateMachine(networkAwarenessConfig: NetworkAwarenessConfig(cooldown: 300))
+            let down = machine.evaluateNetworkStatus(previous: .connected, current: status, now: at(0))
+            let repeated = machine.evaluateNetworkStatus(previous: status, current: status, now: at(10))
+            let recovered = machine.evaluateNetworkStatus(previous: status, current: .connected, now: at(20))
+            return [
+                alertCase("networkStatus.\(status.rawValue).down", [down].compactMap { $0 }),
+                alertCase("networkStatus.\(status.rawValue).repeated", [repeated].compactMap { $0 }),
+                alertCase("networkStatus.\(status.rawValue).recovered", [recovered].compactMap { $0 })
+            ]
         }
     }
 
-    func networkChangeEventCopyDifferential() -> [AlertDifferentialCase] {
-        let oldChanged = StatusViewModel.networkChangeEvent(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1", now: at(0))
-        let oldUnchanged = StatusViewModel.networkChangeEvent(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1", now: at(0))
+    func networkChangeEventCopy() -> [AlertGoldenCase] {
         let machine = MonitoringAlertStateMachine()
-        let newChanged = machine.networkChangeEvent(
-            MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"),
-            now: at(0)
-        )
-        let newUnchanged = machine.networkChangeEvent(
-            MonitoringNetworkChange(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1"),
-            now: at(0)
-        )
         return [
-            diffCase("networkChange.gatewayChanged", old: [oldChanged].compactMap { $0 }, new: [newChanged].compactMap { $0 }),
-            diffCase("networkChange.unchanged", old: [oldUnchanged].compactMap { $0 }, new: [newUnchanged].compactMap { $0 })
+            alertCaseStableTime("networkChange.gatewayChanged", [
+                machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.101.1", currentGateway: "192.168.8.1"), now: at(0))
+            ]),
+            alertCaseStableTime("networkChange.unchanged", [
+                machine.networkChangeEvent(MonitoringNetworkChange(previousGateway: "192.168.8.1", currentGateway: "192.168.8.1"), now: at(0))
+            ])
         ]
     }
 
@@ -884,7 +591,13 @@ private extension GenericMonitoringParityCharacterizationTests {
                     stateClass: .measurement,
                     graphStyle: .sparkline,
                     isPrimary: index == 0,
-                    priority: index == 0 ? 10 : 0
+                    priority: index == 0 ? 10 : 0,
+                    monitoring: MonitoringMetadata(
+                        role: index == 0 ? .localGateway : (index == 1 ? .upstreamInternet : .localGateway),
+                        perspectiveID: "ping.default",
+                        diagnosticSummary: .member,
+                        address: MonitoredAddress(rawValue: hosts[index].address)
+                    )
                 )
             ]
             let value = [3.0, 24.0, 0.0][index]
@@ -907,6 +620,18 @@ private extension GenericMonitoringParityCharacterizationTests {
             states: states,
             samples: samples,
             latencyIDs: latencyIDs
+        )
+    }
+
+    func monitoringDiagnosis(_ kind: MonitoringVerdict.Kind) -> MonitoringDiagnosis {
+        MonitoringDiagnosis(
+            perspectiveID: "monitoring.default",
+            verdict: MonitoringVerdict(kind: kind, affectedRole: kind == .localNetworkDown ? .localGateway : nil),
+            severity: DiagnosticSummaryEntity.severity(for: kind) ?? .normal,
+            confidence: .high,
+            affectedEntityIDs: [],
+            title: kind == .localNetworkDown ? "Local network down" : "All reachable",
+            detail: kind == .localNetworkDown ? "1/1 gateway host(s) unreachable." : "2/2 monitored hosts healthy."
         )
     }
 
@@ -969,9 +694,11 @@ private extension GenericMonitoringParityCharacterizationTests {
             )
         ]
     }
-}
 
-private extension GenericMonitoringParityCharacterizationTests {
+    func loadGolden<T: Decodable>(_ name: String) throws -> T {
+        try JSONDecoder().decode(T.self, from: Data(contentsOf: fixturesURL().appendingPathComponent(name)))
+    }
+
     func assertGolden<T: Encodable>(_ value: T, named name: String, file: StaticString = #filePath, line: UInt = #line) throws {
         let data = try goldenData(value)
         let url = fixturesURL().appendingPathComponent(name)
@@ -980,24 +707,16 @@ private extension GenericMonitoringParityCharacterizationTests {
             try data.write(to: url)
             return
         }
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            XCTFail("Missing golden fixture \(url.path). Run AMBIT_RECORD_GOLDENS=1 swift test --filter GenericMonitoringParityCharacterizationTests to create it.", file: file, line: line)
-            return
-        }
         let expected = try Data(contentsOf: url)
         XCTAssertEqual(String(data: data, encoding: .utf8), String(data: expected, encoding: .utf8), file: file, line: line)
     }
 
     func assertPresentationConfigGolden(_ value: PresentationConfig, named name: String, file: StaticString = #filePath, line: UInt = #line) throws {
-        let data = try goldenData(value)
         let url = fixturesURL().appendingPathComponent(name)
         if ProcessInfo.processInfo.environment["AMBIT_RECORD_GOLDENS"] == "1" {
+            let data = try goldenData(value)
             try FileManager.default.createDirectory(at: fixturesURL(), withIntermediateDirectories: true)
             try data.write(to: url)
-            return
-        }
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            XCTFail("Missing golden fixture \(url.path). Run AMBIT_RECORD_GOLDENS=1 swift test --filter GenericMonitoringParityCharacterizationTests to create it.", file: file, line: line)
             return
         }
         let expected = try JSONDecoder().decode(PresentationConfig.self, from: Data(contentsOf: url))
@@ -1018,6 +737,32 @@ private extension GenericMonitoringParityCharacterizationTests {
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures")
             .appendingPathComponent("GenericMonitoringParity")
+    }
+}
+
+private extension MonitoringPerspectiveMember {
+    init(_ snapshot: DiagnosisHostSnapshot) {
+        self.init(
+            entityID: EntityID(rawValue: snapshot.id),
+            instanceID: IntegrationInstanceID(rawValue: snapshot.id),
+            displayName: snapshot.id,
+            role: MonitoringRole(legacyTier: snapshot.tier),
+            status: HealthStatus(rawValue: snapshot.status)!,
+            isStale: snapshot.isStale,
+            consecutiveFailures: snapshot.consecutiveFailures
+        )
+    }
+}
+
+private extension MonitoringRole {
+    init(legacyTier: String) {
+        switch legacyTier {
+        case "localGateway": self = .localGateway
+        case "ispEdge": self = .accessNetwork
+        case "upstream": self = .upstreamInternet
+        case "remoteService": self = .remoteService
+        default: self = .endpoint
+        }
     }
 }
 
