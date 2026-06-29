@@ -113,11 +113,13 @@ final class StatusViewModel: ObservableObject {
     @Published var overlayConfig = OverlayPresentationConfig()
     @Published var startAtLoginEnabled = false
     @Published var startAtLoginMessage: String?
+    @Published var userRules: [UserRule] = []
 
     // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
     // one status item per slot.
     @Published var slots: [Slot] = []
     private let configStore: any PresentationConfigStore
+    private let userRuleStore: any UserRuleStore
     let historyRetentionInterval = HistoryService.defaultRetentionInterval
 
     private var monitoringDiagnosisCoordinator = MonitoringSlotDiagnosisCoordinator()
@@ -144,6 +146,7 @@ final class StatusViewModel: ObservableObject {
     private let networkChangeSource: (any NetworkChangeSource)?
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
     private var networkAlertStateMachine = MonitoringAlertStateMachine(warmUpCycles: 0)
+    private var userRuleRunner = UserRuleRunner()
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -156,6 +159,7 @@ final class StatusViewModel: ObservableObject {
         integrationRegistry: (any IntegrationRegistry)? = nil,
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
+        userRuleStore: any UserRuleStore = UserDefaultsUserRuleStore(),
         notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
         notificationSettingsOpener: any NotificationSettingsOpening = MacNotificationSettingsOpener(),
         diagnosticsLogService: any DiagnosticsLogService = AppKitDiagnosticsLogService(),
@@ -177,6 +181,8 @@ final class StatusViewModel: ObservableObject {
         self.credentialStore = credentialStore
         self.addressDiscovery = addressDiscovery
         self.configStore = configStore
+        self.userRuleStore = userRuleStore
+        self.userRules = userRuleStore.load()
         self.startAtLoginEnabled = startAtLoginCoordinator.isEnabled()
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
@@ -764,6 +770,7 @@ final class StatusViewModel: ObservableObject {
         // Build per-slot surfaces.
         await deliverAlerts(events, descriptors: allDescriptors)
         let allStates = await engine.entityStates(now: now)
+        await runUserRules(states: allStates, descriptors: allDescriptors, now: now)
         let primaryPingInstanceID = (try? integrationRegistry.primaryInstanceID()) ?? nil
         let commandsByProvider = Self.commandsByProvider(from: await engine.commandPalette())
         presentationSettings = Self.presentationSettingsModel(
@@ -810,6 +817,46 @@ final class StatusViewModel: ObservableObject {
             ResolvedAlertEvent(event: event, entityIDs: alertTargetResolver.resolve(event, descriptors: allDescriptors))
         }
         _ = await alertNotificationService.deliver(resolved, using: notificationDeliverer)
+    }
+
+    private func runUserRules(
+        states: [EntityID: EntityState],
+        descriptors: [ProviderInstanceID: [EntityDescriptor]],
+        now: Date
+    ) async {
+        guard !userRules.isEmpty else { return }
+        let engine = engine
+        let executor = ReactionExecutor { invocation in
+            _ = await engine.runCommand(
+                provider: invocation.providerID,
+                providerName: invocation.providerID,
+                commandID: invocation.commandID,
+                commandLabel: invocation.commandID,
+                arguments: invocation.arguments
+            )
+        }
+        let input = ConditionEvaluator.Input(states: states)
+        var runner = userRuleRunner
+        guard let results = try? await runner.evaluate(
+            rules: userRules,
+            input: input,
+            now: now,
+            executor: executor
+        ) else { return }
+        userRuleRunner = runner
+        let events = results.compactMap { result -> AlertEvent? in
+            guard case .notified(let spec) = result.executionResult else { return nil }
+            return AlertEvent(
+                ruleID: result.ruleID.rawValue,
+                providerID: "user.rules",
+                target: nil,
+                title: spec.titleTemplate,
+                message: spec.bodyTemplate ?? "",
+                severity: spec.level == .timeSensitive ? .down : .normal,
+                triggeredAt: now
+            )
+        }
+        await deliverAlerts(events, descriptors: descriptors)
     }
 
     nonisolated static func presentationSettingsModel(
@@ -1118,6 +1165,8 @@ final class StatusViewModel: ObservableObject {
 
     func resetToDefaults() async {
         configStore.save(.empty)
+        userRuleStore.save([])
+        userRules = []
         try? integrationRegistry.save([])
         try? integrationRegistry.setDisabledIntegrationIDs(BuiltInIntegrationSeed.integrationIDs)
         try? integrationRegistry.setPrimaryInstanceID(nil)
@@ -1180,6 +1229,36 @@ final class StatusViewModel: ObservableObject {
         }
         configStore.save(config)
         rebuildPresentationSettings(config: config)
+    }
+
+    var userRuleSignalDescriptors: [EntityDescriptor] {
+        presentationSettings.integrations
+            .flatMap(\.entities)
+            .map(\.descriptor)
+    }
+
+    func userRules(for pane: UserRuleSettingsPane) -> [UserRule] {
+        UserRulePlacement.rules(userRules, for: pane)
+    }
+
+    func createUserRule(_ rule: UserRule) {
+        userRuleStore.create(rule)
+        userRules = userRuleStore.load()
+    }
+
+    func updateUserRule(_ rule: UserRule) {
+        userRuleStore.update(rule)
+        userRules = userRuleStore.load()
+    }
+
+    func deleteUserRule(id: UserRuleID) {
+        userRuleStore.delete(id: id)
+        userRules = userRuleStore.load()
+    }
+
+    func reorderUserRules(ids: [UserRuleID]) {
+        userRuleStore.reorder(ids: ids)
+        userRules = userRuleStore.load()
     }
 
     func notificationAuthorizationStatus() async -> NotificationAuthorizationStatus {

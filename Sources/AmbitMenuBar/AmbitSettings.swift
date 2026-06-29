@@ -9,6 +9,8 @@ private enum SettingsSelection: Hashable {
     case slots
     case history
     case diagnostics
+    case notifications
+    case automations
 }
 
 private func statusColor(_ status: IntegrationInstanceStatus, palette: StatusStylePalette = StatusStylePalette()) -> Color {
@@ -75,6 +77,18 @@ struct AmbitSettings: View {
                     subtitle: "\(viewModel.historyRetentionLabel) retained",
                     systemImage: "clock.arrow.circlepath",
                     selection: .history
+                )
+                sidebarButton(
+                    title: "Notifications",
+                    subtitle: "\(viewModel.userRules(for: .notifications).count) custom rules",
+                    systemImage: "bell",
+                    selection: .notifications
+                )
+                sidebarButton(
+                    title: "Automations",
+                    subtitle: "\(viewModel.userRules(for: .automations).count) active rules",
+                    systemImage: "wand.and.stars",
+                    selection: .automations
                 )
                 sidebarButton(
                     title: "Diagnostics",
@@ -186,6 +200,10 @@ struct AmbitSettings: View {
             HistorySettingsDetail()
         case .diagnostics:
             DiagnosticsSettingsDetail()
+        case .notifications:
+            RuleSettingsDetail(pane: .notifications)
+        case .automations:
+            RuleSettingsDetail(pane: .automations)
         }
     }
 
@@ -195,6 +213,345 @@ struct AmbitSettings: View {
         else { return }
         selection = .integration(first.id)
         didChooseInitialSelection = true
+    }
+}
+
+private struct RuleSettingsDetail: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let pane: UserRuleSettingsPane
+
+    private var rules: [UserRule] {
+        viewModel.userRules(for: pane)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.system(size: 22, weight: .bold))
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Saved rules")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    if rules.isEmpty {
+                        Text(emptyMessage)
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 8)
+                    } else {
+                        ForEach(rules) { rule in
+                            UserRuleRow(rule: rule, descriptors: viewModel.userRuleSignalDescriptors)
+                            Divider()
+                        }
+                    }
+                }
+
+                UserRuleBuilderView(pane: pane)
+            }
+            .padding(22)
+        }
+    }
+
+    private var title: String {
+        switch pane {
+        case .notifications: return "Notifications"
+        case .automations: return "Automations"
+        }
+    }
+
+    private var subtitle: String {
+        switch pane {
+        case .notifications:
+            return "Built-in alerts and custom notify rules share one rule engine."
+        case .automations:
+            return "Rules with surface changes or commands also appear here."
+        }
+    }
+
+    private var emptyMessage: String {
+        switch pane {
+        case .notifications: return "No custom notification rules yet."
+        case .automations: return "No automation reactions yet."
+        }
+    }
+}
+
+private struct UserRuleRow: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let rule: UserRule
+    let descriptors: [EntityDescriptor]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(rule.enabled ? Color.accentColor : Color.secondary)
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(rule.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(UserRuleExpressionFormatter.string(for: rule.condition, descriptors: descriptors))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    ForEach(reactionLabels, id: \.self) { label in
+                        Text(label)
+                            .font(.system(size: 10, weight: .medium))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.14), in: Capsule())
+                    }
+                }
+            }
+            Spacer()
+            Button("Delete", role: .destructive) {
+                viewModel.deleteUserRule(id: rule.id)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var reactionLabels: [String] {
+        rule.reactions.map { reaction in
+            switch reaction {
+            case .notify: return "Notify"
+            case .mutateSurface: return "Change surface"
+            case .runCommand: return "Run command"
+            case .applyContext: return "Apply context"
+            }
+        }
+    }
+}
+
+private struct UserRuleBuilderView: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let pane: UserRuleSettingsPane
+    @State private var draft = UserRuleBuilderDraft(
+        displayName: "New rule",
+        reactions: [.notify(NotifySpec(titleTemplate: "Rule matched", level: .active, lifecycle: .oneShot))]
+    )
+    @State private var valueText = "90"
+    @State private var saveError: String?
+
+    private var descriptors: [EntityDescriptor] { viewModel.userRuleSignalDescriptors }
+    private var pickerItems: [SignalPickerItem] { SignalPickerModel.items(from: descriptors) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New rule")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Rule name", text: $draft.displayName)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack(spacing: 8) {
+                    Text("When")
+                        .font(.system(size: 12, weight: .medium))
+                    Picker("Signal", selection: selectedSignalBinding) {
+                        Text("Choose a signal").tag(Optional<EntityID>.none)
+                        ForEach(pickerItems) { item in
+                            Text("\(item.title) · \(item.subtitle)").tag(Optional(item.id))
+                        }
+                    }
+                    .frame(width: 230)
+
+                    Picker("Comparison", selection: $draft.comparison) {
+                        ForEach(Self.comparisons, id: \.self) { comparison in
+                            Text(Self.label(for: comparison)).tag(comparison)
+                        }
+                    }
+                    .frame(width: 90)
+
+                    TextField("Value", text: $valueText)
+                        .frame(width: 80)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Temporal")
+                        .font(.system(size: 12, weight: .medium))
+                    Picker("Temporal", selection: temporalSelection) {
+                        Text("Immediate").tag(TemporalSelection.none)
+                        Text("Held 60s").tag(TemporalSelection.held60)
+                        Text("2 samples").tag(TemporalSelection.twoSamples)
+                    }
+                    .frame(width: 140)
+                }
+
+                Text(expressionPreview)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Then")
+                        .font(.system(size: 12, weight: .medium))
+                    HStack(spacing: 8) {
+                        Toggle("Notify", isOn: notifyBinding)
+                            .toggleStyle(.checkbox)
+                        Button("Change surface") { addSurfaceMutation() }
+                        Button("Run command") { addFirstCommandIfAvailable() }
+                        Button("Apply context") {}
+                            .disabled(true)
+                            .help("Contexts arrive in B4.")
+                        Button("Run Shortcut") {}
+                            .disabled(true)
+                            .help("Shortcuts arrive in B6.")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if let saveError {
+                    Text(saveError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+
+                Button("Add rule") {
+                    save()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(14)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private var selectedSignalBinding: Binding<EntityID?> {
+        Binding {
+            draft.selectedSignalID
+        } set: { value in
+            draft.selectedSignalID = value
+        }
+    }
+
+    private var notifyBinding: Binding<Bool> {
+        Binding {
+            draft.reactions.contains {
+                if case .notify = $0 { return true }
+                return false
+            }
+        } set: { enabled in
+            draft.reactions.removeAll {
+                if case .notify = $0 { return true }
+                return false
+            }
+            if enabled {
+                draft.reactions.insert(
+                    .notify(NotifySpec(titleTemplate: draft.displayName.isEmpty ? "Rule matched" : draft.displayName, level: .active, lifecycle: .oneShot)),
+                    at: 0
+                )
+            }
+        }
+    }
+
+    private var temporalSelection: Binding<TemporalSelection> {
+        Binding {
+            switch draft.temporal {
+            case .heldFor(60): return .held60
+            case .consecutiveSamples(2): return .twoSamples
+            default: return .none
+            }
+        } set: { value in
+            switch value {
+            case .none: draft.temporal = nil
+            case .held60: draft.temporal = .heldFor(60)
+            case .twoSamples: draft.temporal = .consecutiveSamples(2)
+            }
+        }
+    }
+
+    private var expressionPreview: String {
+        var copy = draft
+        copy.comparisonValue = parsedValue
+        guard let rule = try? copy.buildRule(id: "preview", descriptors: descriptors) else {
+            return "Choose a signal and reaction to preview the condition."
+        }
+        return UserRuleExpressionFormatter.string(for: rule.condition, descriptors: descriptors)
+    }
+
+    private var parsedValue: ConditionValue {
+        if let number = Double(valueText) {
+            return .number(number)
+        }
+        return .string(valueText)
+    }
+
+    private func save() {
+        var copy = draft
+        copy.comparisonValue = parsedValue
+        if copy.reactions.isEmpty {
+            saveError = "Choose at least one reaction."
+            return
+        }
+        do {
+            let rule = try copy.buildRule(id: UserRuleID(rawValue: "user.\(UUID().uuidString)"), descriptors: descriptors)
+            viewModel.createUserRule(rule)
+            draft = UserRuleBuilderDraft(
+                displayName: "New rule",
+                selectedSignalID: draft.selectedSignalID,
+                reactions: [.notify(NotifySpec(titleTemplate: "Rule matched", level: .active, lifecycle: .oneShot))]
+            )
+            valueText = "90"
+            saveError = nil
+        } catch {
+            saveError = String(describing: error)
+        }
+    }
+
+    private func addSurfaceMutation() {
+        guard !draft.reactions.contains(where: { if case .mutateSurface = $0 { return true }; return false }) else { return }
+        draft.reactions.append(.mutateSurface(SurfaceMutation(
+            target: SurfacePropertyAddress(surfaceID: "menubar", itemID: "rule", property: .badge),
+            set: .string("!")
+        )))
+    }
+
+    private func addFirstCommandIfAvailable() {
+        guard !draft.reactions.contains(where: { if case .runCommand = $0 { return true }; return false }) else { return }
+        guard let command = viewModel.presentationSettings.integrations.flatMap(\.commands).first else {
+            saveError = "No command is available for the current integrations."
+            return
+        }
+        draft.reactions.append(.runCommand(CommandInvocation(
+            providerID: command.providerID,
+            commandID: command.command.id,
+            requiresConfirmation: command.command.requiresConfirmation
+        )))
+    }
+
+    private static let comparisons: [AlertComparison] = [
+        .greaterThan,
+        .greaterThanOrEqual,
+        .lessThan,
+        .lessThanOrEqual,
+        .equal,
+        .notEqual
+    ]
+
+    private static func label(for comparison: AlertComparison) -> String {
+        switch comparison {
+        case .greaterThan: return ">"
+        case .greaterThanOrEqual: return ">="
+        case .lessThan: return "<"
+        case .lessThanOrEqual: return "<="
+        case .equal: return "=="
+        case .notEqual: return "!="
+        }
+    }
+
+    private enum TemporalSelection: Hashable {
+        case none
+        case held60
+        case twoSamples
     }
 }
 
