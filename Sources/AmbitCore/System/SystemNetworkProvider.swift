@@ -10,15 +10,18 @@ public actor SystemNetworkProvider: Provider {
     public nonisolated let pollInterval: TimeInterval
 
     private let reader: any SystemMetricsReading
+    private let networkInfoReader: any SystemNetworkInfoReading
     private let clock: @Sendable () -> Date
     private var previous: PreviousCounters?
 
     public init(
         reader: any SystemMetricsReading = DarwinSystemMetricsReader(),
+        networkInfoReader: any SystemNetworkInfoReading = DarwinSystemNetworkInfoReader(),
         pollInterval: TimeInterval = 2,
         clock: @escaping @Sendable () -> Date = Date.init
     ) {
         self.reader = reader
+        self.networkInfoReader = networkInfoReader
         self.pollInterval = pollInterval
         self.clock = clock
     }
@@ -66,6 +69,28 @@ public actor SystemNetworkProvider: Provider {
                 access: .read,
                 metricID: "interfaces",
                 defaultVisibility: .auto
+            ),
+            EntityDescriptor(
+                id: instanceID.entity("ssid"),
+                instanceID: instanceID,
+                name: "Wi-Fi SSID",
+                kind: .text,
+                category: .primary,
+                capability: "system.network",
+                access: .read,
+                metricID: "ssid",
+                defaultVisibility: .auto
+            ),
+            EntityDescriptor(
+                id: instanceID.entity("bssid"),
+                instanceID: instanceID,
+                name: "Wi-Fi BSSID",
+                kind: .text,
+                category: .primary,
+                capability: "system.network",
+                access: .read,
+                metricID: "bssid",
+                defaultVisibility: .auto
             )
         ]
     }
@@ -81,6 +106,13 @@ public actor SystemNetworkProvider: Provider {
             var metrics = [
                 Metric(id: "interfaces", label: "Interfaces", value: .table(Self.table(from: snapshot.networkCounters, rates: rates)))
             ]
+            let networkInfo = await networkInfoReader.snapshot()
+            if networkInfo.permission.canRead, let ssid = networkInfo.ssid, !ssid.isEmpty {
+                metrics.append(Metric(id: "ssid", label: "Wi-Fi SSID", value: .text(ssid), capability: "system.network"))
+            }
+            if networkInfo.permission.canRead, let bssid = networkInfo.bssid, !bssid.isEmpty {
+                metrics.append(Metric(id: "bssid", label: "Wi-Fi BSSID", value: .text(bssid), capability: "system.network"))
+            }
             if let aggregateIn = aggregateRate(rates: rates, counters: snapshot.networkCounters, keyPath: \.inBitsPerSecond) {
                 metrics.append(Metric(id: "throughput_in", label: "Network In", value: .throughput(bitsPerSecond: aggregateIn)))
             }

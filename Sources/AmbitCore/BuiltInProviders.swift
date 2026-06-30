@@ -10,6 +10,11 @@ public struct BuiltInProviderFactory: Sendable {
     private let systemMetricsReader: any SystemMetricsReading
     private let systemProcessRunner: any ProcessRunner
     private let systemSensorReader: any SystemSensorReading
+    private let systemNetworkInfoReader: any SystemNetworkInfoReading
+    private let systemCalendarReader: any SystemCalendarReading
+    private let systemLocationReader: any SystemLocationReading
+    private let systemPlaceStore: any PlaceStore
+    private let systemFocusReader: any SystemFocusReading
 
     public init(
         routerClientFactory: @escaping RouterClientFactory,
@@ -24,7 +29,12 @@ public struct BuiltInProviderFactory: Sendable {
         activeMeasurementProcessRunner: (any ProcessRunner)? = nil,
         systemMetricsReader: any SystemMetricsReading = DarwinSystemMetricsReader(),
         systemProcessRunner: any ProcessRunner = SystemProcessRunner(),
-        systemSensorReader: any SystemSensorReading = NoOpSystemSensorReader()
+        systemSensorReader: any SystemSensorReading = NoOpSystemSensorReader(),
+        systemNetworkInfoReader: any SystemNetworkInfoReading = DarwinSystemNetworkInfoReader(),
+        systemCalendarReader: any SystemCalendarReading = DarwinSystemCalendarReader(),
+        systemLocationReader: any SystemLocationReading = DarwinSystemLocationReader(),
+        systemPlaceStore: any PlaceStore = UserDefaultsPlaceStore(),
+        systemFocusReader: any SystemFocusReading = NoOpSystemFocusReader()
     ) {
         self.routerClientFactory = routerClientFactory
         self.reachabilityProbe = reachabilityProbe
@@ -35,6 +45,11 @@ public struct BuiltInProviderFactory: Sendable {
         self.systemMetricsReader = systemMetricsReader
         self.systemProcessRunner = systemProcessRunner
         self.systemSensorReader = systemSensorReader
+        self.systemNetworkInfoReader = systemNetworkInfoReader
+        self.systemCalendarReader = systemCalendarReader
+        self.systemLocationReader = systemLocationReader
+        self.systemPlaceStore = systemPlaceStore
+        self.systemFocusReader = systemFocusReader
     }
 
     public func providers(settings: AppSettings) -> [any Provider] {
@@ -42,9 +57,12 @@ public struct BuiltInProviderFactory: Sendable {
             SystemOverviewProvider(reader: systemMetricsReader),
             SystemStorageProvider(reader: systemMetricsReader),
             SystemProcessProvider(processRunner: systemProcessRunner),
-            SystemNetworkProvider(reader: systemMetricsReader),
+            SystemNetworkProvider(reader: systemMetricsReader, networkInfoReader: systemNetworkInfoReader),
             SystemSensorProvider(reader: systemSensorReader),
             SystemFanProvider(reader: systemSensorReader),
+            SystemCalendarProvider(reader: systemCalendarReader),
+            SystemLocationProvider(reader: systemLocationReader, placeStore: systemPlaceStore),
+            SystemFocusProvider(reader: systemFocusReader),
             GLiNetRouterProvider(clientFactory: routerClientFactory),
             GLiNetVPNProvider(clientFactory: routerClientFactory),
             ReachabilityProvider(probe: reachabilityProbe),
@@ -73,14 +91,26 @@ public struct BuiltInProviderFactory: Sendable {
         ProviderIDs.systemProcesses,
         ProviderIDs.systemNetwork,
         ProviderIDs.systemSensors,
-        ProviderIDs.systemFans
+        ProviderIDs.systemFans,
+        ProviderIDs.systemCalendar,
+        ProviderIDs.systemLocation,
+        ProviderIDs.systemFocus
     ]
 
     /// The built-ins as single-instance integrations (registry-driven assembly). Ping/iperf3
     /// exist only when a process runner is available (matching providers(settings:)).
     public func integrations() -> [any Integration] {
         var result: [any Integration] = [
-            SystemIntegration(reader: systemMetricsReader, processRunner: systemProcessRunner, sensorReader: systemSensorReader),
+            SystemIntegration(
+                reader: systemMetricsReader,
+                processRunner: systemProcessRunner,
+                sensorReader: systemSensorReader,
+                networkInfoReader: systemNetworkInfoReader,
+                calendarReader: systemCalendarReader,
+                locationReader: systemLocationReader,
+                placeStore: systemPlaceStore,
+                focusReader: systemFocusReader
+            ),
             GLiNetIntegration(routerClientFactory: routerClientFactory),
             ReachabilityIntegration(probe: reachabilityProbe),
             SpeedifyIntegration(client: routerSpeedifyClient),

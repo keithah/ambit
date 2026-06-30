@@ -126,6 +126,9 @@ public enum ProviderInstanceIDs {
     public static let systemNetwork: ProviderInstanceID = "system@local/network"
     public static let systemSensors: ProviderInstanceID = "system@local/sensors"
     public static let systemFans: ProviderInstanceID = "system@local/fans"
+    public static let systemCalendar: ProviderInstanceID = "system@local/calendar"
+    public static let systemLocation: ProviderInstanceID = "system@local/location"
+    public static let systemFocus: ProviderInstanceID = "system@local/focus"
 
     /// Maps a built-in provider *type* id ("router", "speedify", …) to its scoped instance
     /// id, so callers that still address built-ins by type id (the menubar, compatibility
@@ -147,6 +150,9 @@ public enum ProviderInstanceIDs {
         case ProviderIDs.systemNetwork: return systemNetwork
         case ProviderIDs.systemSensors: return systemSensors
         case ProviderIDs.systemFans: return systemFans
+        case ProviderIDs.systemCalendar: return systemCalendar
+        case ProviderIDs.systemLocation: return systemLocation
+        case ProviderIDs.systemFocus: return systemFocus
         default: return nil
         }
     }

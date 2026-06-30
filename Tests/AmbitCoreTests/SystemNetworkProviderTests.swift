@@ -137,13 +137,51 @@ final class SystemNetworkProviderTests: XCTestCase {
         XCTAssertEqual(table.rows.map(\.id), ["en0", "utun5", "lo0"])
     }
 
+    func testWiFiSSIDAndBSSIDMetricsComeFromInjectedNetworkInfoSource() async {
+        let provider = SystemNetworkProvider(
+            reader: SequenceNetworkReader(snapshots: [Self.snapshot(counters: [])]),
+            networkInfoReader: FakeSystemNetworkInfoReader(snapshot: SystemNetworkInfoSnapshot(
+                permission: .authorized,
+                ssid: "Office WiFi",
+                bssid: "aa:bb:cc:dd:ee:ff"
+            ))
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: provider.entityDescriptors())
+
+        XCTAssertEqual(snapshot.metricValue("ssid"), .text("Office WiFi"))
+        XCTAssertEqual(snapshot.metricValue("bssid"), .text("aa:bb:cc:dd:ee:ff"))
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("ssid")]?.value, .text("Office WiFi"))
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("bssid")]?.value, .text("aa:bb:cc:dd:ee:ff"))
+    }
+
+    func testWiFiPermissionDeniedLeavesSSIDDescriptorsUnavailableWithoutFailure() async {
+        let provider = SystemNetworkProvider(
+            reader: SequenceNetworkReader(snapshots: [Self.snapshot(counters: [])]),
+            networkInfoReader: FakeSystemNetworkInfoReader(snapshot: SystemNetworkInfoSnapshot(permission: .denied))
+        )
+
+        let snapshot = await provider.poll(context: EnvironmentContext(routerHost: nil, settings: AppSettings()))
+        let states = EntityProjection.states(snapshot: snapshot, descriptors: provider.entityDescriptors())
+
+        XCTAssertEqual(snapshot.health, .ok)
+        XCTAssertNil(snapshot.error)
+        XCTAssertNil(snapshot.metricValue("ssid"))
+        XCTAssertNil(snapshot.metricValue("bssid"))
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("ssid")]?.availability, .unavailable)
+        XCTAssertEqual(states[ProviderInstanceIDs.systemNetwork.appending("bssid")]?.availability, .unavailable)
+        XCTAssertNil(states[ProviderInstanceIDs.systemNetwork.appending("ssid")]?.error)
+        XCTAssertNil(states[ProviderInstanceIDs.systemNetwork.appending("bssid")]?.error)
+    }
+
     func testSystemNetworkDescriptorsRouteToNetworkSection() {
         let provider = SystemNetworkProvider(reader: SequenceNetworkReader(snapshots: []))
 
         let plan = SurfaceComposer.detailPlan(descriptors: provider.entityDescriptors(), states: [:])
 
         XCTAssertEqual(plan.cards.map(\.title), ["Network"])
-        XCTAssertEqual(plan.cards.flatMap(\.children).map(\.kind), [.historyGraph, .statTable])
+        XCTAssertEqual(plan.cards.flatMap(\.children).map(\.kind), [.historyGraph, .statTable, .statusRow, .statusRow])
     }
 
     func testPingNetworkRoutingUnchanged() {
@@ -189,6 +227,11 @@ private final class SequenceClock: @unchecked Sendable {
         guard !dates.isEmpty else { return Date(timeIntervalSince1970: 0) }
         return dates.removeFirst()
     }
+}
+
+private struct FakeSystemNetworkInfoReader: SystemNetworkInfoReading {
+    var snapshot: SystemNetworkInfoSnapshot
+    func snapshot() async -> SystemNetworkInfoSnapshot { snapshot }
 }
 
 private extension ProviderSnapshot {
