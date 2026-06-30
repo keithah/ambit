@@ -46,7 +46,7 @@ public struct MonitoringAlertStateMachine: Sendable {
     public var entityAlertKindOverrides: [EntityID: [AlertKindID: AlertKindOverride]]
 
     private var lastStatus: [String: HealthStatus] = [:]
-    private var lastSent: [String: Date] = [:]
+    private var firingState = AlertFiringState()
     private var diagnosisStreak = 0
     private var lastVerdictKey: String?
     private var deliveredNetworkAlert = false
@@ -114,6 +114,7 @@ public struct MonitoringAlertStateMachine: Sendable {
                       isEnabled(declaration, target: member.target),
                       member.notifyOnRecovery,
                       deliveredHostDownIDs.contains(member.id) {
+                _ = conditionMatches(declaration, member: member, members: members, diagnosis: diagnosis, now: now)
                 hostEvents.append(hostRecoveredEvent(member, now: now))
                 deliveredHostDownIDs.remove(member.id)
                 pendingHostDownIDs.remove(member.id)
@@ -413,9 +414,7 @@ public struct MonitoringAlertStateMachine: Sendable {
     }
 
     private mutating func fire(_ key: String, cooldown: TimeInterval, now: Date) -> Bool {
-        if let last = lastSent[key], now.timeIntervalSince(last) < cooldown { return false }
-        lastSent[key] = now
-        return true
+        firingState.fire(key, cooldown: cooldown, now: now)
     }
 
     private mutating func conditionMatches(

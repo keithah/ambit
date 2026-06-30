@@ -106,6 +106,7 @@ public enum ReactionConfirmation: Equatable, Sendable {
 public enum ReactionExecutionResult: Equatable, Sendable {
     case ignored
     case notified(NotifySpec)
+    case notificationCleared(NotifySpec)
     case mutatedSurface(SurfaceMutation)
     case revertedSurface(SurfaceMutation)
     case requiresConfirmation(CommandInvocation)

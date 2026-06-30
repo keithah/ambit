@@ -845,11 +845,23 @@ final class StatusViewModel: ObservableObject {
         ) else { return }
         userRuleRunner = runner
         let events = results.compactMap { result -> AlertEvent? in
-            guard case .notified(let spec) = result.executionResult else { return nil }
+            let spec: NotifySpec
+            let phase: AlertEventPhase
+            switch result.executionResult {
+            case .notified(let notifySpec):
+                spec = notifySpec
+                phase = .active
+            case .notificationCleared(let notifySpec):
+                spec = notifySpec
+                phase = .recovered
+            default:
+                return nil
+            }
             return AlertEvent(
                 ruleID: result.ruleID.rawValue,
                 providerID: "user.rules",
                 target: nil,
+                phase: phase,
                 title: spec.titleTemplate,
                 message: spec.bodyTemplate ?? "",
                 severity: spec.level == .timeSensitive ? .down : .normal,

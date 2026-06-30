@@ -19,6 +19,7 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
     public var enabled: Bool
     public var source: UserRuleSource
     public var schemaVersion: Int
+    public var cooldown: TimeInterval
 
     public init(
         id: UserRuleID,
@@ -27,7 +28,8 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
         reactions: [Reaction],
         enabled: Bool,
         source: UserRuleSource = .user,
-        schemaVersion: Int = UserRule.currentSchemaVersion
+        schemaVersion: Int = UserRule.currentSchemaVersion,
+        cooldown: TimeInterval = 60
     ) {
         self.id = id
         self.displayName = displayName
@@ -36,6 +38,7 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
         self.enabled = enabled
         self.source = source
         self.schemaVersion = schemaVersion
+        self.cooldown = cooldown
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -46,6 +49,7 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
         case enabled
         case source
         case schemaVersion
+        case cooldown
     }
 
     public init(from decoder: Decoder) throws {
@@ -57,6 +61,7 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         source = try c.decodeIfPresent(UserRuleSource.self, forKey: .source) ?? .user
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
+        cooldown = try c.decodeIfPresent(TimeInterval.self, forKey: .cooldown) ?? 60
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -68,6 +73,7 @@ public struct UserRule: Codable, Equatable, Identifiable, Sendable {
         try c.encode(enabled, forKey: .enabled)
         try c.encode(source, forKey: .source)
         try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(cooldown, forKey: .cooldown)
     }
 
     public var hasNonNotifyReaction: Bool {
@@ -213,7 +219,9 @@ public struct UserRuleRunResult: Equatable, Sendable {
 public struct UserRuleRunner: Sendable {
     private var evaluators: [UserRuleID: ConditionEvaluator] = [:]
     private var activeRuleIDs: Set<UserRuleID> = []
+    private var deliveredBoundNotificationKeys: Set<String> = []
     private var mutationState = SurfaceMutationState()
+    private var firingState = AlertFiringState()
 
     public init() {}
 
@@ -229,24 +237,59 @@ public struct UserRuleRunner: Sendable {
             var evaluator = evaluators[rule.id] ?? ConditionEvaluator()
             let isActive = evaluator.evaluate(rule.condition, input: input, now: now)
             evaluators[rule.id] = evaluator
+            let wasActive = activeRuleIDs.contains(rule.id)
             if isActive {
+                guard !wasActive else { continue }
                 activeRuleIDs.insert(rule.id)
-                for reaction in rule.reactions {
-                    let executionResult = try await executor.execute(reaction, confirmation: confirmation)
-                    if case .mutateSurface(let mutation) = reaction {
+                for (index, reaction) in rule.reactions.enumerated() {
+                    let reactionKey = "\(rule.id.rawValue):\(index)"
+                    switch reaction {
+                    case .notify(let spec):
+                        guard firingState.fire(reactionKey, cooldown: rule.cooldown, now: now) else { continue }
+                        let executionResult = try await executor.execute(reaction, confirmation: confirmation)
+                        if spec.lifecycle == .boundToCondition {
+                            deliveredBoundNotificationKeys.insert(reactionKey)
+                        }
+                        results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
+                    case .mutateSurface(let mutation):
                         mutationState.apply(mutation, isActive: true)
+                        let executionResult = try await executor.execute(reaction, confirmation: confirmation)
+                        results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
+                    case .runCommand:
+                        guard firingState.fire(reactionKey, cooldown: rule.cooldown, now: now) else { continue }
+                        let executionResult = try await executor.execute(reaction, confirmation: confirmation)
+                        results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
+                    case .applyContext:
+                        let executionResult = try await executor.execute(reaction, confirmation: confirmation)
+                        results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
                     }
-                    results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
                 }
-            } else if activeRuleIDs.remove(rule.id) != nil {
-                for reaction in rule.reactions {
-                    if case .mutateSurface(let mutation) = reaction {
+            } else if wasActive {
+                activeRuleIDs.remove(rule.id)
+                for (index, reaction) in rule.reactions.enumerated() {
+                    let reactionKey = "\(rule.id.rawValue):\(index)"
+                    switch reaction {
+                    case .notify(let spec) where spec.lifecycle == .boundToCondition && deliveredBoundNotificationKeys.remove(reactionKey) != nil:
+                        results.append(UserRuleRunResult(
+                            ruleID: rule.id,
+                            reaction: reaction,
+                            executionResult: .notificationCleared(spec)
+                        ))
+                    case .mutateSurface(let mutation):
                         mutationState.apply(mutation, isActive: false)
                         results.append(UserRuleRunResult(
                             ruleID: rule.id,
                             reaction: reaction,
                             executionResult: .revertedSurface(mutation)
                         ))
+                    case .applyContext(let id, _):
+                        results.append(UserRuleRunResult(
+                            ruleID: rule.id,
+                            reaction: .applyContext(id: id, active: false),
+                            executionResult: .contextDeferred(id)
+                        ))
+                    default:
+                        break
                     }
                 }
             }

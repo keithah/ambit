@@ -115,48 +115,130 @@ final class UserRuleEngineTests: XCTestCase {
         XCTAssertEqual(results.map(\.executionResult), [.notified(rule.notifySpec)])
     }
 
-    func testUserRuleAndEquivalentBuiltInConditionUseSameDwellUnderIrregularPolling() async throws {
-        let declaration = AlertKindDeclaration(
-            id: "fixture.cpu.high",
-            titleTemplate: "CPU high",
-            messageTemplate: "CPU is high.",
-            severity: .warning,
-            defaultEnabled: true,
-            target: .entity(cpuID),
-            trigger: .metricThreshold(EntityAlertPolicy(
-                enabled: true,
-                threshold: AlertThreshold(comparison: .greaterThan, value: 90),
-                consecutive: 3,
-                cooldown: 60
-            )),
+    func testRunnerHonorsNotifyLifecycleEdges() async throws {
+        let oneShot = cpuNotifyRule(id: "rule.cpu.oneshot")
+        let boundSpec = NotifySpec(
+            titleTemplate: "CPU high persistent",
+            level: .active,
+            lifecycle: .boundToCondition
+        )
+        let bound = UserRule(
+            id: "rule.cpu.bound",
+            displayName: "CPU high persistent",
+            condition: oneShot.condition,
+            reactions: [.notify(boundSpec)],
+            enabled: true,
             cooldown: 60
         )
-        let condition = declaration.compiledCondition(metricEntityID: cpuID)
-        let rule = UserRule(
-            id: "rule.cpu.high",
-            displayName: "CPU high",
-            condition: condition,
-            reactions: declaration.reactions,
-            enabled: true
-        )
-        var builtInEvaluator = ConditionEvaluator()
         var runner = UserRuleRunner()
-        let times = [0.0, 1.7, 7.9, 80.0, 81.0, 90.0].map(Date.init(timeIntervalSince1970:))
-        let values = [91.0, 92.0, 93.0, 50.0, 94.0, 95.0]
+        let high = ConditionEvaluator.Input(states: [
+            cpuID: EntityState(id: cpuID, value: .number(95), availability: .online)
+        ])
+        let low = ConditionEvaluator.Input(states: [
+            cpuID: EntityState(id: cpuID, value: .number(50), availability: .online)
+        ])
 
-        var builtInMatches: [Bool] = []
-        var userMatches: [Bool] = []
-        for (time, value) in zip(times, values) {
-            let input = ConditionEvaluator.Input(states: [
-                cpuID: EntityState(id: cpuID, value: .number(value), availability: .online)
-            ])
-            builtInMatches.append(builtInEvaluator.evaluate(condition, input: input, now: time))
-            let results = try await runner.evaluate(rules: [rule], input: input, now: time, executor: ReactionExecutor())
-            userMatches.append(!results.isEmpty)
+        let first = try await runner.evaluate(rules: [oneShot, bound], input: high, now: Date(timeIntervalSince1970: 0), executor: ReactionExecutor())
+        let sustained = try await runner.evaluate(rules: [oneShot, bound], input: high, now: Date(timeIntervalSince1970: 10), executor: ReactionExecutor())
+        let falling = try await runner.evaluate(rules: [oneShot, bound], input: low, now: Date(timeIntervalSince1970: 20), executor: ReactionExecutor())
+
+        XCTAssertEqual(first.map(\.executionResult), [.notified(oneShot.notifySpec), .notified(boundSpec)])
+        XCTAssertTrue(sustained.isEmpty)
+        XCTAssertEqual(falling.map(\.executionResult), [.notificationCleared(boundSpec)])
+    }
+
+    func testUserRuleAndEquivalentBuiltInPathShareDwellCooldownAndSleepWakeBehavior() async throws {
+        let memberID = "fixture-host"
+        let target: AlertTarget = .entity("fixture-host/status")
+        let declaration = AlertKindDeclaration(
+            id: "fixture.hostDown",
+            titleTemplate: "{hostName} is down",
+            messageTemplate: "No response from {hostName}.",
+            severity: .critical,
+            defaultEnabled: true,
+            target: target,
+            trigger: .healthTransition(to: .down),
+            condition: .temporal(Temporal(
+                condition: .predicate(.healthTransition(to: .down)),
+                op: .consecutiveSamples(3),
+                edge: .level
+            )),
+            recovery: AlertRecoveryDeclaration(
+                titleTemplate: "{hostName} recovered",
+                messageTemplate: "{hostName} is reachable again."
+            ),
+            cooldown: 60
+        )
+        let rule = UserRule(
+            id: "rule.host.down",
+            displayName: "Fixture down",
+            condition: declaration.compiledCondition(),
+            reactions: declaration.reactions,
+            enabled: true,
+            cooldown: declaration.cooldown
+        )
+        var machine = MonitoringAlertStateMachine(declarations: [declaration], warmUpCycles: 0)
+        var runner = UserRuleRunner()
+        let timeline: [(TimeInterval, HealthStatus)] = [
+            (0.0, .healthy),
+            (1.3, .down),
+            (5.8, .down),
+            (19.4, .down),
+            (25.0, .down),
+            (1_000.0, .down),
+            (1_001.0, .healthy),
+            (1_010.0, .down),
+            (1_011.2, .down),
+            (1_100.0, .down)
+        ]
+
+        var builtInPhases: [[AlertEventPhase]] = []
+        var userResults: [[ReactionExecutionResult]] = []
+        for (offset, status) in timeline {
+            let now = Date(timeIntervalSince1970: offset)
+            let member = MonitoringAlertMember(
+                id: memberID,
+                name: "Fixture",
+                status: status,
+                target: target,
+                notifyOnRecovery: true,
+                cooldown: declaration.cooldown
+            )
+            let builtIn = machine.evaluate(members: [member], diagnosis: healthyDiagnosis(), now: now)
+            let input = ConditionEvaluator.Input(
+                memberStatuses: [memberID: status],
+                totalMemberCount: 1,
+                failingMemberCount: status == .down ? 1 : 0
+            )
+            let user = try await runner.evaluate(rules: [rule], input: input, now: now, executor: ReactionExecutor())
+            builtInPhases.append(builtIn.map(\.phase))
+            userResults.append(user.map(\.executionResult))
         }
 
-        XCTAssertEqual(userMatches, builtInMatches)
-        XCTAssertEqual(userMatches, [false, false, true, false, false, false])
+        XCTAssertEqual(builtInPhases, [
+            [],
+            [],
+            [],
+            [.active],
+            [],
+            [],
+            [.recovered],
+            [],
+            [],
+            [.active]
+        ])
+        XCTAssertEqual(userResults, [
+            [],
+            [],
+            [],
+            [.notified(rule.notifySpec)],
+            [],
+            [],
+            [.notificationCleared(rule.notifySpec)],
+            [],
+            [],
+            [.notified(rule.notifySpec)]
+        ])
     }
 
     private func cpuNotifyRule(id: UserRuleID, name: String = "CPU hot") -> UserRule {
@@ -176,7 +258,20 @@ final class UserRuleEngineTests: XCTestCase {
                     lifecycle: .oneShot
                 ))
             ],
-            enabled: true
+            enabled: true,
+            cooldown: 60
+        )
+    }
+
+    private func healthyDiagnosis() -> MonitoringDiagnosis {
+        MonitoringDiagnosis(
+            perspectiveID: "fixture",
+            verdict: MonitoringVerdict(kind: .allReachable),
+            severity: .normal,
+            confidence: .high,
+            affectedEntityIDs: [],
+            title: "All reachable",
+            detail: "All monitored endpoints are reachable."
         )
     }
 }
