@@ -478,6 +478,34 @@ final class StatusViewModel: ObservableObject {
         refreshCommandPalette()
     }
 
+    func engineEntityDescriptorsForAppIntents() async -> [EntityDescriptor] {
+        await engine.entityDescriptors()
+            .values
+            .flatMap { $0 }
+            .sorted { $0.id.rawValue < $1.id.rawValue }
+    }
+
+    func engineEntityStatesForAppIntents() async -> [EntityID: EntityState] {
+        await engine.entityStates(now: Date())
+    }
+
+    func setContextManualOverrideForAppIntent(id: ContextID, active: Bool) {
+        guard let context = contexts.first(where: { $0.id == id }) else { return }
+        var copy = context
+        copy.manualOverride = active ? .pinnedActive : .pinnedInactive
+        updateContext(copy)
+    }
+
+    func runCommandForAppIntent(_ command: AmbitAppIntentCommandModel, arguments: CommandArguments) async {
+        _ = await runProviderCommand(
+            providerID: command.providerID,
+            providerName: command.providerName,
+            commandID: command.commandID,
+            commandLabel: command.displayName,
+            arguments: arguments
+        )
+    }
+
     func saveSettings() {
         Task {
             let error = await engine.saveSettings(settings, routerPassword: routerPassword)
@@ -847,15 +875,19 @@ final class StatusViewModel: ObservableObject {
     ) async {
         guard !userRules.isEmpty else { return }
         let engine = engine
-        let executor = ReactionExecutor { invocation in
-            _ = await engine.runCommand(
-                provider: invocation.providerID,
-                providerName: invocation.providerID,
-                commandID: invocation.commandID,
-                commandLabel: invocation.commandID,
-                arguments: invocation.arguments
-            )
-        }
+        let shortcutRunner = MacShortcutRunner()
+        let executor = ReactionExecutor(
+            commandDispatcher: { invocation in
+                _ = await engine.runCommand(
+                    provider: invocation.providerID,
+                    providerName: invocation.providerID,
+                    commandID: invocation.commandID,
+                    commandLabel: invocation.commandID,
+                    arguments: invocation.arguments
+                )
+            },
+            shortcutRunner: shortcutRunner.run
+        )
         let input = ConditionEvaluator.Input(states: states)
         var runner = userRuleRunner
         guard let results = try? await runner.evaluate(

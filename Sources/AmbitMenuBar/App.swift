@@ -67,11 +67,15 @@ private final class MenuBarAppModel: ObservableObject {
     private let statusItemCoordinator: MenuBarStatusItemCoordinator
     private let overlayController: OverlayController
     private let settingsController: SettingsWindowController
+    private let appIntentDataSource: StatusViewModelAppIntentDataSource
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
         let viewModel = StatusViewModel()
         self.viewModel = viewModel
+        let appIntentDataSource = StatusViewModelAppIntentDataSource(viewModel: viewModel)
+        self.appIntentDataSource = appIntentDataSource
+        AmbitAppIntentRegistry.shared.dataSource = appIntentDataSource
 
         let statusItemCoordinator = MenuBarStatusItemCoordinator(viewModel: viewModel)
         self.statusItemCoordinator = statusItemCoordinator

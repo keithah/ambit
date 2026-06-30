@@ -47,7 +47,9 @@ final class ReactionRegistryTests: XCTestCase {
         XCTAssertEqual(NotifyLifecycle.boundToCondition.phase(forActive: false), recovered.phase)
     }
 
-    func testReactionCodableRoundTripsIncludingApplyContextStub() throws {
+    func testReactionCodableRoundTripsIncludingShortcutAndAppIntent() throws {
+        let shortcut = ShortcutInvocation(name: "Activate Home", arguments: CommandArguments(values: ["place": .string("Home")]), requiresConfirmation: true)
+        let appIntent = ExternalAppIntentInvocation(identifier: "com.example.intent", parameters: CommandArguments(values: ["mode": .string("Quiet")]), requiresConfirmation: true)
         let reactions: [Reaction] = [
             .notify(NotifySpec(titleTemplate: "Rain", bodyTemplate: "Bring a jacket", level: .active, lifecycle: .oneShot)),
             .mutateSurface(SurfaceMutation(
@@ -55,7 +57,9 @@ final class ReactionRegistryTests: XCTestCase {
                 set: .string("cloud-rain")
             )),
             .runCommand(CommandInvocation(providerID: "fixture", commandID: "fixture.close", arguments: CommandArguments(values: ["force": .bool(true)]))),
-            .applyContext(id: "home", active: true)
+            .applyContext(id: "home", active: true),
+            .runShortcut(shortcut),
+            .runAppIntent(appIntent)
         ]
 
         let data = try JSONEncoder().encode(reactions)
@@ -118,6 +122,38 @@ final class ReactionRegistryTests: XCTestCase {
 
         XCTAssertEqual(result, .contextApplied("home", active: true))
     }
+
+    func testRunShortcutDispatchesThroughInjectedRunnerAndRequiresConfirmation() async throws {
+        let runner = RecordingShortcutRunner()
+        let invocation = ShortcutInvocation(
+            name: "Activate Home",
+            arguments: CommandArguments(values: ["place": .string("Home")]),
+            requiresConfirmation: true
+        )
+        let executor = ReactionExecutor(shortcutRunner: runner.run)
+
+        let blocked = try await executor.execute(.runShortcut(invocation), confirmation: .notConfirmed)
+        let ran = try await executor.execute(.runShortcut(invocation), confirmation: .confirmed)
+        let calls = await runner.calls()
+
+        XCTAssertEqual(blocked, .shortcutRequiresConfirmation(invocation))
+        XCTAssertEqual(ran, .ranShortcut(invocation))
+        XCTAssertEqual(calls, [invocation])
+    }
+
+    func testRunAppIntentIsDeferredWithoutInjectedRunnerAndExecutableWithFakeRunner() async throws {
+        let invocation = ExternalAppIntentInvocation(identifier: "com.example.intent", parameters: CommandArguments(values: ["mode": .string("Quiet")]))
+
+        let deferred = try await ReactionExecutor().execute(.runAppIntent(invocation), confirmation: .notRequired)
+
+        let runner = RecordingAppIntentRunner()
+        let ran = try await ReactionExecutor(appIntentRunner: runner.run).execute(.runAppIntent(invocation), confirmation: .notRequired)
+        let calls = await runner.calls()
+
+        XCTAssertEqual(deferred, .appIntentDeferred(invocation))
+        XCTAssertEqual(ran, .ranAppIntent(invocation))
+        XCTAssertEqual(calls, [invocation])
+    }
 }
 
 private actor RecordingReactionProvider {
@@ -139,4 +175,24 @@ private actor RecordingReactionProvider {
     func calls() -> [CommandInvocation] {
         recorded
     }
+}
+
+private actor RecordingShortcutRunner {
+    private var recorded: [ShortcutInvocation] = []
+
+    func run(_ invocation: ShortcutInvocation) async throws {
+        recorded.append(invocation)
+    }
+
+    func calls() -> [ShortcutInvocation] { recorded }
+}
+
+private actor RecordingAppIntentRunner {
+    private var recorded: [ExternalAppIntentInvocation] = []
+
+    func run(_ invocation: ExternalAppIntentInvocation) async throws {
+        recorded.append(invocation)
+    }
+
+    func calls() -> [ExternalAppIntentInvocation] { recorded }
 }

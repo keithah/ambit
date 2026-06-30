@@ -255,7 +255,7 @@ public struct UserRuleRunner: Sendable {
                         mutationState.apply(mutation, isActive: true)
                         let executionResult = try await executor.execute(reaction, confirmation: confirmation)
                         results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))
-                    case .runCommand:
+                    case .runCommand, .runShortcut, .runAppIntent:
                         guard firingState.fire(reactionKey, cooldown: rule.cooldown, now: now) else { continue }
                         let executionResult = try await executor.execute(reaction, confirmation: confirmation)
                         results.append(UserRuleRunResult(ruleID: rule.id, reaction: reaction, executionResult: executionResult))

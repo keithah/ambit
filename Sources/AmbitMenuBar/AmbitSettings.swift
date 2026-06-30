@@ -684,6 +684,8 @@ private struct UserRuleRow: View {
             case .notify: return "Notify"
             case .mutateSurface: return "Change surface"
             case .runCommand: return "Run command"
+            case .runShortcut: return "Run shortcut"
+            case .runAppIntent: return "Run app intent"
             case .applyContext: return "Apply context"
             }
         }
