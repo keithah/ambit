@@ -27,8 +27,9 @@ Paths below are relative to the repo root.
 bash .claude/skills/run-ambit/launch.sh
 ```
 
-This builds `Ambit`, wraps the binary in a minimal `.build/bundle/Ambit.app` (Info.plist +
-ad-hoc codesign), kills any prior instance, and `open`s it. The glyph appears in the menu bar.
+This builds `Ambit`, wraps the binary in `.build/bundle/Ambit.app` (Info.plist with privacy usage
+strings + ad-hoc codesign with the dev entitlements), kills any prior instance, and `open`s it.
+The glyph appears in the menu bar.
 
 Stop it:
 
@@ -83,6 +84,10 @@ swift test    # full XCTest suite (AmbitCore + AmbitUI)
 - **The history DB persists across runs** (`~/Library/Application Support/Ambit/…`). On a fresh
   launch the graph/readout draw from *old* samples before the first live poll completes, so you
   may briefly see a value with a "No Data" status — it self-heals after one poll.
+- **App Intents metadata needs const-values output.** The launcher invokes
+  `appintentsmetadataprocessor` when `.swiftconstvalues` files exist, but plain SwiftPM builds do
+  not currently emit them. Shortcuts/Spotlight indexing therefore needs the documented Xcode
+  packaging pass with `SWIFT_ENABLE_EMIT_CONST_VALUES=YES`.
 
 ## Troubleshooting
 

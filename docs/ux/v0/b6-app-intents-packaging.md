@@ -1,7 +1,8 @@
 # B6 App Intents Packaging Notes
 
-Ambit now compiles the App Intents bridge in `AmbitMenuBar`, but live Shortcuts and Spotlight
-indexing require the signed app bundle to be produced with App Intents metadata extraction.
+Ambit now compiles the App Intents bridge in `AmbitMenuBar`. The development launcher builds a
+signed app bundle with privacy usage strings and entitlements, and it runs App Intents metadata
+extraction when Swift const-values metadata is available.
 
 Deploy checklist for the app-bundle pipeline:
 
@@ -10,12 +11,22 @@ Deploy checklist for the app-bundle pipeline:
 - Ensure the app bundle's Info.plist is generated for the final bundle identifier used at
   launch (`tv.kodi.ambit` for the development bundle); stale `/private/tmp/Ambit.app` bundles
   may not be indexed.
-- Run the standard Xcode/App Intents metadata extraction step as part of packaging so Shortcuts
-  can discover `Refresh Ambit`, context activation/deactivation, entity queries, and command
-  intents.
+- Include these Info.plist privacy strings in the signed bundle:
+  `NSLocationWhenInUseUsageDescription`, `NSCalendarsUsageDescription`, and
+  `NSCalendarsFullAccessUsageDescription`. The location prompt also gates CoreWLAN SSID reads on
+  current macOS.
+- Sign with the Ambit entitlements file used by `.claude/skills/run-ambit/launch.sh`:
+  `com.apple.security.personal-information.location`,
+  `com.apple.security.personal-information.calendars`, and `com.apple.security.network.client`.
+  The dev bundle remains unsandboxed to avoid changing existing local storage and network behavior.
+- Run the App Intents metadata extraction step as part of packaging so Shortcuts can discover
+  `Refresh Ambit`, context activation/deactivation, entity queries, and command intents.
+  The metadata processor needs Swift compiler const-values output. In an Xcode packaging target,
+  set `SWIFT_ENABLE_EMIT_CONST_VALUES=YES`; then run `appintentsmetadataprocessor` with the
+  generated `.swiftconstvalues` file list. The SwiftPM-only launcher attempts this step when those
+  files exist and prints a clear warning when SwiftPM did not produce them.
 - No secrets, feed URLs, signing keys, or provider credentials are required by B6.
 - `Reaction.runShortcut` is wired through an injectable runner. The real runner belongs in the
   signed app adapter that invokes the user's named Shortcut at runtime.
 - `Reaction.runAppIntent` has a Codable shape and executor seam; arbitrary external App Intent
   invocation is deferred until a reliable public macOS API is selected.
-

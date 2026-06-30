@@ -14,6 +14,62 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+write_app_intents_metadata() {
+  local app="$1"
+  local metadata_dir="$app/Contents/Resources/Metadata.appintents"
+  local work_dir=".build/appintents-metadata"
+  local source_list="$work_dir/source-files.txt"
+  local const_values_list="$work_dir/swift-const-values.txt"
+  local metadata_file_list="$work_dir/metadata-files.txt"
+  local static_metadata_file_list="$work_dir/static-metadata-files.txt"
+  local dependency_file="$work_dir/appintents.d"
+  local stringsdata_file="$work_dir/appintents.stringsdata"
+  local sdk_root toolchain_dir xcode_version arch target_triple
+
+  mkdir -p "$work_dir" "$app/Contents/Resources"
+  find Sources/AmbitMenuBar -name '*.swift' | sort > "$source_list"
+  find .build -name '*.swiftconstvalues' | sort > "$const_values_list"
+  : > "$metadata_file_list"
+  : > "$static_metadata_file_list"
+
+  if [ ! -s "$const_values_list" ]; then
+    cat >&2 <<'WARN'
+==> App Intents metadata skipped
+    SwiftPM did not emit any .swiftconstvalues files. Shortcuts/Spotlight indexing needs an
+    Xcode packaging pass with SWIFT_ENABLE_EMIT_CONST_VALUES=YES, then appintentsmetadataprocessor.
+    See docs/ux/v0/b6-app-intents-packaging.md for the exact deploy step.
+WARN
+    return 0
+  fi
+
+  sdk_root="$(xcrun --sdk macosx --show-sdk-path)"
+  toolchain_dir="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain"
+  xcode_version="$(xcodebuild -version | awk '/Build version/{print $3}')"
+  arch="$(uname -m)"
+  target_triple="${arch}-apple-macosx13.0"
+
+  echo "==> appintentsmetadataprocessor"
+  xcrun appintentsmetadataprocessor \
+    --output "$metadata_dir" \
+    --toolchain-dir "$toolchain_dir" \
+    --module-name AmbitMenuBar \
+    --sdk-root "$sdk_root" \
+    --xcode-version "$xcode_version" \
+    --platform-family macOS \
+    --deployment-target 13.0 \
+    --target-triple "$target_triple" \
+    --dependency-file "$dependency_file" \
+    --stringsdata-file "$stringsdata_file" \
+    --source-file-list "$source_list" \
+    --metadata-file-list "$metadata_file_list" \
+    --static-metadata-file-list "$static_metadata_file_list" \
+    --swift-const-vals-list "$const_values_list" \
+    --force \
+    --force-metadata-output \
+    --quiet-warnings
+}
 
 echo "==> swift build --product Ambit"
 swift build --product Ambit
@@ -40,12 +96,20 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSAppSleepDisabled</key><true/>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Ambit uses your location only to match user-defined places and to allow macOS to expose the current Wi-Fi SSID for local context rules.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Ambit reads your calendar availability locally so user-authored contexts and rules can react to busy or upcoming events.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Ambit reads your calendar availability locally so user-authored contexts and rules can react to busy or upcoming events.</string>
 </dict>
 </plist>
 PLIST
 
+write_app_intents_metadata "$APP"
+
 echo "==> ad-hoc codesign"
-codesign --force --sign - "$APP" >/dev/null
+codesign --force --sign - --entitlements "$SCRIPT_DIR/Ambit.entitlements" "$APP" >/dev/null
 
 # Replace any previous instance so the menu-bar item reflects this build.
 pkill -f "Ambit.app/Contents/MacOS/Ambit" 2>/dev/null || true
