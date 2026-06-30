@@ -112,6 +112,7 @@ public enum ReactionExecutionResult: Equatable, Sendable {
     case requiresConfirmation(CommandInvocation)
     case ranCommand(CommandInvocation)
     case contextDeferred(String)
+    case contextApplied(String, active: Bool)
 }
 
 public struct SurfaceMutationState: Equatable, Sendable {
@@ -149,8 +150,8 @@ public struct ReactionExecutor: Sendable {
             return .mutatedSurface(mutation)
         case .runCommand(let invocation):
             return try await run(invocation, confirmation: confirmation)
-        case .applyContext(let id, _):
-            return .contextDeferred(id)
+        case .applyContext(let id, let active):
+            return .contextApplied(id, active: active)
         }
     }
 

@@ -112,11 +112,11 @@ final class ReactionRegistryTests: XCTestCase {
         XCTAssertNil(state.value(for: mutation.target))
     }
 
-    func testApplyContextExecutorIsStubbed() async throws {
+    func testApplyContextExecutorReturnsAppliedState() async throws {
         let executor = ReactionExecutor()
         let result = try await executor.execute(.applyContext(id: "home", active: true), confirmation: .notRequired)
 
-        XCTAssertEqual(result, .contextDeferred("home"))
+        XCTAssertEqual(result, .contextApplied("home", active: true))
     }
 }
 

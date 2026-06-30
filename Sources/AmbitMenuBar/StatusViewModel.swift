@@ -114,12 +114,17 @@ final class StatusViewModel: ObservableObject {
     @Published var startAtLoginEnabled = false
     @Published var startAtLoginMessage: String?
     @Published var userRules: [UserRule] = []
+    @Published var contexts: [ContextDeclaration] = []
+    @Published var activeContexts: [ContextDeclaration] = []
+    @Published var contextResolutionTraces: [ContextTraceAddress: ContextResolutionTrace] = [:]
+    @Published var contextDiagnostics: [ContextCycleDiagnostic] = []
 
     // Menu-bar slots (P3). Seeded with one dedicated Ping slot for parity; the chrome renders
     // one status item per slot.
     @Published var slots: [Slot] = []
     private let configStore: any PresentationConfigStore
     private let userRuleStore: any UserRuleStore
+    private let contextStore: any ContextStore
     let historyRetentionInterval = HistoryService.defaultRetentionInterval
 
     private var monitoringDiagnosisCoordinator = MonitoringSlotDiagnosisCoordinator()
@@ -147,6 +152,7 @@ final class StatusViewModel: ObservableObject {
     private var networkPathSnapshot: NetworkPathSnapshot = .connected
     private var networkAlertStateMachine = MonitoringAlertStateMachine(warmUpCycles: 0)
     private var userRuleRunner = UserRuleRunner()
+    private var contextStateMachine = ContextStateMachine()
     private var subscriptionTask: Task<Void, Never>?
     private var staleTickTask: Task<Void, Never>?
 
@@ -160,6 +166,7 @@ final class StatusViewModel: ObservableObject {
         addressDiscovery: any RouterAddressDiscovery = SystemRouterAddressDiscovery(),
         configStore: any PresentationConfigStore = UserDefaultsPresentationConfigStore(),
         userRuleStore: any UserRuleStore = UserDefaultsUserRuleStore(),
+        contextStore: any ContextStore = UserDefaultsContextStore(),
         notificationDeliverer: any NotificationDelivering = MacNotificationDeliverer(),
         notificationSettingsOpener: any NotificationSettingsOpening = MacNotificationSettingsOpener(),
         diagnosticsLogService: any DiagnosticsLogService = AppKitDiagnosticsLogService(),
@@ -182,7 +189,12 @@ final class StatusViewModel: ObservableObject {
         self.addressDiscovery = addressDiscovery
         self.configStore = configStore
         self.userRuleStore = userRuleStore
-        self.userRules = userRuleStore.load()
+        self.contextStore = contextStore
+        let loadedRules = userRuleStore.load()
+        let validatedContexts = ContextCycleDetector.validate(contexts: contextStore.load(), rules: loadedRules)
+        self.contexts = validatedContexts.contexts
+        self.userRules = validatedContexts.rules
+        self.contextDiagnostics = validatedContexts.diagnostics
         self.startAtLoginEnabled = startAtLoginCoordinator.isEnabled()
         let integrationRegistry = integrationRegistry ?? UserDefaultsIntegrationRegistry()
         self.integrationRegistry = integrationRegistry
@@ -740,8 +752,19 @@ final class StatusViewModel: ObservableObject {
         let disabledTypes = (try? integrationRegistry.disabledIntegrationIDs()) ?? []
 
         let loadedConfig = configStore.load()
-        let diagnosisGraphRange = Self.diagnosisGraphRange(slots: slots, config: loadedConfig, fallback: fallbackGraphRange)
         let allDescriptors = await engine.entityDescriptors()
+        let allStates = await engine.entityStates(now: now)
+        let contextInput = ConditionEvaluator.Input(states: allStates)
+        let initialContextEvaluation = contextStateMachine.evaluate(contexts: contexts, input: contextInput, now: now)
+        let ruleInputStates = allStates.merging(initialContextEvaluation.states) { current, _ in current }
+        await runUserRules(states: ruleInputStates, descriptors: allDescriptors, now: now)
+        let contextEvaluation = contextStateMachine.currentEvaluation(contexts: contexts)
+        activeContexts = contextEvaluation.activeContexts
+        let resolved = ContextResolver.resolve(base: loadedConfig, activeContexts: contextEvaluation.activeContexts)
+        contextResolutionTraces = resolved.traces
+        let resolvedConfig = resolved.config
+
+        let diagnosisGraphRange = Self.diagnosisGraphRange(slots: slots, config: resolvedConfig, fallback: fallbackGraphRange)
         let monitoringInstanceIDs = Set(
             allDescriptors.values
                 .flatMap { $0 }
@@ -758,7 +781,7 @@ final class StatusViewModel: ObservableObject {
             descriptors: allDescriptors,
             snapshot: snapshot,
             networkStatus: networkPathSnapshot.connectivityStatus,
-            config: loadedConfig,
+            config: resolvedConfig,
             now: now,
             range: TimeRange(graphRange: diagnosisGraphRange)
         ) { [engine] id, since in
@@ -769,15 +792,13 @@ final class StatusViewModel: ObservableObject {
 
         // Build per-slot surfaces.
         await deliverAlerts(events, descriptors: allDescriptors)
-        let allStates = await engine.entityStates(now: now)
-        await runUserRules(states: allStates, descriptors: allDescriptors, now: now)
         let primaryPingInstanceID = (try? integrationRegistry.primaryInstanceID()) ?? nil
         let commandsByProvider = Self.commandsByProvider(from: await engine.commandPalette())
         presentationSettings = Self.presentationSettingsModel(
             registryRecords: allRegistryRecords,
             descriptors: allDescriptors,
-            states: allStates,
-            config: configStore.load(),
+            states: allStates.merging(contextEvaluation.states) { current, _ in current },
+            config: resolvedConfig,
             disabledIntegrationIDs: disabledTypes,
             commands: commandsByProvider,
             primaryInstanceID: primaryPingInstanceID
@@ -795,7 +816,7 @@ final class StatusViewModel: ObservableObject {
                 slotFocus: slotFocus,
                 primaryPingInstanceID: primaryPingInstanceID,
                 fallbackGraphRange: fallbackGraphRange,
-                config: loadedConfig,
+                config: resolvedConfig,
                 now: now
             ) { [engine] id, since in
                 await engine.historySamples(id, since: since)
@@ -844,6 +865,7 @@ final class StatusViewModel: ObservableObject {
             executor: executor
         ) else { return }
         userRuleRunner = runner
+        contextStateMachine.apply(results)
         let events = results.compactMap { result -> AlertEvent? in
             let spec: NotifySpec
             let phase: AlertEventPhase
@@ -1246,7 +1268,7 @@ final class StatusViewModel: ObservableObject {
     var userRuleSignalDescriptors: [EntityDescriptor] {
         presentationSettings.integrations
             .flatMap(\.entities)
-            .map(\.descriptor)
+            .map(\.descriptor) + contexts.map(ContextActiveEntity.descriptor(for:))
     }
 
     func userRules(for pane: UserRuleSettingsPane) -> [UserRule] {
@@ -1255,22 +1277,50 @@ final class StatusViewModel: ObservableObject {
 
     func createUserRule(_ rule: UserRule) {
         userRuleStore.create(rule)
-        userRules = userRuleStore.load()
+        reloadRulesAndContexts()
     }
 
     func updateUserRule(_ rule: UserRule) {
         userRuleStore.update(rule)
-        userRules = userRuleStore.load()
+        reloadRulesAndContexts()
     }
 
     func deleteUserRule(id: UserRuleID) {
         userRuleStore.delete(id: id)
-        userRules = userRuleStore.load()
+        reloadRulesAndContexts()
     }
 
     func reorderUserRules(ids: [UserRuleID]) {
         userRuleStore.reorder(ids: ids)
-        userRules = userRuleStore.load()
+        reloadRulesAndContexts()
+    }
+
+    func createContext(_ context: ContextDeclaration) {
+        contextStore.create(context)
+        reloadRulesAndContexts()
+    }
+
+    func updateContext(_ context: ContextDeclaration) {
+        contextStore.update(context)
+        reloadRulesAndContexts()
+    }
+
+    func deleteContext(id: ContextID) {
+        contextStore.delete(id: id)
+        contextStateMachine.setContext(id, active: nil)
+        reloadRulesAndContexts()
+    }
+
+    func reorderContexts(ids: [ContextID]) {
+        contextStore.reorder(ids: ids)
+        reloadRulesAndContexts()
+    }
+
+    private func reloadRulesAndContexts() {
+        let validated = ContextCycleDetector.validate(contexts: contextStore.load(), rules: userRuleStore.load())
+        contexts = validated.contexts
+        userRules = validated.rules
+        contextDiagnostics = validated.diagnostics
     }
 
     func notificationAuthorizationStatus() async -> NotificationAuthorizationStatus {

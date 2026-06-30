@@ -11,6 +11,7 @@ private enum SettingsSelection: Hashable {
     case diagnostics
     case notifications
     case automations
+    case contexts
 }
 
 private func statusColor(_ status: IntegrationInstanceStatus, palette: StatusStylePalette = StatusStylePalette()) -> Color {
@@ -89,6 +90,12 @@ struct AmbitSettings: View {
                     subtitle: "\(viewModel.userRules(for: .automations).count) active rules",
                     systemImage: "wand.and.stars",
                     selection: .automations
+                )
+                sidebarButton(
+                    title: "Contexts",
+                    subtitle: "\(viewModel.activeContexts.count) active",
+                    systemImage: "rectangle.3.group",
+                    selection: .contexts
                 )
                 sidebarButton(
                     title: "Diagnostics",
@@ -204,6 +211,8 @@ struct AmbitSettings: View {
             RuleSettingsDetail(pane: .notifications)
         case .automations:
             RuleSettingsDetail(pane: .automations)
+        case .contexts:
+            ContextSettingsDetail()
         }
     }
 
@@ -213,6 +222,359 @@ struct AmbitSettings: View {
         else { return }
         selection = .integration(first.id)
         didChooseInitialSelection = true
+    }
+}
+
+private struct ContextSettingsDetail: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    @State private var draftName = "New context"
+    @State private var selectedSignalID: EntityID?
+    @State private var comparison: AlertComparison = .equal
+    @State private var valueText = "true"
+    @State private var temporal: TemporalSelection = .held60
+    @State private var overlayEntityID: EntityID?
+    @State private var overlayVisibility: GlanceVisibility = .always
+    @State private var overlayAlertKindID: AlertKindID?
+    @State private var overlayAlertEnabled = false
+    @State private var saveError: String?
+
+    private var descriptors: [EntityDescriptor] { viewModel.userRuleSignalDescriptors }
+    private var pickerItems: [SignalPickerItem] { SignalPickerModel.items(from: descriptors) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Contexts").font(.system(size: 22, weight: .bold))
+                    Text("Detected situations that stack presentation and alert overlays.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+
+                activeChips
+                contextList
+                contextBuilder
+                traceInspector
+            }
+            .padding(22)
+        }
+    }
+
+    private var activeChips: some View {
+        HStack(spacing: 8) {
+            Text("Active")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            if viewModel.activeContexts.isEmpty {
+                Text("Base")
+                    .font(.system(size: 11, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+            } else {
+                ForEach(viewModel.activeContexts) { context in
+                    Text(context.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.16), in: Capsule())
+                }
+            }
+        }
+    }
+
+    private var contextList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Ranked contexts")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            if viewModel.contextDiagnostics.isEmpty == false {
+                ForEach(viewModel.contextDiagnostics, id: \.message) { diagnostic in
+                    Text(diagnostic.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+            }
+            if viewModel.contexts.isEmpty {
+                Text("No contexts yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.contexts.sorted { $0.priority < $1.priority }) { context in
+                    ContextRow(context: context)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var contextBuilder: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("New context")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            TextField("Context name", text: $draftName)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                Text("When").font(.system(size: 12, weight: .medium))
+                Picker("Signal", selection: signalBinding) {
+                    Text("Choose a signal").tag(Optional<EntityID>.none)
+                    ForEach(pickerItems) { item in
+                        Text("\(item.title) · \(item.subtitle)").tag(Optional(item.id))
+                    }
+                }
+                .frame(width: 230)
+                Picker("Comparison", selection: $comparison) {
+                    ForEach(Self.comparisons, id: \.self) { comparison in
+                        Text(Self.label(for: comparison)).tag(comparison)
+                    }
+                }
+                .frame(width: 90)
+                TextField("Value", text: $valueText).frame(width: 90)
+            }
+            HStack(spacing: 8) {
+                Text("Dwell").font(.system(size: 12, weight: .medium))
+                Picker("Dwell", selection: $temporal) {
+                    Text("Immediate").tag(TemporalSelection.none)
+                    Text("Held 60s").tag(TemporalSelection.held60)
+                    Text("2 samples").tag(TemporalSelection.twoSamples)
+                }
+                .frame(width: 150)
+            }
+            Text(expressionPreview)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("While active")
+                    .font(.system(size: 12, weight: .medium))
+                HStack(spacing: 8) {
+                    Picker("Entity", selection: overlayEntityBinding) {
+                        Text("No entity visibility").tag(Optional<EntityID>.none)
+                        ForEach(pickerItems) { item in
+                            Text(item.title).tag(Optional(item.id))
+                        }
+                    }
+                    .frame(width: 220)
+                    Picker("Visibility", selection: $overlayVisibility) {
+                        ForEach([GlanceVisibility.always, .auto, .never], id: \.self) { visibility in
+                            Text(visibility.rawValue.capitalized).tag(visibility)
+                        }
+                    }
+                    .frame(width: 120)
+                }
+                HStack(spacing: 8) {
+                    Picker("Alert kind", selection: alertKindBinding) {
+                        Text("No alert toggle").tag(Optional<AlertKindID>.none)
+                        ForEach(viewModel.alertKindSettingsRows()) { row in
+                            Text("\(row.integrationName) · \(row.title)").tag(Optional(row.kindID))
+                        }
+                    }
+                    .frame(width: 260)
+                    Toggle("Enabled while active", isOn: $overlayAlertEnabled)
+                        .toggleStyle(.checkbox)
+                }
+            }
+
+            if let saveError {
+                Text(saveError).font(.system(size: 11)).foregroundStyle(.red)
+            }
+            Button("Add context") { save() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var traceInspector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Why")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+            if viewModel.contextResolutionTraces.isEmpty {
+                Text("Base configuration is active. No context overlay has changed a value.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.contextResolutionTraces.keys.sorted(by: traceAddressSort), id: \.self) { address in
+                    if let trace = viewModel.contextResolutionTraces[address] {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(label(for: address)).font(.system(size: 12, weight: .medium))
+                            Text(trace.layers.map(label(for:)).joined(separator: " -> "))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var signalBinding: Binding<EntityID?> {
+        Binding { selectedSignalID } set: { selectedSignalID = $0 }
+    }
+
+    private var overlayEntityBinding: Binding<EntityID?> {
+        Binding { overlayEntityID } set: { overlayEntityID = $0 }
+    }
+
+    private var alertKindBinding: Binding<AlertKindID?> {
+        Binding { overlayAlertKindID } set: { overlayAlertKindID = $0 }
+    }
+
+    private var parsedValue: ConditionValue {
+        if valueText == "true" { return .bool(true) }
+        if valueText == "false" { return .bool(false) }
+        if let number = Double(valueText) { return .number(number) }
+        return .string(valueText)
+    }
+
+    private var condition: Condition? {
+        guard let selectedSignalID else { return nil }
+        let comparisonCondition = Condition.comparison(Comparison(lhs: .address(selectedSignalID), comparison: comparison, rhs: .literal(parsedValue)))
+        switch temporal {
+        case .none:
+            return comparisonCondition
+        case .held60:
+            return .temporal(Temporal(condition: comparisonCondition, op: .heldFor(60), edge: .level))
+        case .twoSamples:
+            return .temporal(Temporal(condition: comparisonCondition, op: .consecutiveSamples(2), edge: .level))
+        }
+    }
+
+    private var expressionPreview: String {
+        guard let condition else { return "Choose a signal to preview the activation condition." }
+        return UserRuleExpressionFormatter.string(for: condition, descriptors: descriptors)
+    }
+
+    private func save() {
+        guard let condition else {
+            saveError = "Choose a signal."
+            return
+        }
+        var overlay = ContextOverlay()
+        if let overlayEntityID {
+            overlay.entityOverrides[overlayEntityID] = EntityPresentationOverride(visibility: overlayVisibility)
+        }
+        if let overlayAlertKindID {
+            overlay.alertKindOverrides[overlayAlertKindID] = AlertKindOverride(enabled: overlayAlertEnabled)
+        }
+        let nextPriority = (viewModel.contexts.map(\.priority).max() ?? -1) + 1
+        let context = ContextDeclaration(
+            id: ContextID(rawValue: "context.\(UUID().uuidString)"),
+            displayName: draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "New context" : draftName,
+            condition: condition,
+            priority: nextPriority,
+            overlay: overlay
+        )
+        viewModel.createContext(context)
+        draftName = "New context"
+        saveError = nil
+    }
+
+    private func traceAddressSort(_ lhs: ContextTraceAddress, _ rhs: ContextTraceAddress) -> Bool {
+        label(for: lhs) < label(for: rhs)
+    }
+
+    private func label(for address: ContextTraceAddress) -> String {
+        switch address {
+        case .entity(let id): return "Entity \(id.rawValue)"
+        case .integration(let id): return "Integration \(id.rawValue)"
+        case .slot(let id): return "Slot \(id.rawValue)"
+        case .alertKind(let id): return "Alert \(id.rawValue)"
+        case .entityAlertKind(let entityID, let kindID): return "Alert \(kindID.rawValue) on \(entityID.rawValue)"
+        }
+    }
+
+    private func label(for layer: ContextTraceLayer) -> String {
+        switch layer.source {
+        case .base:
+            return "Base"
+        case .context(let id):
+            return layer.contextName ?? id.rawValue
+        }
+    }
+
+    private static let comparisons: [AlertComparison] = [.greaterThan, .greaterThanOrEqual, .lessThan, .lessThanOrEqual, .equal, .notEqual]
+
+    private static func label(for comparison: AlertComparison) -> String {
+        switch comparison {
+        case .greaterThan: return ">"
+        case .greaterThanOrEqual: return ">="
+        case .lessThan: return "<"
+        case .lessThanOrEqual: return "<="
+        case .equal: return "=="
+        case .notEqual: return "!="
+        }
+    }
+
+    private enum TemporalSelection: Hashable {
+        case none
+        case held60
+        case twoSamples
+    }
+}
+
+private struct ContextRow: View {
+    @EnvironmentObject private var viewModel: StatusViewModel
+    let context: ContextDeclaration
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(context.displayName)
+                        .font(.system(size: 14, weight: .semibold))
+                    if viewModel.activeContexts.contains(where: { $0.id == context.id }) {
+                        Text("ACTIVE")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.accentColor.opacity(0.16), in: Capsule())
+                    }
+                }
+                Text(UserRuleExpressionFormatter.string(for: context.condition, descriptors: viewModel.userRuleSignalDescriptors))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Picker("Mode", selection: manualOverrideBinding) {
+                Text("Auto").tag(ContextManualOverride.auto)
+                Text("Pinned active").tag(ContextManualOverride.pinnedActive)
+                Text("Pinned inactive").tag(ContextManualOverride.pinnedInactive)
+            }
+            .labelsHidden()
+            .frame(width: 135)
+            Button("Up") { move(-1) }.disabled(context.priority == viewModel.contexts.map(\.priority).min())
+            Button("Down") { move(1) }.disabled(context.priority == viewModel.contexts.map(\.priority).max())
+            Button("Delete", role: .destructive) { viewModel.deleteContext(id: context.id) }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var manualOverrideBinding: Binding<ContextManualOverride> {
+        Binding {
+            context.manualOverride
+        } set: { value in
+            var copy = context
+            copy.manualOverride = value
+            viewModel.updateContext(copy)
+        }
+    }
+
+    private func move(_ delta: Int) {
+        let ordered = viewModel.contexts.sorted { $0.priority < $1.priority }
+        guard let index = ordered.firstIndex(where: { $0.id == context.id }) else { return }
+        let newIndex = min(max(0, index + delta), ordered.count - 1)
+        guard newIndex != index else { return }
+        var ids = ordered.map(\.id)
+        let id = ids.remove(at: index)
+        ids.insert(id, at: newIndex)
+        viewModel.reorderContexts(ids: ids)
     }
 }
 

@@ -145,10 +145,11 @@ struct SlotPopover: View {
                         },
                         allLabel: "All Hosts"
                     )
-                    Text(Self.hostSubtitle(selectedID: focus?.rawValue, options: surface.hostOptions))
+                Text(Self.hostSubtitle(selectedID: focus?.rawValue, options: surface.hostOptions))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    activeContextChips
                 }
             } else {
                 // Single host or no options: show the slot title as plain text.
@@ -157,10 +158,11 @@ struct SlotPopover: View {
                         .font(.system(size: 14, weight: .semibold))
                     if let subtitle = surface.hostOptions.first?.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     }
+                    activeContextChips
                 }
             }
             Spacer()
@@ -185,6 +187,22 @@ struct SlotPopover: View {
                     .font(.system(size: 15)).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain).padding(.leading, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var activeContextChips: some View {
+        if viewModel.activeContexts.isEmpty == false {
+            HStack(spacing: 5) {
+                ForEach(viewModel.activeContexts.prefix(3)) { context in
+                    Text(context.displayName)
+                        .font(.system(size: 9, weight: .semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.18), in: Capsule())
+                }
+            }
         }
     }
 

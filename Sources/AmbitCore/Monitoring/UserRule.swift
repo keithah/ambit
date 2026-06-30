@@ -286,7 +286,7 @@ public struct UserRuleRunner: Sendable {
                         results.append(UserRuleRunResult(
                             ruleID: rule.id,
                             reaction: .applyContext(id: id, active: false),
-                            executionResult: .contextDeferred(id)
+                            executionResult: .contextApplied(id, active: false)
                         ))
                     default:
                         break
