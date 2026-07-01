@@ -98,6 +98,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSAppSleepDisabled</key><true/>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>Ambit uses your location only to match user-defined places and to allow macOS to expose the current Wi-Fi SSID for local context rules.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Ambit uses your location only to match user-defined places and to allow macOS to expose the current Wi-Fi SSID for local context rules.</string>
   <key>NSCalendarsUsageDescription</key>
   <string>Ambit reads your calendar availability locally so user-authored contexts and rules can react to busy or upcoming events.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>

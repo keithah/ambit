@@ -5,6 +5,7 @@ final class BundlePackagingTests: XCTestCase {
         let script = try readRepoFile(".claude/skills/run-ambit/launch.sh")
 
         XCTAssertTrue(script.contains("NSLocationWhenInUseUsageDescription"))
+        XCTAssertTrue(script.contains("NSLocationUsageDescription"))
         XCTAssertTrue(script.contains("NSCalendarsUsageDescription"))
         XCTAssertTrue(script.contains("NSCalendarsFullAccessUsageDescription"))
         XCTAssertTrue(script.contains("Wi-Fi SSID"))

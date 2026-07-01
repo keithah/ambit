@@ -135,7 +135,7 @@ private final class DarwinLocationSource: NSObject, CLLocationManagerDelegate {
     }
 
     private func requestCurrentLocation() async -> CLLocation? {
-        await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             locationContinuation = continuation
             manager.requestLocation()
             Task { @MainActor in
