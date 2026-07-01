@@ -217,7 +217,7 @@ import AppIntents
 
 @available(macOS 13.0, *)
 public struct AmbitEntityAppEntity: AppEntity {
-    public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Ambit Entity"
+    public static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Ambit Entity")
     public static let defaultQuery = AmbitEntityAppQuery()
 
     public var id: String

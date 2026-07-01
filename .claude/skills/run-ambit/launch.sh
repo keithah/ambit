@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build, bundle, ad-hoc sign, and launch the Ambit menu-bar app on macOS.
+# Build, bundle, sign, and launch the Ambit menu-bar app on macOS.
 #
 # Why a bundle (not `swift run Ambit`): Ambit is an NSApplication menu-bar
 # accessory that calls UNUserNotificationCenter. `swift run` produces a bare
 # binary with no app bundle, so that call throws
 # `bundleProxyForCurrentProcess is nil` and the app crashes on first poll.
-# A minimal .app bundle (Info.plist + ad-hoc codesign) fixes it.
+# A minimal .app bundle (Info.plist + codesign) fixes it.
 #
 # Why NSAppSleepDisabled: as a backgrounded .accessory (LSUIElement) app, macOS
 # App-Naps it when idle and freezes its 2s poll loop's timer — the menu graphs
@@ -15,6 +15,41 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN=""
+
+build_ambit_product() {
+  local xcode_log=".build/appintents-metadata/xcodebuild.log"
+  if [ "${AMBIT_XCODE_APPINTENTS:-1}" = "1" ]; then
+    mkdir -p "$(dirname "$xcode_log")"
+    echo "==> xcodebuild -scheme Ambit (App Intents const values)"
+    rm -rf .build/xcode-appintents
+    if ! xcodebuild \
+      -scheme Ambit \
+      -destination 'generic/platform=macOS' \
+      -derivedDataPath .build/xcode-appintents \
+      SWIFT_ENABLE_EMIT_CONST_VALUES=YES \
+      CODE_SIGNING_ALLOWED=NO \
+      build >"$xcode_log" 2>&1
+    then
+      cat >&2 <<WARN
+==> xcodebuild failed
+    See $xcode_log for the full log.
+    Set AMBIT_XCODE_APPINTENTS=0 to use the SwiftPM fallback, which launches the app
+    without App Intents / Shortcuts metadata.
+WARN
+      tail -n 80 "$xcode_log" >&2
+      exit 1
+    fi
+    BIN=".build/xcode-appintents/Build/Products/Debug/Ambit"
+    [ -x "$BIN" ] || { echo "xcodebuild produced no Ambit binary at $BIN" >&2; exit 1; }
+    return 0
+  fi
+
+  echo "==> swift build --product Ambit"
+  swift build --product Ambit
+  BIN="$(swift build --product Ambit --show-bin-path)/Ambit"
+  [ -x "$BIN" ] || { echo "build produced no Ambit binary at $BIN" >&2; exit 1; }
+}
 
 write_app_intents_metadata() {
   local app="$1"
@@ -26,11 +61,12 @@ write_app_intents_metadata() {
   local static_metadata_file_list="$work_dir/static-metadata-files.txt"
   local dependency_file="$work_dir/appintents.d"
   local stringsdata_file="$work_dir/appintents.stringsdata"
+  local processor_log="$work_dir/appintentsmetadataprocessor.log"
   local sdk_root toolchain_dir xcode_version arch target_triple
 
   mkdir -p "$work_dir" "$app/Contents/Resources"
   find Sources/AmbitMenuBar -name '*.swift' | sort > "$source_list"
-  find .build -name '*.swiftconstvalues' | sort > "$const_values_list"
+  find .build/xcode-appintents -name '*.swiftconstvalues' | sort > "$const_values_list" 2>/dev/null || true
   : > "$metadata_file_list"
   : > "$static_metadata_file_list"
 
@@ -51,7 +87,7 @@ WARN
   target_triple="${arch}-apple-macosx13.0"
 
   echo "==> appintentsmetadataprocessor"
-  xcrun appintentsmetadataprocessor \
+  if ! xcrun appintentsmetadataprocessor \
     --output "$metadata_dir" \
     --toolchain-dir "$toolchain_dir" \
     --module-name AmbitMenuBar \
@@ -68,13 +104,37 @@ WARN
     --swift-const-vals-list "$const_values_list" \
     --force \
     --force-metadata-output \
-    --quiet-warnings
+    --quiet-warnings 2>&1 | tee "$processor_log"
+  then
+    echo "appintentsmetadataprocessor failed; see $processor_log" >&2
+    exit 1
+  fi
+  if grep -q "error:" "$processor_log"; then
+    echo "appintentsmetadataprocessor reported errors; see $processor_log" >&2
+    exit 1
+  fi
 }
 
-echo "==> swift build --product Ambit"
-swift build --product Ambit
-BIN="$(swift build --product Ambit --show-bin-path)/Ambit"
-[ -x "$BIN" ] || { echo "build produced no Ambit binary at $BIN" >&2; exit 1; }
+sign_ambit_app() {
+  local app="$1"
+  local identity="${AMBIT_CODESIGN_IDENTITY:--}"
+  local provision_profile="${AMBIT_PROVISIONING_PROFILE:-}"
+
+  if [ -n "$provision_profile" ]; then
+    [ -f "$provision_profile" ] || { echo "AMBIT_PROVISIONING_PROFILE does not exist: $provision_profile" >&2; exit 1; }
+    cp "$provision_profile" "$app/Contents/embedded.provisionprofile"
+  fi
+
+  if [ "$identity" = "-" ]; then
+    echo "==> ad-hoc codesign"
+  else
+    echo "==> codesign ($identity)"
+  fi
+
+  codesign --force --sign "$identity" --entitlements "$SCRIPT_DIR/Ambit.entitlements" "$app" >/dev/null
+}
+
+build_ambit_product
 
 APP="${AMBIT_APP:-.build/bundle/Ambit.app}"
 echo "==> bundling $APP"
@@ -109,9 +169,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 write_app_intents_metadata "$APP"
-
-echo "==> ad-hoc codesign"
-codesign --force --sign - --entitlements "$SCRIPT_DIR/Ambit.entitlements" "$APP" >/dev/null
+sign_ambit_app "$APP"
 
 # Replace any previous instance so the menu-bar item reflects this build.
 pkill -f "Ambit.app/Contents/MacOS/Ambit" 2>/dev/null || true

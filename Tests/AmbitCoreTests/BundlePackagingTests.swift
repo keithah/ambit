@@ -17,6 +17,9 @@ final class BundlePackagingTests: XCTestCase {
 
         XCTAssertTrue(script.contains("--entitlements"))
         XCTAssertTrue(script.contains("Ambit.entitlements"))
+        XCTAssertTrue(script.contains("AMBIT_CODESIGN_IDENTITY"))
+        XCTAssertTrue(script.contains("AMBIT_PROVISIONING_PROFILE"))
+        XCTAssertTrue(script.contains("embedded.provisionprofile"))
         XCTAssertTrue(entitlements.contains("com.apple.security.personal-information.location"))
         XCTAssertTrue(entitlements.contains("com.apple.security.personal-information.calendars"))
         XCTAssertTrue(entitlements.contains("com.apple.security.network.client"))
@@ -25,10 +28,13 @@ final class BundlePackagingTests: XCTestCase {
     func testLaunchScriptRunsAppIntentsMetadataProcessorWhenConstValuesAreAvailable() throws {
         let script = try readRepoFile(".claude/skills/run-ambit/launch.sh")
 
+        XCTAssertTrue(script.contains("xcodebuild -scheme Ambit"))
+        XCTAssertTrue(script.contains("SWIFT_ENABLE_EMIT_CONST_VALUES=YES"))
+        XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"))
         XCTAssertTrue(script.contains("appintentsmetadataprocessor"))
         XCTAssertTrue(script.contains("swift-const-vals-list"))
         XCTAssertTrue(script.contains("Metadata.appintents"))
-        XCTAssertTrue(script.contains("SWIFT_ENABLE_EMIT_CONST_VALUES"))
+        XCTAssertTrue(script.contains("appintentsmetadataprocessor.log"))
     }
 
     private func readRepoFile(_ relativePath: String) throws -> String {
