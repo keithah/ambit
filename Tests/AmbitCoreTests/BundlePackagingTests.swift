@@ -15,20 +15,16 @@ final class BundlePackagingTests: XCTestCase {
     func testLaunchScriptSignsBundleWithEntitlements() throws {
         let script = try readRepoFile(".claude/skills/run-ambit/launch.sh")
         let entitlements = try readRepoFile(".claude/skills/run-ambit/Ambit.entitlements")
-        let provisionedEntitlements = try readRepoFile(".claude/skills/run-ambit/Ambit.provisioned.entitlements")
 
         XCTAssertTrue(script.contains("--entitlements"))
         XCTAssertTrue(script.contains("Ambit.entitlements"))
-        XCTAssertTrue(script.contains("AMBIT_ENTITLEMENTS"))
         XCTAssertTrue(script.contains("AMBIT_CODESIGN_IDENTITY"))
-        XCTAssertTrue(script.contains("AMBIT_PROVISIONING_PROFILE"))
-        XCTAssertTrue(script.contains("embedded.provisionprofile"))
-        XCTAssertTrue(script.contains("com.apple.developer.networking.wifi-info"))
+        XCTAssertTrue(script.contains("Apple Development:"))
+        XCTAssertFalse(script.contains("com.apple.developer.networking.wifi-info"))
         XCTAssertTrue(entitlements.contains("com.apple.security.personal-information.location"))
         XCTAssertTrue(entitlements.contains("com.apple.security.personal-information.calendars"))
         XCTAssertTrue(entitlements.contains("com.apple.security.network.client"))
         XCTAssertFalse(entitlements.contains("com.apple.developer.networking.wifi-info"))
-        XCTAssertTrue(provisionedEntitlements.contains("com.apple.developer.networking.wifi-info"))
     }
 
     func testLaunchScriptRunsAppIntentsMetadataProcessorWhenConstValuesAreAvailable() throws {

@@ -19,13 +19,14 @@ Deploy checklist for the app-bundle pipeline:
   `com.apple.security.personal-information.location`,
   `com.apple.security.personal-information.calendars`, and `com.apple.security.network.client`.
   The dev bundle remains unsandboxed to avoid changing existing local storage and network behavior.
-- Wi-Fi SSID/BSSID reads additionally require Apple's restricted
-  `com.apple.developer.networking.wifi-info` entitlement in a provisioning profile for
-  `com.hadm.ambit`. The launcher keeps that entitlement out of the default ad-hoc path because
-  signing with an unauthorized restricted entitlement causes macOS to reject the app at launch.
-  For a provisioned local build, create/download a macOS development profile with the Wi-Fi
-  Information capability enabled, then run:
-  `AMBIT_CODESIGN_IDENTITY="Apple Development: ..." AMBIT_ENTITLEMENTS=.claude/skills/run-ambit/Ambit.provisioned.entitlements AMBIT_PROVISIONING_PROFILE=/path/to/profile.mobileprovision .claude/skills/run-ambit/launch.sh`.
+- Do not use `com.apple.developer.networking.wifi-info` for macOS. That entitlement is iOS-only;
+  App Store Connect will not place it in a macOS provisioning profile, and forcing it into the
+  signature can make launchd reject the app. On macOS 14.4+, CoreWLAN SSID/BSSID reads are gated
+  by Location authorization for the signed app's bundle identifier.
+- Sign local dev builds with a stable Apple Development identity. Ad-hoc signing changes the code
+  identity between builds, so TCC may not retain the Location grant and CoreWLAN can keep returning
+  nil. The launcher auto-selects an installed `Apple Development:` identity when
+  `AMBIT_CODESIGN_IDENTITY` is not set.
 - Run the App Intents metadata extraction step as part of packaging so Shortcuts can discover
   `Refresh Ambit`, context activation/deactivation, entity queries, and command intents.
   The metadata processor needs Swift compiler const-values output. In an Xcode packaging target,

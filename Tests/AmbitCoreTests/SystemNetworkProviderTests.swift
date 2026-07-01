@@ -175,6 +175,35 @@ final class SystemNetworkProviderTests: XCTestCase {
         XCTAssertNil(states[ProviderInstanceIDs.systemNetwork.appending("bssid")]?.error)
     }
 
+    func testDarwinNetworkInfoReaderDoesNotReadWiFiIdentifiersBeforeLocationAuthorization() async {
+        let reader = DarwinSystemNetworkInfoReader(
+            locationPermission: { .notDetermined },
+            wifiIdentifiers: {
+                XCTFail("CoreWLAN should not be queried before Location is authorized")
+                return (ssid: "Office WiFi", bssid: "aa:bb:cc:dd:ee:ff")
+            }
+        )
+
+        let snapshot = await reader.snapshot()
+
+        XCTAssertEqual(snapshot.permission, .notDetermined)
+        XCTAssertNil(snapshot.ssid)
+        XCTAssertNil(snapshot.bssid)
+    }
+
+    func testDarwinNetworkInfoReaderReadsWiFiIdentifiersAfterLocationAuthorization() async {
+        let reader = DarwinSystemNetworkInfoReader(
+            locationPermission: { .authorized },
+            wifiIdentifiers: { (ssid: "Office WiFi", bssid: "aa:bb:cc:dd:ee:ff") }
+        )
+
+        let snapshot = await reader.snapshot()
+
+        XCTAssertEqual(snapshot.permission, .authorized)
+        XCTAssertEqual(snapshot.ssid, "Office WiFi")
+        XCTAssertEqual(snapshot.bssid, "aa:bb:cc:dd:ee:ff")
+    }
+
     func testSystemNetworkDescriptorsRouteToNetworkSection() {
         let provider = SystemNetworkProvider(reader: SequenceNetworkReader(snapshots: []))
 

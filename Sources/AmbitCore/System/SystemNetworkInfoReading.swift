@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CoreLocation)
+import CoreLocation
+#endif
+
 #if canImport(CoreWLAN)
 @preconcurrency import CoreWLAN
 #endif
@@ -21,23 +25,68 @@ public protocol SystemNetworkInfoReading: Sendable {
 }
 
 public struct DarwinSystemNetworkInfoReader: SystemNetworkInfoReading {
-    public init() {}
+    private let locationPermission: @Sendable () -> SystemSignalPermission
+    private let wifiIdentifiers: @Sendable () -> (ssid: String?, bssid: String?)?
+
+    public init() {
+        self.init(
+            locationPermission: DarwinSystemNetworkInfoReader.currentLocationPermission,
+            wifiIdentifiers: DarwinSystemNetworkInfoReader.currentWiFiIdentifiers
+        )
+    }
+
+    init(locationPermission: @escaping @Sendable () -> SystemSignalPermission,
+         wifiIdentifiers: @escaping @Sendable () -> (ssid: String?, bssid: String?)?) {
+        self.locationPermission = locationPermission
+        self.wifiIdentifiers = wifiIdentifiers
+    }
 
     public func snapshot() async -> SystemNetworkInfoSnapshot {
-        #if canImport(CoreWLAN)
-        guard let interface = CWWiFiClient.shared().interface() else {
+        let permission = locationPermission()
+        guard permission.canRead else {
+            return SystemNetworkInfoSnapshot(permission: permission)
+        }
+
+        guard let identifiers = wifiIdentifiers() else {
             return SystemNetworkInfoSnapshot(permission: .unavailable)
         }
-        let ssid = interface.ssid()
-        let bssid = interface.bssid()
+        let ssid = identifiers.ssid
+        let bssid = identifiers.bssid
         guard ssid != nil || bssid != nil else {
-            // macOS gates SSID/BSSID behind Location authorization. If CoreWLAN
-            // returns no identifiers, expose a neutral unavailable signal.
+            // macOS exposes SSID/BSSID only to a signed app bundle with Location
+            // authorization. Empty identifiers are neutral unavailable data, not failure.
             return SystemNetworkInfoSnapshot(permission: .unavailable)
         }
         return SystemNetworkInfoSnapshot(permission: .authorized, ssid: ssid, bssid: bssid)
+    }
+
+    private static func currentLocationPermission() -> SystemSignalPermission {
+        #if canImport(CoreLocation)
+        switch CLLocationManager().authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            return .authorized
+        case .notDetermined:
+            return .notDetermined
+        case .denied:
+            return .denied
+        case .restricted:
+            return .restricted
+        @unknown default:
+            return .unavailable
+        }
         #else
-        return SystemNetworkInfoSnapshot(permission: .unavailable)
+        return .unavailable
+        #endif
+    }
+
+    private static func currentWiFiIdentifiers() -> (ssid: String?, bssid: String?)? {
+        #if canImport(CoreWLAN)
+        guard let interface = CWWiFiClient.shared().interface() else {
+            return nil
+        }
+        return (ssid: interface.ssid(), bssid: interface.bssid())
+        #else
+        return nil
         #endif
     }
 }
