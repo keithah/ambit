@@ -131,7 +131,7 @@ sign_ambit_app() {
     then
       cat >&2 <<WARN
 AMBIT_ENTITLEMENTS requests com.apple.developer.networking.wifi-info, but the provisioning
-profile does not authorize it. Create/download a macOS development profile for tv.kodi.ambit
+profile does not authorize it. Create/download a macOS development profile for com.hadm.ambit
 with the Wi-Fi Information capability enabled, then retry with:
   AMBIT_CODESIGN_IDENTITY="Apple Development: ..." \\
   AMBIT_ENTITLEMENTS="$SCRIPT_DIR/Ambit.provisioned.entitlements" \\
@@ -164,7 +164,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key><string>Ambit</string>
-  <key>CFBundleIdentifier</key><string>tv.kodi.ambit</string>
+  <key>CFBundleIdentifier</key><string>com.hadm.ambit</string>
   <key>CFBundleName</key><string>Ambit</string>
   <key>CFBundleDisplayName</key><string>Ambit</string>
   <key>CFBundlePackageType</key><string>APPL</string>

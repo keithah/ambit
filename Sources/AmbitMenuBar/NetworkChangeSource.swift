@@ -39,7 +39,7 @@ final class NWPathNetworkChangeSource: NetworkChangeSource {
     var onChange: (@MainActor @Sendable (NetworkPathSnapshot) async -> Void)?
 
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "tv.kodi.ambit.network-path")
+    private let queue = DispatchQueue(label: "com.hadm.ambit.network-path")
     private var hasSeenInitialPath = false
 
     func start() {

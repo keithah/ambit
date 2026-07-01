@@ -4,6 +4,7 @@ final class BundlePackagingTests: XCTestCase {
     func testLaunchScriptWritesPrivacyUsageStringsForLocationCalendarAndWiFiSSID() throws {
         let script = try readRepoFile(".claude/skills/run-ambit/launch.sh")
 
+        XCTAssertTrue(script.contains("CFBundleIdentifier</key><string>com.hadm.ambit</string>"))
         XCTAssertTrue(script.contains("NSLocationWhenInUseUsageDescription"))
         XCTAssertTrue(script.contains("NSLocationUsageDescription"))
         XCTAssertTrue(script.contains("NSCalendarsUsageDescription"))

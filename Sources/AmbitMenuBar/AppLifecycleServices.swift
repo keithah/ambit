@@ -6,7 +6,7 @@ final class FileAppInstanceLock: @unchecked Sendable {
     private let lockFileURL: URL
     private var fileDescriptor: Int32 = -1
 
-    init(lockFileURL: URL = FileManager.default.temporaryDirectory.appendingPathComponent("tv.kodi.ambit.lock")) {
+    init(lockFileURL: URL = FileManager.default.temporaryDirectory.appendingPathComponent("com.hadm.ambit.lock")) {
         self.lockFileURL = lockFileURL
     }
 

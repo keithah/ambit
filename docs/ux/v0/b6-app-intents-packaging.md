@@ -9,7 +9,7 @@ Deploy checklist for the app-bundle pipeline:
 - Build the signed `Ambit.app` bundle with the `AmbitMenuBar` target that contains
   `AppEntity`, `AppIntent`, and `AppShortcutsProvider` declarations.
 - Ensure the app bundle's Info.plist is generated for the final bundle identifier used at
-  launch (`tv.kodi.ambit` for the development bundle); stale `/private/tmp/Ambit.app` bundles
+  launch (`com.hadm.ambit` for the development bundle); stale `/private/tmp/Ambit.app` bundles
   may not be indexed.
 - Include these Info.plist privacy strings in the signed bundle:
   `NSLocationWhenInUseUsageDescription`, `NSCalendarsUsageDescription`, and
@@ -21,7 +21,7 @@ Deploy checklist for the app-bundle pipeline:
   The dev bundle remains unsandboxed to avoid changing existing local storage and network behavior.
 - Wi-Fi SSID/BSSID reads additionally require Apple's restricted
   `com.apple.developer.networking.wifi-info` entitlement in a provisioning profile for
-  `tv.kodi.ambit`. The launcher keeps that entitlement out of the default ad-hoc path because
+  `com.hadm.ambit`. The launcher keeps that entitlement out of the default ad-hoc path because
   signing with an unauthorized restricted entitlement causes macOS to reject the app at launch.
   For a provisioned local build, create/download a macOS development profile with the Wi-Fi
   Information capability enabled, then run:
