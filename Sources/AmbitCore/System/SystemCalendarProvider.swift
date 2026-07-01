@@ -33,7 +33,7 @@ public struct DarwinSystemCalendarReader: SystemCalendarReading {
     public func snapshot() async -> SystemCalendarSnapshot {
         #if canImport(EventKit)
         let store = EKEventStore()
-        let status = EKEventStore.authorizationStatus(for: .event)
+        let status = await Self.authorizedStatus(store: store)
         switch status {
         case .authorized, .fullAccess, .writeOnly:
             break
@@ -69,6 +69,24 @@ public struct DarwinSystemCalendarReader: SystemCalendarReading {
         return SystemCalendarSnapshot(permission: .unavailable)
         #endif
     }
+
+    #if canImport(EventKit)
+    private static func authorizedStatus(store: EKEventStore) async -> EKAuthorizationStatus {
+        let status = EKEventStore.authorizationStatus(for: .event)
+        guard status == .notDetermined else { return status }
+        let granted: Bool
+        if #available(macOS 14.0, *) {
+            granted = (try? await store.requestFullAccessToEvents()) ?? false
+        } else {
+            granted = await withCheckedContinuation { continuation in
+                store.requestAccess(to: .event) { granted, _ in
+                    continuation.resume(returning: granted)
+                }
+            }
+        }
+        return granted ? EKEventStore.authorizationStatus(for: .event) : .denied
+    }
+    #endif
 }
 
 public struct SystemCalendarProvider: Provider {

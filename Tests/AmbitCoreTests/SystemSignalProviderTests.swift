@@ -2,6 +2,15 @@ import XCTest
 @testable import AmbitCore
 
 final class SystemSignalProviderTests: XCTestCase {
+    func testDarwinSignalReadersRequestLocationAndCalendarAuthorization() throws {
+        let calendarSource = try readRepoFile("Sources/AmbitCore/System/SystemCalendarProvider.swift")
+        let locationSource = try readRepoFile("Sources/AmbitCore/System/SystemLocationProvider.swift")
+
+        XCTAssertTrue(calendarSource.contains("requestFullAccessToEvents") || calendarSource.contains("requestAccess(to: .event"))
+        XCTAssertTrue(locationSource.contains("requestWhenInUseAuthorization"))
+        XCTAssertTrue(locationSource.contains("requestLocation"))
+    }
+
     func testCalendarProviderEmitsBusyTitleAndNextEventFromFakeSource() async {
         let provider = SystemCalendarProvider(reader: FakeCalendarReader(snapshot: SystemCalendarSnapshot(
             permission: .authorized,
@@ -217,6 +226,16 @@ final class SystemSignalProviderTests: XCTestCase {
             cpu: CPUMetrics(userPercent: 0, systemPercent: 0, idlePercent: 100, coreCount: 1),
             memory: MemoryMetrics(usedBytes: 0, wiredBytes: 0, compressedBytes: 0, totalBytes: 1)
         )
+    }
+
+    private func readRepoFile(_ relativePath: String) throws -> String {
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let repoRoot = testFileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let url = repoRoot.appendingPathComponent(relativePath)
+        return try String(contentsOf: url, encoding: .utf8)
     }
 }
 

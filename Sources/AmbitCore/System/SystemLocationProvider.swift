@@ -60,17 +60,56 @@ public protocol SystemLocationReading: Sendable {
     func snapshot() async -> SystemLocationSnapshot
 }
 
-public struct DarwinSystemLocationReader: SystemLocationReading {
+public final class DarwinSystemLocationReader: SystemLocationReading, @unchecked Sendable {
+    #if canImport(CoreLocation)
+    @MainActor private var source: DarwinLocationSource?
+    #endif
+
     public init() {}
 
     public func snapshot() async -> SystemLocationSnapshot {
         #if canImport(CoreLocation)
-        let status = CLLocationManager().authorizationStatus
+        return await locationSource().snapshot()
+        #else
+        return SystemLocationSnapshot(permission: .unavailable)
+        #endif
+    }
+
+    #if canImport(CoreLocation)
+    @MainActor
+    private func locationSource() -> DarwinLocationSource {
+        if let source { return source }
+        let source = DarwinLocationSource()
+        self.source = source
+        return source
+    }
+    #endif
+}
+
+#if canImport(CoreLocation)
+@MainActor
+private final class DarwinLocationSource: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var authorizationContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
+    private var locationContinuation: CheckedContinuation<CLLocation?, Never>?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    func snapshot() async -> SystemLocationSnapshot {
+        let status = await authorizationStatus()
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
-            // A full CLLocationManager delegate source belongs in the app layer; until
-            // it supplies a fresh coordinate, expose a neutral unavailable value.
-            return SystemLocationSnapshot(permission: .authorized)
+            let location = await requestCurrentLocation()
+            return SystemLocationSnapshot(
+                permission: .authorized,
+                coordinate: location.map {
+                    LocationCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+                }
+            )
         case .notDetermined:
             return SystemLocationSnapshot(permission: .notDetermined)
         case .denied:
@@ -80,11 +119,63 @@ public struct DarwinSystemLocationReader: SystemLocationReading {
         @unknown default:
             return SystemLocationSnapshot(permission: .unavailable)
         }
-        #else
-        return SystemLocationSnapshot(permission: .unavailable)
-        #endif
+    }
+
+    private func authorizationStatus() async -> CLAuthorizationStatus {
+        let status = manager.authorizationStatus
+        guard status == .notDetermined else { return status }
+        return await withCheckedContinuation { continuation in
+            authorizationContinuation = continuation
+            manager.requestWhenInUseAuthorization()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                resumeAuthorizationIfNeeded(manager.authorizationStatus)
+            }
+        }
+    }
+
+    private func requestCurrentLocation() async -> CLLocation? {
+        await withCheckedContinuation { continuation in
+            locationContinuation = continuation
+            manager.requestLocation()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                resumeLocationIfNeeded(nil)
+            }
+        }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        Task { @MainActor in
+            resumeAuthorizationIfNeeded(manager.authorizationStatus)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        Task { @MainActor in
+            resumeLocationIfNeeded(locations.last)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor in
+            resumeLocationIfNeeded(nil)
+        }
+    }
+
+    private func resumeAuthorizationIfNeeded(_ status: CLAuthorizationStatus) {
+        guard let continuation = authorizationContinuation else { return }
+        authorizationContinuation = nil
+        continuation.resume(returning: status)
+    }
+
+    private func resumeLocationIfNeeded(_ location: CLLocation?) {
+        guard let continuation = locationContinuation else { return }
+        locationContinuation = nil
+        continuation.resume(returning: location)
     }
 }
+#endif
 
 public protocol PlaceStore: Sendable {
     func load() -> [PlaceDeclaration]
