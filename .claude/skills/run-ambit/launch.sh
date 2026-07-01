@@ -119,10 +119,27 @@ sign_ambit_app() {
   local app="$1"
   local identity="${AMBIT_CODESIGN_IDENTITY:--}"
   local provision_profile="${AMBIT_PROVISIONING_PROFILE:-}"
+  local entitlements="${AMBIT_ENTITLEMENTS:-$SCRIPT_DIR/Ambit.entitlements}"
+  local decoded_profile="$app/Contents/provisioning-profile.plist"
 
   if [ -n "$provision_profile" ]; then
     [ -f "$provision_profile" ] || { echo "AMBIT_PROVISIONING_PROFILE does not exist: $provision_profile" >&2; exit 1; }
     cp "$provision_profile" "$app/Contents/embedded.provisionprofile"
+    security cms -D -i "$provision_profile" > "$decoded_profile"
+    if grep -q "com.apple.developer.networking.wifi-info" "$entitlements" &&
+       ! plutil -extract Entitlements.com.apple.developer.networking.wifi-info raw -o - "$decoded_profile" >/dev/null 2>&1
+    then
+      cat >&2 <<WARN
+AMBIT_ENTITLEMENTS requests com.apple.developer.networking.wifi-info, but the provisioning
+profile does not authorize it. Create/download a macOS development profile for tv.kodi.ambit
+with the Wi-Fi Information capability enabled, then retry with:
+  AMBIT_CODESIGN_IDENTITY="Apple Development: ..." \\
+  AMBIT_ENTITLEMENTS="$SCRIPT_DIR/Ambit.provisioned.entitlements" \\
+  AMBIT_PROVISIONING_PROFILE="/path/to/profile.mobileprovision" \\
+  .claude/skills/run-ambit/launch.sh
+WARN
+      exit 1
+    fi
   fi
 
   if [ "$identity" = "-" ]; then
@@ -131,7 +148,7 @@ sign_ambit_app() {
     echo "==> codesign ($identity)"
   fi
 
-  codesign --force --sign "$identity" --entitlements "$SCRIPT_DIR/Ambit.entitlements" "$app" >/dev/null
+  codesign --force --sign "$identity" --entitlements "$entitlements" "$app" >/dev/null
 }
 
 build_ambit_product
