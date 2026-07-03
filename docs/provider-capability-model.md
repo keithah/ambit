@@ -1,7 +1,7 @@
 # Ambit — Provider Capability Model (spec)
 
 > **Ambit design docs — read together:**
-> - **`MIGRATION_PLAN.md`** — staged build path & current status.
+> - **`HANDOFF.md`** — running project map & current build status; **`spec-v2.md`** — full synthesis.
 > - **`integration-model.md`** — the installable unit: Integration → install → providers ("install gl.inet" ⇒ router + vpn).
 > - **`provider-capability-model.md`** (this doc) — *grouping & membership*: profiles + capabilities decide which providers a surface contains.
 > - **`entity-model.md`** — the Provider→Entity abstraction (descriptors + per-snapshot state) integrations are authored against.

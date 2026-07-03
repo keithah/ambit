@@ -1,6 +1,9 @@
 # Ambit — universal engine declaration schema (v0 sketch)
 
-Status: design sketch to pin down the engine contract before implementation. Swift-flavored pseudo-types,
+Status: **implemented** (B1–B6, merged 2026-06-29) — kept as the design-history artifact behind the build.
+The shipped types live in `Sources/AmbitCore/Monitoring/` (`Condition`, `Reaction`, `UserRule`, `Context`);
+where names differ, the code is ground truth. Originally: design sketch to pin down the engine contract
+before implementation. Swift-flavored pseudo-types,
 in the style of the existing `AlertKindDeclaration` / `EntityDescriptor`. Names are provisional. This is the
 "hand it to the implementer" artifact behind `spec.md` (Universal rule engine + Reactions & commands).
 

@@ -1,17 +1,21 @@
 # Ambit — Settings UX + Engine Evolution (v0 draft)
 
-Status: v0. Companion files: `mocks.html` (interactive screens) and `schema.md` (engine declaration types
-+ a reconciliation against the current codebase).
+Status: v0 design; **Part B implemented, Part A not started** (status updated 2026-07-03). Companion files:
+`mocks.html` (interactive screens) and `schema.md` (engine declaration types + a reconciliation against the
+current codebase).
 
 This document is in two parts, with different readiness:
 
 - **Part A — Settings UX redesign.** A presentation reorganization of today's settings. Build-ready; uses
   the existing engine seams (entities, presentation overrides, alert-kind declarations, slots) with no new
-  engine primitives. The 6-phase plan at the end of Part A can start now.
+  engine primitives. The 6-phase plan at the end of Part A can start now. **Not yet built** — the current
+  settings UI predates this design.
 - **Part B — Engine evolution.** Contexts, a richer reaction set, provider commands surfaced as reactions,
-  and the universal rule engine. This is a locked *design direction*, not yet build-ready: it needs the new
-  primitives in `schema.md`, a persistence/migration story, and the phasing in Part B. Per the build-order
-  decision, Part B is being locked before implementation begins.
+  and the universal rule engine. **BUILT: merged on master 2026-06-29 as B1–B6** (condition tree + evaluator;
+  reaction registry; user-rule store/runner/builder; contexts + overlay stacking with cycle detection and
+  resolution traces; location/calendar/Focus signal providers; App Intents bridge + Shortcut reactions),
+  followed by packaging/privacy hardening (entitlements, App Intents metadata, location-gated SSID). Any
+  "not yet build-ready" caveats below are design history, now historical.
 
 The two parts share one model: enable a capability on an entity, compose it onto surfaces, and (Part B) let
 conditions over entity state drive reactions. Part B does not block Part A.

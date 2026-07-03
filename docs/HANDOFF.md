@@ -43,18 +43,25 @@ the `ping` integration (not ported — reimplemented against Ambit's model, usin
 
 ---
 
-## 3. Design docs (source of truth, in `~/src/ambit`)
+## 3. Design docs (source of truth — all live in `docs/`, alongside this file)
 
-Each owns one concern; they cross-reference each other in a header block.
-- **`integration-model.md`** — the installable unit: Integration → IntegrationInstance → providers ("install
+Each owns one concern; they cross-reference each other in a header block. Paths are repo-root-relative.
+- **`docs/integration-model.md`** — the installable unit: Integration → IntegrationInstance → providers ("install
   gl.inet" ⇒ router + vpn). Owns the identity hierarchy.
-- **`entity-model.md`** — the Provider→Entity abstraction (EntityDescriptor + EntityState) integrations are
+- **`docs/entity-model.md`** — the Provider→Entity abstraction (EntityDescriptor + EntityState) integrations are
   authored against.
-- **`provider-capability-model.md`** — grouping & membership (profiles + capabilities → surfaces).
-- **`presentation-model.md`** — the generic, opinionated presentation layer + the Attention engine + settings.
-- **`engine-topology.md`** — multi-engine & multi-instance: peer-to-peer ownership, failover, dedup (Phase 3).
+- **`docs/provider-capability-model.md`** — grouping & membership (profiles + capabilities → surfaces).
+- **`docs/presentation-model.md`** — the generic, opinionated presentation layer + the Attention engine + settings.
+- **`docs/engine-topology.md`** — multi-engine & multi-instance: peer-to-peer ownership, failover, dedup (Phase 3).
 - **`docs/superpowers/specs/`** — dated, milestone-level design specs (presentation-layer, P2, etc.).
-- **`product-spec.md` / `pitch.md`** — the product/business framing.
+- **`docs/ux/v0/spec.md`** (+ `schema.md`, `mocks.html`, `b6-app-intents-packaging.md`) — the Settings UX
+  redesign (Part A, not yet built) and the engine-evolution design (Part B, **built** as B1–B6).
+- **`docs/product-spec.md` / `docs/pitch.md`** — the product/business framing.
+- **`docs/spec-v2.md`** — a single-file comprehensive synthesis of all of the above plus the code as of
+  2026-07-03 (behavioral spec + debt critique + rearchitecture invariants). Best single entry point.
+
+(The old root-level `MIGRATION_PLAN.md` — the completed glinet-travel seed migration — was removed
+2026-07-03; it survives in git history.)
 
 ---
 
@@ -220,7 +227,8 @@ aggregator/viewport, never the coordinator.
   the non-ping fixture proof, and the grep-gate. Live eyeballs confirmed Wi-Fi-toggle diagnosis, System staying
   healthy during outages, and instance status dots matching the headline. Remaining manual checks are Settings
   pane click-throughs and a real macOS notification banner via **Send Test** in the App pane.
-- Current master: **684 tests green** (`swift build` + `swift test` pass). The app runs as **"Ambit"**, with ping
+- Current master: **~745 test functions** (684 green at the pre-B-series checkpoint; B1–B6 added coverage on
+  top — `swift build` + `swift test` remain the gate). The app runs as **"Ambit"**, with ping
   and system slots polling through slot-driven chrome, dynamic attention-driven bar readouts, generic settings,
   a customizable System dashboard, pingscope-fidelity graphs, recent-sample tables, generic history export, and
   multi-host ping surfaces, generic entity-targeted notifications, a generic selected-slot overlay, and
@@ -228,6 +236,27 @@ aggregator/viewport, never the coordinator.
 - **Device integrations (gl.inet/speedify/ecoflow/starlink/iperf3/reachability) are seeded DISABLED.** `ping`
   and `system@local` are active. The disabled device integrations will be rebuilt later against the proven
   shape. The old basic `ping` built-in was retired (superseded by the pingscope-derived `ping` integration).
+- **UX v0 Part B (engine evolution, B1–B6) complete** — merged on master 2026-06-29 through `290775a`:
+  - **B1** — generic `Condition` tree + stateful `ConditionEvaluator` (comparison/all/any/not/temporal/
+    predicate; temporal ops `heldFor`, `consecutiveSamples`, `withinWindow`, `rateOfChange`; edges
+    level/rising/falling). Legacy `AlertTriggerDeclaration`s compile onto it golden-identically.
+  - **B2** — `Reaction` registry + condition-backed alerts: `notify` (passive/active/timeSensitive;
+    oneShot/boundToCondition lifecycle with clear-on-recovery), `mutateSurface` (icon/badge/color/visible,
+    applied-while-active + revert), `runCommand` (confirmation policy), `applyContext`.
+  - **B3 + B3.1** — user-authored rules: versioned `UserRuleDocument` store (schema v1, forward-safe decode),
+    `UserRuleRunner` (rising-edge firing, per-rule cooldown default 60s, falling-edge clear/revert),
+    `UserRuleBuilder` UI; dwell and notify-lifecycle firing converged with the alert path.
+  - **B4** — `ContextDeclaration`s with overlay stacking: pure `ContextResolver` (priority-ordered,
+    last-wins, base underneath) with per-address "why" traces; manual pin overrides; 15s default dwell on
+    activation conditions; `ContextCycleDetector`; contexts are derived entities (`context:<id>#active`).
+  - **B5** — context signal providers: `SystemLocationProvider`, `SystemCalendarProvider`,
+    `SystemFocusProvider` (plus SSID via `SystemNetworkProvider`), with `SystemSignalPermission` handling.
+  - **B6** — `AppIntentBridge` exposes provider commands as App Intents; `runShortcut` / `runAppIntent`
+    reactions via `ShortcutRunner`.
+- **Packaging/privacy hardening complete** — merged 2026-06-30..07-01 through `c9c729b`: dev bundle packaged
+  with privacy entitlements (location, calendars, network client) and an App Intents metadata hook; Darwin
+  readers request system-signal permissions; dev bundle id is `com.hadm.ambit`; provisioned Wi-Fi
+  entitlement path + Location-gated SSID packaging fixed for macOS 14.4+.
 
 ---
 
@@ -235,7 +264,8 @@ aggregator/viewport, never the coordinator.
 
 - **Roadmap status:** hardening ✓, P4 ✓, P6 ✓, P5 ✓, System dashboard + Available Items ✓, History & Graph
   Fidelity ✓, Core hardening Phase 1 ✓, Multi-host Ping parity ✓, Notifications & Alerts ✓, Floating Overlay ✓,
-  Network resilience + reliability ✓, Generic monitoring parity ✓.
+  Network resilience + reliability ✓, Generic monitoring parity ✓, UX v0 Part B (B1–B6) ✓, packaging/privacy
+  hardening ✓. UX v0 Part A (settings redesign) not started.
 - **P4 — Attention engine: complete.** The dynamic, "show what matters now" bar readout is live. Three-tier
   escalation (`detail → surfaced → alerted`), separate display vs alert thresholds, per-entity visibility,
   severity+priority ranking, debounce, transition boost, per-surface capacity/overflow, and resting fallback
@@ -294,7 +324,12 @@ aggregator/viewport, never the coordinator.
 - **Dev test artifacts:** `ping@1.1.1.1:443` (Cloudflare TCP) is intentionally present in the `tv.kodi.ambit`
   registry for multi-host eyeballs. `ping@127.0.0.1:22` ("Local") is the user's pre-existing failing host
   (SSH closed) and intentionally exercises down/failure rendering.
-- **Remaining major milestones (explicitly deferred, not started):** Sparkle auto-update (needs feed URL, EdDSA
+- **UX v0 Part B (engine evolution): complete.** Conditions, reactions, user rules, contexts + overlays,
+  signal providers, and App Intents/Shortcuts are all merged (see §5). The `docs/ux/v0/spec.md` Part B design
+  is implemented; its "not yet build-ready" status note is historical.
+- **Remaining major milestones (explicitly deferred, not started):** UX v0 **Part A** settings redesign
+  (rail IA, metric cards with usage chips, surface builders, notifications v2, language pass — build-ready,
+  design in `docs/ux/v0/spec.md`); Sparkle auto-update (needs feed URL, EdDSA
   keys, signing/release workflow, and hosting); device integrations rebuilt against the proven generic shape
   (`gl.inet` first, then Starlink including HTTP/2+protobuf telemetry, reachability, Speedify, and EcoFlow; all
   need the secure config field); multi-engine topology (Phase 3); and iOS/widgets/Live Activity.
@@ -348,17 +383,22 @@ bug in the core value prop.** This was fixed before P4 and merged as `71b2f81`. 
 - A **design-review partner** (this chat's role) reviews each plan before implementation, adjudicates design
   decisions, and gives go/no-go. **Plan-as-you-reach-it** — don't pre-plan far-future milestones; each gets
   its own plan when reached.
-- **Dev run recipe:** there's a run skill for launching Ambit (hand-rolled `.app` bundle + ad-hoc codesign +
-  `NSAppSleepDisabled`; `swift run` alone crashes on `UNUserNotificationCenter`). App is `.accessory` (menu
-  bar only, no dock icon).
+- **Dev run recipe:** there's a run skill for launching Ambit (hand-rolled `.app` bundle + codesign
+  with dev entitlements + `NSAppSleepDisabled`; `swift run` alone crashes on `UNUserNotificationCenter`).
+  It uses ad-hoc signing by default and only uses a stable Apple Development identity when
+  `AMBIT_CODESIGN_IDENTITY` is set explicitly. App is `.accessory` (menu bar only, no dock icon).
 
 ---
 
 ## 10. How to resume right now
 
 1. Choose the next milestone:
+   - **UX v0 Part A (settings redesign):** build-ready presentation reorganization — rail IA, metric cards,
+     surface builders, notifications v2, plain-language pass (`docs/ux/v0/spec.md`). Part B primitives it
+     leans on are already built.
    - **Device integrations:** rebuild `gl.inet`, `speedify`, `ecoflow`, `starlink`, and `reachability` against
-     the proven generic integration/entity/presentation shape.
+     the proven generic integration/entity/presentation shape (blocked on a secure config field in
+     `IntegrationConfigSchema`).
    - **Multi-engine topology (Phase 3):** peer-to-peer ownership, failover, dedup, and handoff across Mac,
      always-on box, and phone.
    - **iOS/widgets/Live Activity:** mobile and glanceable surfaces on top of the proven engine primitives.

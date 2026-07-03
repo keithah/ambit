@@ -1,7 +1,7 @@
 # Ambit — Engine Topology (multi-engine & multi-instance, peer-to-peer)
 
 > **Ambit design docs — read together:**
-> - **`MIGRATION_PLAN.md`** — staged build path & current status.
+> - **`HANDOFF.md`** — running project map & current build status; **`spec-v2.md`** — full synthesis.
 > - **`integration-model.md`** — the installable unit: Integration → install → providers ("install gl.inet" ⇒ router + vpn).
 > - **`provider-capability-model.md`** — grouping & membership (profiles + capabilities → surfaces).
 > - **`entity-model.md`** — the Provider→Entity abstraction (descriptors + per-snapshot state).
