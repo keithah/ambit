@@ -120,11 +120,7 @@ sign_ambit_app() {
   local identity="${AMBIT_CODESIGN_IDENTITY:-}"
   local provision_profile="${AMBIT_PROVISIONING_PROFILE:-}"
   local entitlements="${AMBIT_ENTITLEMENTS:-$SCRIPT_DIR/Ambit.entitlements}"
-  local decoded_profile="$app/Contents/provisioning-profile.plist"
 
-  if [ -z "$identity" ]; then
-    identity="$(security find-identity -v -p codesigning 2>/dev/null | awk -F '"' '/Apple Development:/ { print $2; exit }')"
-  fi
   if [ -z "$identity" ]; then
     identity="-"
   fi
@@ -132,11 +128,10 @@ sign_ambit_app() {
   if [ -n "$provision_profile" ]; then
     [ -f "$provision_profile" ] || { echo "AMBIT_PROVISIONING_PROFILE does not exist: $provision_profile" >&2; exit 1; }
     cp "$provision_profile" "$app/Contents/embedded.provisionprofile"
-    security cms -D -i "$provision_profile" > "$decoded_profile"
   fi
 
   if [ "$identity" = "-" ]; then
-    echo "==> ad-hoc codesign (no Apple Development identity found)"
+    echo "==> ad-hoc codesign (set AMBIT_CODESIGN_IDENTITY for stable TCC identity)"
   else
     echo "==> codesign ($identity)"
   fi

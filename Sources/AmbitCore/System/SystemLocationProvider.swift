@@ -101,8 +101,8 @@ private final class DarwinLocationSource: NSObject, CLLocationManagerDelegate {
 
     func snapshot() async -> SystemLocationSnapshot {
         let status = await authorizationStatus()
-        switch status {
-        case .authorizedAlways, .authorizedWhenInUse:
+        switch SystemSignalPermission.from(status) {
+        case .authorized:
             let location = await requestCurrentLocation()
             return SystemLocationSnapshot(
                 permission: .authorized,
@@ -110,14 +110,8 @@ private final class DarwinLocationSource: NSObject, CLLocationManagerDelegate {
                     LocationCoordinate(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
                 }
             )
-        case .notDetermined:
-            return SystemLocationSnapshot(permission: .notDetermined)
-        case .denied:
-            return SystemLocationSnapshot(permission: .denied)
-        case .restricted:
-            return SystemLocationSnapshot(permission: .restricted)
-        @unknown default:
-            return SystemLocationSnapshot(permission: .unavailable)
+        case .notDetermined, .denied, .restricted, .unavailable:
+            return SystemLocationSnapshot(permission: SystemSignalPermission.from(status))
         }
     }
 

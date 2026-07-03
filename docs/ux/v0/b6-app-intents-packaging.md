@@ -23,10 +23,12 @@ Deploy checklist for the app-bundle pipeline:
   App Store Connect will not place it in a macOS provisioning profile, and forcing it into the
   signature can make launchd reject the app. On macOS 14.4+, CoreWLAN SSID/BSSID reads are gated
   by Location authorization for the signed app's bundle identifier.
-- Sign local dev builds with a stable Apple Development identity. Ad-hoc signing changes the code
-  identity between builds, so TCC may not retain the Location grant and CoreWLAN can keep returning
-  nil. The launcher auto-selects an installed `Apple Development:` identity when
-  `AMBIT_CODESIGN_IDENTITY` is not set.
+- Sign local dev builds with a stable Apple Development identity by setting
+  `AMBIT_CODESIGN_IDENTITY` explicitly when you need TCC persistence. Ad-hoc signing changes the
+  code identity between builds, so TCC may not retain the Location grant and CoreWLAN can keep
+  returning nil on macOS 14.4+. The launcher intentionally does not auto-select an installed
+  `Apple Development:` identity because renewed certificates, ambiguous common names, and locked
+  keychains can make launch behavior non-deterministic.
 - Run the App Intents metadata extraction step as part of packaging so Shortcuts can discover
   `Refresh Ambit`, context activation/deactivation, entity queries, and command intents.
   The metadata processor needs Swift compiler const-values output. In an Xcode packaging target,

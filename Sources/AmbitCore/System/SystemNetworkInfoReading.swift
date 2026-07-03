@@ -25,26 +25,35 @@ public protocol SystemNetworkInfoReading: Sendable {
 }
 
 public struct DarwinSystemNetworkInfoReader: SystemNetworkInfoReading {
-    private let locationPermission: @Sendable () -> SystemSignalPermission
+    private let requiresLocationPermissionForWiFiIdentifiers: @Sendable () -> Bool
+    private let locationPermission: @Sendable () async -> SystemSignalPermission
     private let wifiIdentifiers: @Sendable () -> (ssid: String?, bssid: String?)?
 
     public init() {
         self.init(
+            requiresLocationPermissionForWiFiIdentifiers: DarwinSystemNetworkInfoReader.currentOSRequiresLocationPermissionForWiFiIdentifiers,
             locationPermission: DarwinSystemNetworkInfoReader.currentLocationPermission,
             wifiIdentifiers: DarwinSystemNetworkInfoReader.currentWiFiIdentifiers
         )
     }
 
-    init(locationPermission: @escaping @Sendable () -> SystemSignalPermission,
+    init(requiresLocationPermissionForWiFiIdentifiers: @escaping @Sendable () -> Bool = { true },
+         locationPermission: @escaping @Sendable () async -> SystemSignalPermission,
          wifiIdentifiers: @escaping @Sendable () -> (ssid: String?, bssid: String?)?) {
+        self.requiresLocationPermissionForWiFiIdentifiers = requiresLocationPermissionForWiFiIdentifiers
         self.locationPermission = locationPermission
         self.wifiIdentifiers = wifiIdentifiers
     }
 
     public func snapshot() async -> SystemNetworkInfoSnapshot {
-        let permission = locationPermission()
-        guard permission.canRead else {
-            return SystemNetworkInfoSnapshot(permission: permission)
+        let permission: SystemSignalPermission
+        if requiresLocationPermissionForWiFiIdentifiers() {
+            permission = await locationPermission()
+            guard permission.canRead else {
+                return SystemNetworkInfoSnapshot(permission: permission)
+            }
+        } else {
+            permission = .authorized
         }
 
         guard let identifiers = wifiIdentifiers() else {
@@ -60,20 +69,16 @@ public struct DarwinSystemNetworkInfoReader: SystemNetworkInfoReading {
         return SystemNetworkInfoSnapshot(permission: .authorized, ssid: ssid, bssid: bssid)
     }
 
-    private static func currentLocationPermission() -> SystemSignalPermission {
-        #if canImport(CoreLocation)
-        switch CLLocationManager().authorizationStatus {
-        case .authorizedAlways, .authorizedWhenInUse:
-            return .authorized
-        case .notDetermined:
-            return .notDetermined
-        case .denied:
-            return .denied
-        case .restricted:
-            return .restricted
-        @unknown default:
-            return .unavailable
+    private static func currentOSRequiresLocationPermissionForWiFiIdentifiers() -> Bool {
+        if #available(macOS 14.4, *) {
+            return true
         }
+        return false
+    }
+
+    private static func currentLocationPermission() async -> SystemSignalPermission {
+        #if canImport(CoreLocation)
+        return await DarwinNetworkLocationPermissionProbe.shared.permission()
         #else
         return .unavailable
         #endif
@@ -90,3 +95,16 @@ public struct DarwinSystemNetworkInfoReader: SystemNetworkInfoReading {
         #endif
     }
 }
+
+#if canImport(CoreLocation)
+@MainActor
+private final class DarwinNetworkLocationPermissionProbe {
+    static let shared = DarwinNetworkLocationPermissionProbe()
+
+    private let manager = CLLocationManager()
+
+    func permission() -> SystemSignalPermission {
+        SystemSignalPermission.from(manager.authorizationStatus)
+    }
+}
+#endif

@@ -28,7 +28,10 @@ bash .claude/skills/run-ambit/launch.sh
 ```
 
 This builds `Ambit`, wraps the binary in `.build/bundle/Ambit.app` (Info.plist with privacy usage
-strings + ad-hoc codesign with the dev entitlements), kills any prior instance, and `open`s it.
+strings + codesign with the dev entitlements), kills any prior instance, and `open`s it.
+By default the signature is ad-hoc so launch never depends on keychain state. Set
+`AMBIT_CODESIGN_IDENTITY` explicitly to use a stable Apple Development identity for TCC-sensitive
+checks such as Wi-Fi SSID/BSSID reads on macOS 14.4+.
 The glyph appears in the menu bar.
 
 Stop it:
@@ -84,6 +87,10 @@ swift test    # full XCTest suite (AmbitCore + AmbitUI)
 - **The history DB persists across runs** (`~/Library/Application Support/Ambit/…`). On a fresh
   launch the graph/readout draw from *old* samples before the first live poll completes, so you
   may briefly see a value with a "No Data" status — it self-heals after one poll.
+- **Wi-Fi SSID/BSSID on macOS 14.4+ needs Location authorization and a stable code identity.** The
+  launcher does not auto-select a certificate because that can depend on locked keychains or
+  ambiguous renewed certificates. Set `AMBIT_CODESIGN_IDENTITY` to the exact identity you want;
+  otherwise the ad-hoc fallback launches reliably but TCC may not retain the grant across rebuilds.
 - **App Intents metadata needs const-values output.** The launcher invokes
   `appintentsmetadataprocessor` when `.swiftconstvalues` files exist, but plain SwiftPM builds do
   not currently emit them. Shortcuts/Spotlight indexing therefore needs the documented Xcode
