@@ -208,9 +208,16 @@ private struct GatedProbe: Probe {
     }
 }
 
-private struct ThrowingGateway: GatewayFinding {
+/// Returns a gateway for the first `successes` lookups, then fails every lookup.
+private actor FailingAfter: GatewayFinding {
     struct Failure: Error {}
-    func defaultGateway() async throws -> String? { throw Failure() }
+    private var remaining: Int
+    init(successes: Int) { remaining = successes }
+    func defaultGateway() async throws -> String? {
+        guard remaining > 0 else { throw Failure() }
+        remaining -= 1
+        return "192.168.8.1"
+    }
 }
 
 private struct FixedGateway: GatewayFinding {
@@ -303,14 +310,19 @@ private actor SwitchingGateway: GatewayFinding {
         #expect(await monitor.runCycle().internetHistory.count == 2)
     }
 
-    @Test func failedGatewayLookupKeepsCheckingInsteadOfNoNetwork() async {
+    @Test func failedGatewayLookupKeepsTheLastGatewayAndItsSamples() async {
         let monitor = DiagnosisMonitor(
-            gatewayFinder: ThrowingGateway(),
+            gatewayFinder: FailingAfter(successes: 3),
             icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
             tcp: FixedProbe(sample: ProbeSample(latencyMs: 30)),
             dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
         )
-        #expect(await monitor.runCycle().verdict == .online)
+        for _ in 0..<3 { await monitor.runCycle() }
+        let snapshot = await monitor.runCycle()
+        #expect(snapshot.gateway == "192.168.8.1")
+        #expect(snapshot.internet.sampleCount == 4)
+        #expect(snapshot.router.sampleCount == 4)
+        #expect(snapshot.verdict == .online)
     }
 
     @Test func noGatewayIsNoNetwork() async {

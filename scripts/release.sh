@@ -34,14 +34,6 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo "Working tree is dirty. Commit first so the release matches a commit."; exit 1
 fi
 
-if [[ "${PUBLISH:-0}" == "1" ]]; then
-  # A published build must be exactly what is on origin/main; the build number (commit count)
-  # is only monotonic along main.
-  git fetch --quiet origin main
-  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
-    || { echo "PUBLISH=1 requires HEAD to equal origin/main."; exit 1; }
-fi
-
 # A version whose DMG is already published is never rebuilt: its bytes are what the appcast
 # signature must match. A retry reuses the published DMG and only finishes the missing steps.
 ASSET="Ambit-$VERSION.dmg"
@@ -52,6 +44,17 @@ if [[ "${PUBLISH:-0}" == "1" ]] && gh release view "v$VERSION" --repo "$REPO" --
   echo "==> v$VERSION is already published; reusing its DMG"
   REUSE=1
   gh release download "v$VERSION" --repo "$REPO" --pattern "$ASSET" --dir "$DIST" --clobber
+  # Only a DMG that is notarized and signed by this team gets an appcast entry.
+  spctl --assess --type open --context context:primary-signature "$DMG"
+  codesign -dv "$DMG" 2>&1 | grep -qx "TeamIdentifier=$TEAM" \
+    || { echo "Published DMG is not signed by team $TEAM."; exit 1; }
+elif [[ "${PUBLISH:-0}" == "1" ]]; then
+  # A new published build must be exactly what is on origin/main; the build number (commit
+  # count) is only monotonic along main. A retry of an already published version skips this,
+  # because main may have moved on since.
+  git fetch --quiet origin main
+  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
+    || { echo "PUBLISH=1 requires HEAD to equal origin/main."; exit 1; }
 fi
 
 STAGE="$(mktemp -d)"
@@ -116,21 +119,22 @@ cp "$DMG" "$FEED/"
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   --link "https://github.com/$REPO" \
   --maximum-deltas 0 \
-  -o "$DIST/appcast.xml" "$FEED"
+  -o "$FEED/appcast.xml" "$FEED"
+cp "$FEED/appcast.xml" "$DIST/appcast.xml"
 
 if [[ "${PUBLISH:-0}" != "1" ]]; then
   echo "Built $DMG and $DIST/appcast.xml. Re-run with PUBLISH=1 to upload."; exit 0
 fi
 
 echo "==> Publish"
-if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-  [[ "$(git rev-parse "v$VERSION^{commit}")" == "$(git rev-parse HEAD)" ]] \
-    || { echo "Tag v$VERSION exists on a different commit."; exit 1; }
-else
-  git tag -a "v$VERSION" -m "Ambit $VERSION"
-fi
-git push origin "v$VERSION"
 if [[ "$REUSE" == "0" ]]; then
+  if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+    [[ "$(git rev-parse "v$VERSION^{commit}")" == "$(git rev-parse HEAD)" ]] \
+      || { echo "Tag v$VERSION exists on a different commit."; exit 1; }
+  else
+    git tag -a "v$VERSION" -m "Ambit $VERSION"
+  fi
+  git push origin "v$VERSION"
   if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
     gh release upload "v$VERSION" "$DMG" --repo "$REPO"
   else
