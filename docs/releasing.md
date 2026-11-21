@@ -1,28 +1,48 @@
 # Releasing
 
-## One-time setup (Keith, on the release Mac)
-
-1. **Unlock the login keychain** and confirm the certificate:
-   `security find-identity -v -p codesigning | grep "Developer ID Application"`
-2. **Notary credentials** (needs an app-specific password from appleid.apple.com):
-   `xcrun notarytool store-credentials ambit --apple-id <apple id> --team-id <team id>`
-3. **Sparkle key** (private key is stored in the login keychain; back it up):
-   `make build && build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys`
-   Copy the printed public key into `SPARKLE_PUBLIC_KEY` in `project.yml` and commit.
-4. **GitHub Pages**: repo Settings, Pages, deploy from branch `gh-pages`, root. The first
-   `PUBLISH=1` release creates the branch. The appcast is served at
-   `https://keithah.github.io/ambit/appcast.xml`.
-
 ## Each release
 
 ```sh
 make release VERSION=0.1.0             # test, build universal, sign, notarize, DMG, appcast in dist/
-PUBLISH=1 make release VERSION=0.1.0   # the same, then tag, GitHub release, push appcast
+PUBLISH=1 make release VERSION=0.1.0   # the same, then tag, GitHub release, push appcast to gh-pages
 ```
 
-`SKIP_NOTARIZE=1` stops after signing, to test the pipeline without Apple's service.
+- `SKIP_NOTARIZE=1` stops after signing, to test the pipeline without Apple's service.
+- The build number is the commit count. The working tree must be clean.
+- `PUBLISH=1` requires `HEAD` to equal `origin/main`.
+- A failed publish can be re-run. A version whose DMG is already on GitHub is never rebuilt; the
+  retry reuses the published bytes and only finishes the missing steps.
 
-The build number is the commit count. The working tree must be clean.
+## Credentials
+
+The script works without a GUI session (SSH, CI, agents), where the login keychain is unusable.
+It reads the locations of its credentials from a private file, `~/.config/ambit-signing/release.env`
+(override with `AMBIT_RELEASE_ENV`). That file holds paths only:
+
+| Variable | What it points to |
+|---|---|
+| `AMBIT_SIGNING_KEYCHAIN` | A dedicated keychain holding the "Developer ID Application" identity |
+| `AMBIT_SIGNING_KEYCHAIN_PASSWORD_FILE` | File with that keychain's password (sent to `security` on stdin) |
+| `AMBIT_NOTARY_ENV` | File defining `KEY` (App Store Connect API `.p8` path), `KEY_ID`, `ISSUER` |
+| `AMBIT_SPARKLE_KEY_FILE` | Sparkle ed25519 private key (base64 of the 32-byte seed) |
+
+Without the env file the script falls back to the interactive setup: identity in the login keychain,
+`xcrun notarytool store-credentials ambit`, and Sparkle's key in the login keychain.
+
+On the current release Mac the signing keychain and notary key are the ones in
+`~/.config/overhear-signing/`, shared with another project of the same developer account.
+
+## The Sparkle key
+
+- Private key: `~/.config/ambit-signing/sparkle_ed25519.key`. **Back it up.** If it is lost, installed
+  copies can never be updated again, because they only accept updates signed by it.
+- Public key: `SPARKLE_PUBLIC_KEY` in `project.yml` (safe to commit).
+
+## GitHub Pages
+
+The appcast is served from the `gh-pages` branch at `https://keithah.github.io/ambit/appcast.xml`.
+The first `PUBLISH=1` run creates the branch; Pages must then be enabled for it (Settings, Pages,
+deploy from branch `gh-pages`, root).
 
 ## Verifying a release
 
@@ -31,5 +51,7 @@ The build number is the commit count. The working tree must be clean.
 
 ## Status
 
-As of 2026-11-20 the script is written but has not completed a run: the login keychain was locked in
-the session that wrote it, and steps 2 to 4 above are not done.
+2026-11-21: the pipeline ran end to end without publishing. `Ambit-0.1.0.dmg` was built universal,
+signed with Developer ID and hardened runtime, notarized (`Accepted`), stapled, and accepted by
+Gatekeeper; the appcast entry's signature verified against the public key. Not yet done: a
+`PUBLISH=1` run, enabling Pages, and an update from one installed version to the next.
