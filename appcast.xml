@@ -1,0 +1,15 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Ambit</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Sat, 21 Nov 2026 10:40:43 -0800</pubDate>
+            <link>https://github.com/keithah/ambit</link>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/keithah/ambit/releases/download/v0.1.0/Ambit-0.1.0.dmg" length="1608104" type="application/octet-stream" sparkle:edSignature="riOlzU5pHzMDdRgA4p2pv2mm/iOuvME/UcAopxPo79Fizes4q7Fe65/+UAUjBpBdXf/dH5LeH6F+7uuhs2dRAQ=="/>
+        </item>
+    </channel>
+</rss>
