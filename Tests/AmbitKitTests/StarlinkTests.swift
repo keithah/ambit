@@ -184,7 +184,11 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func stopLoading() {}
+
+    private let stateLock = NSLock()
+    private var stopped = false
+
+    override func stopLoading() { stateLock.withLock { stopped = true } }
 
     override func startLoading() {
         let host = request.url?.host ?? ""
@@ -198,6 +202,10 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + reply.delay) { [self] in
+            // A cancelled load must receive no further callbacks.
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            guard !stopped else { return }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: reply.body)
             client?.urlProtocolDidFinishLoading(self)
