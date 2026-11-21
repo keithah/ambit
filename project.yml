@@ -18,7 +18,8 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
-    SPARKLE_PUBLIC_KEY: ""
+    # Public half of the Sparkle update key. The private half never enters the repository.
+    SPARKLE_PUBLIC_KEY: "+DldI1Lcj0p7bx/WfsccqWvugKUSse3aLqdQ9lcwf08="
 targets:
   Ambit:
     type: application

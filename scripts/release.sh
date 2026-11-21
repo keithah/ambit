@@ -1,16 +1,23 @@
 #!/bin/bash
 # Build, sign, notarize and package Ambit. Usage: scripts/release.sh 0.1.0
 #
-# One-time setup (see docs/releasing.md):
-#   - "Developer ID Application" certificate in the login keychain
-#   - xcrun notarytool store-credentials ambit
-#   - Sparkle generate_keys, then put the public key in SPARKLE_PUBLIC_KEY (project.yml)
+# Works in two settings (see docs/releasing.md):
+#   - Headless (SSH, CI, agents): credentials come from files named in a private env file,
+#     because the login keychain cannot be used without a GUI session.
+#   - Interactive: Developer ID identity in the login keychain, a notarytool keychain profile,
+#     and Sparkle's key in the login keychain.
 #
-# Environment:
-#   AMBIT_SIGN_IDENTITY   codesign identity (default: first "Developer ID Application")
-#   AMBIT_NOTARY_PROFILE  notarytool keychain profile (default: ambit)
-#   PUBLISH=1             also create the GitHub release and push the appcast to gh-pages
-#   SKIP_NOTARIZE=1       stop after signing (for testing the pipeline)
+# Environment (may be set in $AMBIT_RELEASE_ENV, default ~/.config/ambit-signing/release.env):
+#   AMBIT_SIGNING_KEYCHAIN                keychain holding the Developer ID identity
+#   AMBIT_SIGNING_KEYCHAIN_PASSWORD_FILE  file holding that keychain's password
+#   AMBIT_NOTARY_ENV                      file defining KEY (.p8 path), KEY_ID and ISSUER
+#   AMBIT_SPARKLE_KEY_FILE                Sparkle ed25519 private key file
+#   AMBIT_SIGN_IDENTITY                   codesign identity (default: first "Developer ID Application")
+#   AMBIT_NOTARY_PROFILE                  notarytool keychain profile (default: ambit)
+#   PUBLISH=1                             also create the GitHub release and push the appcast
+#   SKIP_NOTARIZE=1                       stop after signing (for testing the pipeline)
+#
+# Never run this script with tracing (bash -x): it reads a keychain password.
 set -euo pipefail
 
 VERSION="${1:?usage: scripts/release.sh VERSION}"
@@ -26,7 +33,28 @@ PROFILE="${AMBIT_NOTARY_PROFILE:-ambit}"
 REPO="keithah/ambit"
 BUILD_NUMBER="$(git rev-list --count HEAD)"
 
-IDENTITY="${AMBIT_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
+RELEASE_ENV="${AMBIT_RELEASE_ENV:-$HOME/.config/ambit-signing/release.env}"
+if [[ -r "$RELEASE_ENV" ]]; then
+  # shellcheck disable=SC1090
+  set -a; . "$RELEASE_ENV"; set +a
+fi
+KEYCHAIN="${AMBIT_SIGNING_KEYCHAIN:-}"
+KEYCHAIN_ARGS=()
+if [[ -n "$KEYCHAIN" ]]; then
+  PASSWORD_FILE="${AMBIT_SIGNING_KEYCHAIN_PASSWORD_FILE:?set AMBIT_SIGNING_KEYCHAIN_PASSWORD_FILE}"
+  [[ -f "$KEYCHAIN" && -r "$PASSWORD_FILE" ]] || { echo "Signing keychain or its password file is missing."; exit 1; }
+  KEYCHAIN_PASSWORD="$(<"$PASSWORD_FILE")"
+  case "$KEYCHAIN_PASSWORD$KEYCHAIN" in
+    *\"*|*\\*|*$'\n'*) unset KEYCHAIN_PASSWORD; echo "Keychain path or password has a quote, backslash or newline."; exit 1 ;;
+  esac
+  # The password goes to `security` on stdin, never on a command line.
+  printf 'unlock-keychain -p "%s" "%s"\n' "$KEYCHAIN_PASSWORD" "$KEYCHAIN" | security -i >/dev/null \
+    || { unset KEYCHAIN_PASSWORD; echo "Could not unlock $KEYCHAIN"; exit 1; }
+  unset KEYCHAIN_PASSWORD
+  KEYCHAIN_ARGS=(--keychain "$KEYCHAIN")
+fi
+
+IDENTITY="${AMBIT_SIGN_IDENTITY:-$(security find-identity -v -p codesigning ${KEYCHAIN:+"$KEYCHAIN"} | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
 [[ -n "$IDENTITY" ]] || { echo "No Developer ID Application identity found."; exit 1; }
 TEAM="$(sed -E 's/.*\(([A-Z0-9]+)\)$/\1/' <<<"$IDENTITY")"
 
@@ -73,12 +101,13 @@ if [[ "$REUSE" == "0" ]]; then
     -derivedDataPath "$DERIVED" -destination 'generic/platform=macOS' \
     ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
     MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-    CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
-    OTHER_CODE_SIGN_FLAGS="--timestamp" -quiet build
+    CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" -quiet build
 
-  echo "==> Re-sign Sparkle helpers with hardened runtime, inside out"
+  # The build is ad-hoc signed; every Mach-O is then signed here with Developer ID, hardened
+  # runtime and a secure timestamp, innermost first.
+  echo "==> Sign with Developer ID, inside out"
   SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
-  sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
+  sign() { codesign --force --options runtime --timestamp ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"} --sign "$IDENTITY" "$@"; }
   sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
   sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
   sign "$SPARKLE/Versions/B/Autoupdate"
@@ -86,6 +115,11 @@ if [[ "$REUSE" == "0" ]]; then
   sign "$SPARKLE"
   sign "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
+  if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q get-task-allow; then
+    echo "The app is signed with get-task-allow; notarization would reject it."; exit 1
+  fi
+  lipo -archs "$APP/Contents/MacOS/Ambit" | grep -q x86_64 && lipo -archs "$APP/Contents/MacOS/Ambit" | grep -q arm64 \
+    || { echo "The app is not a universal binary."; exit 1; }
 
   if [[ -z "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]]; then
     echo "SUPublicEDKey is empty: this build cannot auto-update. Set SPARKLE_PUBLIC_KEY in project.yml."; exit 1
@@ -96,14 +130,23 @@ if [[ "$REUSE" == "0" ]]; then
   ln -s /Applications "$STAGE/Applications"
   rm -f "$DMG"
   hdiutil create -volname "Ambit" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-  codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+  codesign --force --timestamp ${KEYCHAIN_ARGS[@]+"${KEYCHAIN_ARGS[@]}"} --sign "$IDENTITY" "$DMG"
 
   if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
     echo "Signed, not notarized: $DMG"; exit 0
   fi
 
   echo "==> Notarize"
-  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+  if [[ -n "${AMBIT_NOTARY_ENV:-}" ]]; then
+    NOTARY_ARGS="$( set -a; . "$AMBIT_NOTARY_ENV"; set +a
+      [[ -n "${KEY:-}" && -n "${KEY_ID:-}" && -n "${ISSUER:-}" && -r "${KEY:-}" ]] || exit 1
+      printf '%s\n%s\n%s\n' "$KEY" "$KEY_ID" "$ISSUER" )" \
+      || { echo "AMBIT_NOTARY_ENV must define KEY (readable .p8), KEY_ID and ISSUER."; exit 1; }
+    { read -r N_KEY; read -r N_KEY_ID; read -r N_ISSUER; } <<<"$NOTARY_ARGS"
+    xcrun notarytool submit "$DMG" --key "$N_KEY" --key-id "$N_KEY_ID" --issuer "$N_ISSUER" --wait
+  else
+    xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+  fi
   xcrun stapler staple "$DMG"
   spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 else
@@ -115,7 +158,10 @@ echo "==> Appcast"
 # The feed is generated from a directory holding only this release's DMG, so stale archives in
 # dist/ can never be advertised under this version's download URL.
 cp "$DMG" "$FEED/"
+SPARKLE_KEY_ARGS=()
+[[ -n "${AMBIT_SPARKLE_KEY_FILE:-}" ]] && SPARKLE_KEY_ARGS=(--ed-key-file "$AMBIT_SPARKLE_KEY_FILE")
 "$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
+  ${SPARKLE_KEY_ARGS[@]+"${SPARKLE_KEY_ARGS[@]}"} \
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   --link "https://github.com/$REPO" \
   --maximum-deltas 0 \
