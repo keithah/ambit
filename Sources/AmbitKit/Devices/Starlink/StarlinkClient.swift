@@ -71,6 +71,8 @@ public struct StarlinkClient: Sendable {
                 } catch let error as URLError where error.code == .timedOut {
                     // URLSession's own idle timeout may fire first; report one timeout error.
                     throw StarlinkError.timedOut
+                } catch let error as URLError where error.code == .cancelled {
+                    throw CancellationError()
                 }
             }
             group.addTask {

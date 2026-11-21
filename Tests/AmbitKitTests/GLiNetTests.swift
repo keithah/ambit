@@ -24,8 +24,11 @@ import Testing
     @Test func namesUplinks() {
         #expect(GLiNetWAN(interface: "wan") == .ethernet)
         #expect(GLiNetWAN(interface: "wwan") == .repeater)
-        #expect(GLiNetWAN(interface: "modem_0001") == .other("modem_0001"))
+        #expect(GLiNetWAN(interface: "modem_0001") == .cellular)
+        #expect(GLiNetWAN(interface: "br-guest") == .other("br-guest"))
         #expect(GLiNetWAN.repeater.text == "Wi-Fi repeater")
+        // A raw interface name never reaches the screen.
+        #expect(GLiNetWAN.other("br-guest").text == "Other connection")
     }
 
     @Test func readsTheFirstVPNTunnel() throws {
@@ -36,6 +39,12 @@ import Testing
         let failed = try json(#"{"status_list": [{"tunnel_id": 3, "enabled": true, "status": 0}]}"#)
         #expect(GLiNetVPN(vpnClientStatus: failed) == GLiNetVPN(tunnelID: 3, isOn: true, isConnected: false))
         #expect(GLiNetVPN(vpnClientStatus: try json(#"{"status_list": []}"#)) == nil)
+        // Switched on, but the router has not said it is up.
+        let silent = try json(#"{"status_list": [{"tunnel_id": 3, "enabled": true}]}"#)
+        #expect(GLiNetVPN(vpnClientStatus: silent) == GLiNetVPN(tunnelID: 3, isOn: true, isConnected: false))
+        // Of several profiles, the one switched on is the one in use.
+        let two = try json(#"{"status_list": [{"tunnel_id": 1, "name": "a", "enabled": false}, {"tunnel_id": 2, "name": "b", "enabled": true, "status": 1}]}"#)
+        #expect(GLiNetVPN(vpnClientStatus: two) == GLiNetVPN(tunnelID: 2, profile: "b", isOn: true, isConnected: true))
     }
 
     @Test func loginHashWrapsTheCryptedPassword() throws {
@@ -46,7 +55,11 @@ import Testing
         #expect(hash == expected)
         #expect(hash.count == 32)
         let sha = try GLiNetClient.loginHash(username: "root", password: "test password", scheme: .sha512, salt: "abcdefgh", nonce: "nonce1", method: "sha256")
-        #expect(sha.count == 64)
+        let cryptedSHA = "$6$abcdefgh$B5Cs2daEj8iFUqSTHSxQ.9WcRJs7uzueVHU./UjUW9NIyxpQMyNXeL2L4003eI9nLbCeL7Wf/t7EPEvP.IZZO0"
+        #expect(sha == SHA256.hash(data: Data("root:\(cryptedSHA):nonce1".utf8)).map { String(format: "%02x", $0) }.joined())
+        #expect(throws: GLiNetError.wrongPassword) {
+            try GLiNetClient.loginHash(username: "root", password: String(repeating: "x", count: 257), scheme: .md5, salt: "abcdefgh", nonce: "n", method: nil)
+        }
         #expect(throws: GLiNetError.unexpectedResponse) {
             try GLiNetClient.loginHash(username: "root", password: "p", scheme: .md5, salt: "abcdefgh", nonce: "n", method: "whirlpool")
         }
@@ -112,6 +125,17 @@ final class FakeRouter: URLProtocol, @unchecked Sendable {
     }
 }
 
+/// A value shared with a `@Sendable` closure.
+private final class Box<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 /// Counts across the `@Sendable` handler.
 private final class Counter: @unchecked Sendable {
     private let lock = NSLock()
@@ -160,16 +184,92 @@ private final class Counter: @unchecked Sendable {
         #expect(FakeRouter.calls(host: host) == ["challenge", "login", "system.get_status", "system.get_status"])
     }
 
-    @Test func aWrongPasswordIsReportedAsSuch() async throws {
-        let router = try client("router-wrong.test", password: "not it", Self.router { _, _, _, _ in Self.statusReply })
-        await #expect(throws: GLiNetError.wrongPassword) { try await router.status() }
+    @Test func aWrongPasswordIsTriedOnceUntilItChanges() async throws {
+        // The router locks its login after a few failures, and status() is polled.
+        let host = "router-wrong.test"
+        let password = Box("not it")
+        let router = try GLiNetClient(host: host, password: { password.value }, session: FakeRouter.session(host: host, handler: Self.router { _, _, _, _ in Self.statusReply }))
+        for _ in 0..<4 {
+            await #expect(throws: GLiNetError.wrongPassword) { try await router.status() }
+        }
+        #expect(FakeRouter.calls(host: host) == ["challenge", "login"])
+        password.value = "test password"
+        #expect(try await router.status().clientCount == 3)
+        #expect(FakeRouter.calls(host: host).filter { $0 == "login" }.count == 2)
+    }
+
+    @Test func aLockoutIsWaitedOutWithoutAskingAgain() async throws {
+        let host = "router-lockwait.test"
+        let clock = Box(Date(timeIntervalSince1970: 1_000))
+        let locked = Box(true)
+        let inner = Self.router { _, _, _, _ in Self.statusReply }
+        let handler: FakeRouter.Handler = { method, params in
+            method == "login" && locked.value ? #"{"jsonrpc":"2.0","error":{"code":-32003,"message":"locked","data":{"wait":290}}}"# : inner(method, params)
+        }
+        let router = try GLiNetClient(host: host, password: { "test password" }, session: FakeRouter.session(host: host, handler: handler), now: { clock.value })
+        await #expect(throws: GLiNetError.lockedOut(seconds: 290)) { try await router.status() }
+        clock.value += 100
+        await #expect(throws: GLiNetError.lockedOut(seconds: 190)) { try await router.status() }
+        #expect(FakeRouter.calls(host: host) == ["challenge", "login"])
+        clock.value += 191
+        locked.value = false
+        #expect(try await router.status().clientCount == 3)
+    }
+
+    @Test func callsThatStartTogetherShareOneLogin() async throws {
+        let host = "router-together.test"
+        let router = try client(host, Self.router { _, service, _, _ in
+            service == "system" ? Self.statusReply : #"{"jsonrpc":"2.0","result":{"status_list":[]}}"#
+        })
+        async let first = router.status()
+        async let second = router.status()
+        async let third = router.vpn()
+        _ = try await (first, second, third)
+        #expect(FakeRouter.calls(host: host).filter { $0 == "login" }.count == 1)
+        #expect(FakeRouter.calls(host: host).filter { $0 == "challenge" }.count == 1)
+    }
+
+    @Test func aCallTheRouterAlwaysDeniesStopsOpeningSessions() async throws {
+        let host = "router-denies.test"
+        let router = try client(host, Self.router { _, _, _, _ in
+            #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"#
+        })
+        for _ in 0..<3 {
+            await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
+        }
+        #expect(FakeRouter.calls(host: host) == ["challenge", "login", "system.get_status", "challenge", "login", "system.get_status"])
+    }
+
+    @Test func usesTheOuterHashTheRouterNames() async throws {
+        let crypted = "$5$abcdefgh$6tq8p6LhUUVxOuvmdPwyMbL06DwgG.rVrYZ9PbUucj6"
+        let expected = SHA256.hash(data: Data("root:\(crypted):n0nce".utf8)).map { String(format: "%02x", $0) }.joined()
+        let router = try client("router-sha.test") { method, params in
+            switch method {
+            case "challenge": return #"{"jsonrpc":"2.0","result":{"alg":5,"salt":"abcdefgh","nonce":"n0nce","hash-method":"sha256"}}"#
+            case "login":
+                let ok = (params as? [String: Any])?["hash"] as? String == expected
+                return ok ? #"{"jsonrpc":"2.0","result":{"sid":"s"}}"# : #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"#
+            default: return Self.statusReply
+            }
+        }
+        #expect(try await router.status().clientCount == 3)
+    }
+
+    @Test func givesUpAfterTheTimeout() async throws {
+        let host = "router-slow.test"
+        let session = FakeRouter.session(host: host) { _, _ in
+            Thread.sleep(forTimeInterval: 2)
+            return Self.challenge
+        }
+        let router = try GLiNetClient(host: host, password: { "test password" }, session: session, timeout: 0.2)
+        await #expect(throws: GLiNetError.timedOut) { try await router.status() }
     }
 
     @Test func aMissingPasswordNeverReachesLogin() async throws {
         let host = "router-nopass.test"
         let router = try client(host, password: nil, Self.router { _, _, _, _ in Self.statusReply })
         await #expect(throws: GLiNetError.noPassword) { try await router.status() }
-        #expect(FakeRouter.calls(host: host) == ["challenge"])
+        #expect(FakeRouter.calls(host: host) == [])
     }
 
     @Test func reportsALoginLockout() async throws {

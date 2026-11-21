@@ -10,7 +10,8 @@ public enum GLiNetWAN: Sendable, Equatable {
         case "wan", "wan6", "ethernet", "wired": self = .ethernet
         case "wwan", "repeater", "wifi": self = .repeater
         case "tethering": self = .tethering
-        case "modem", "cellular": self = .cellular
+        case "cellular": self = .cellular
+        case let name where name.hasPrefix("modem"): self = .cellular
         default: self = .other(interface)
         }
     }
@@ -21,7 +22,8 @@ public enum GLiNetWAN: Sendable, Equatable {
         case .repeater: "Wi-Fi repeater"
         case .tethering: "USB tethering"
         case .cellular: "Cellular"
-        case .other(let name): name
+        // The router's own interface name is kept for diagnosis but is not shown.
+        case .other: "Other connection"
         }
     }
 }
@@ -73,14 +75,17 @@ public struct GLiNetVPN: Sendable, Equatable {
     }
 
     init?(vpnClientStatus payload: [String: Any]) {
-        guard let tunnel = (payload["status_list"] as? [[String: Any]])?.first,
+        // With several profiles, the one switched on is the one in use.
+        let tunnels = payload["status_list"] as? [[String: Any]] ?? []
+        guard let tunnel = tunnels.first(where: { $0["enabled"] as? Bool == true }) ?? tunnels.first,
               let id = (tunnel["tunnel_id"] as? NSNumber)?.intValue else { return nil }
         tunnelID = id
         profile = tunnel["name"] as? String
         isOn = tunnel["enabled"] as? Bool ?? false
-        // v0 treated status 1 and 2 as up; the meaning of each code is not yet confirmed on a router.
+        // v0 treated status 1 and 2 as up; the meaning of each code is not yet confirmed on a
+        // router. Without a status the router has not said the tunnel is up.
         let code = (tunnel["status"] as? NSNumber)?.intValue
-        isConnected = isOn && (code == nil || code == 1 || code == 2)
+        isConnected = isOn && (code == 1 || code == 2)
     }
 }
 
@@ -90,6 +95,8 @@ public enum GLiNetError: Error, Equatable, Sendable {
     case http(Int)
     case noPassword
     case wrongPassword
+    /// The router refuses this request even with a fresh login.
+    case accessDenied
     /// Too many failed logins; the router refuses new ones for a while.
     case lockedOut(seconds: Int?)
     case rpc(code: Int, message: String)

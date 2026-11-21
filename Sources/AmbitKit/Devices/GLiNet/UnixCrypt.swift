@@ -10,12 +10,20 @@ enum UnixCrypt {
     }
 
     struct InvalidSalt: Error, Equatable {}
+    struct PasswordTooLong: Error, Equatable {}
+
+    /// The work grows with the square of the password length, so it is bounded.
+    static let maximumPasswordBytes = 256
 
     /// Returns the full crypt string, for example `$5$salt$hash`. `salt` is the bare salt without
     /// the `$n$` prefix; a `rounds=` parameter is not supported.
     static func hash(password: String, salt: String, scheme: Scheme) throws -> String {
         let password = Array(password.utf8)
-        guard !salt.isEmpty, !salt.contains("$"), !salt.hasPrefix("rounds=") else { throw InvalidSalt() }
+        guard password.count <= maximumPasswordBytes else { throw PasswordTooLong() }
+        // crypt salts are ASCII; truncating a multi-byte character would corrupt the result.
+        guard !salt.isEmpty, !salt.contains("$"), !salt.hasPrefix("rounds="), salt.utf8.allSatisfy({ $0 > 0x20 && $0 < 0x7F }) else {
+            throw InvalidSalt()
+        }
         switch scheme {
         case .md5:
             let salt = Array(salt.utf8.prefix(8))

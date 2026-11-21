@@ -76,5 +76,15 @@ private let references: [(password: String, salt: String, scheme: Int, expected:
         #expect(throws: UnixCrypt.InvalidSalt()) { try UnixCrypt.hash(password: "p", salt: "", scheme: .sha256) }
         #expect(throws: UnixCrypt.InvalidSalt()) { try UnixCrypt.hash(password: "p", salt: "ab$cd", scheme: .sha512) }
         #expect(throws: UnixCrypt.InvalidSalt()) { try UnixCrypt.hash(password: "p", salt: "rounds=10", scheme: .sha256) }
+        #expect(throws: UnixCrypt.InvalidSalt()) { try UnixCrypt.hash(password: "p", salt: "sälty", scheme: .sha256) }
+    }
+
+    @Test func boundsThePasswordLengthAndAcceptsAnEmptyOne() throws {
+        #expect(throws: UnixCrypt.PasswordTooLong()) {
+            try UnixCrypt.hash(password: String(repeating: "x", count: 257), salt: "abcdefgh", scheme: .sha512)
+        }
+        _ = try UnixCrypt.hash(password: String(repeating: "x", count: 256), salt: "abcdefgh", scheme: .sha512)
+        // `openssl passwd -1 -salt abcdefgh ""`
+        #expect(try UnixCrypt.hash(password: "", salt: "abcdefgh", scheme: .md5) == "$1$abcdefgh$M55TzYaaccxVGbptZWaxX/")
     }
 }
