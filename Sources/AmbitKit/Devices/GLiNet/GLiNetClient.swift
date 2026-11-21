@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Network
 
 /// Talks to a GL.iNet router's JSON-RPC endpoint (`/rpc`, firmware 4.x) on the local network.
 /// Logs in with a challenge and a hash, so the password itself is never sent.
@@ -22,8 +23,13 @@ public actor GLiNetClient {
         session: URLSession = .shared,
         timeout: TimeInterval = 4
     ) throws {
-        guard ProbeTarget.isValidHost(host) else { throw GLiNetError.invalidHost }
-        let literal = host.contains(":") ? "[\(host)]" : host
+        guard ProbeTarget.isValidHost(host), timeout.isFinite, timeout > 0 else { throw GLiNetError.invalidHost }
+        // A colon is valid only inside an IPv6 address, which a URL writes in brackets.
+        var literal = host
+        if host.contains(":") {
+            guard IPv6Address(host) != nil else { throw GLiNetError.invalidHost }
+            literal = "[\(host)]"
+        }
         guard let url = URL(string: "http://\(literal)/rpc"), url.host != nil else { throw GLiNetError.invalidHost }
         self.endpoint = url
         self.username = username
@@ -136,7 +142,14 @@ public actor GLiNetClient {
 
     private static func data(for request: URLRequest, session: URLSession, timeout: TimeInterval) async throws -> (Data, URLResponse) {
         try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
-            group.addTask { try await session.data(for: request) }
+            group.addTask {
+                do {
+                    return try await session.data(for: request)
+                } catch let error as URLError where error.code == .timedOut {
+                    // URLSession's own idle timeout may fire first; report one timeout error.
+                    throw GLiNetError.timedOut
+                }
+            }
             group.addTask {
                 try await Task.sleep(for: .seconds(timeout))
                 throw GLiNetError.timedOut

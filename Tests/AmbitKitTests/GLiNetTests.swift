@@ -217,8 +217,11 @@ private final class Counter: @unchecked Sendable {
     }
 
     @Test func rejectsHostsThatCannotFormAnAddress() {
-        for host in ["", "bad host", "a/b", "-flag"] {
+        for host in ["", "bad host", "a/b", "-flag", "192.168.8.1:80", "a:b"] {
             #expect(throws: GLiNetError.invalidHost) { try GLiNetClient(host: host, password: { nil }) }
+        }
+        for timeout in [TimeInterval.infinity, .nan, 0] {
+            #expect(throws: GLiNetError.invalidHost) { try GLiNetClient(host: "192.168.8.1", password: { nil }, timeout: timeout) }
         }
     }
 }
