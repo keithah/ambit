@@ -91,7 +91,7 @@ public struct StarlinkStatus: Sendable, Equatable {
             case 1010: stowRequested = field.bool ?? false
             case 1014:
                 let cause = try ProtoWire.fields(field.data ?? Data()).last(where: { $0.number == 1 })?.uint ?? 0
-                outage = StarlinkOutageCause(rawValue: Int(Int32(truncatingIfNeeded: cause))) ?? .unknown
+                outage = Int(exactly: cause).flatMap(StarlinkOutageCause.init(rawValue:)) ?? .unknown
             default: break
             }
         }
@@ -120,7 +120,9 @@ public enum StarlinkError: Error, Equatable, Sendable {
         guard let status = top.last(where: { $0.number == 2 })?.data else { return }
         let fields = try ProtoWire.fields(status)
         // The code is an int32; a negative one arrives as a ten-byte varint.
-        let code = Int(Int32(truncatingIfNeeded: fields.last(where: { $0.number == 1 })?.uint ?? 0))
+        let raw = fields.last(where: { $0.number == 1 })?.uint ?? 0
+        // A value that is not a sign-extended int32 is malformed, not a success.
+        guard let code = Int32(exactly: Int64(bitPattern: raw)).map(Int.init) else { throw StarlinkError.unexpectedResponse }
         if code != 0 {
             throw StarlinkError.device(code: code, message: fields.last(where: { $0.number == 2 })?.string ?? "")
         }

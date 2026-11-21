@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// Talks to a Starlink dish on the local network using gRPC-Web over plain HTTP (port 9201),
 /// which needs only URLSession. Not yet verified against a physical dish: see docs/decisions.md.
@@ -11,8 +12,15 @@ public struct StarlinkClient: Sendable {
 
     /// `timeout` bounds the whole call, not only the gap between bytes.
     public init(host: String = StarlinkClient.defaultHost, port: Int = 9201, session: URLSession = .shared, timeout: TimeInterval = 4) throws {
-        guard ProbeTarget.isValidHost(host), (1...65535).contains(port) else { throw StarlinkError.invalidHost }
-        let literal = host.contains(":") ? "[\(host)]" : host
+        guard ProbeTarget.isValidHost(host), (1...65535).contains(port), timeout.isFinite, timeout > 0 else {
+            throw StarlinkError.invalidHost
+        }
+        // A colon is valid only inside an IPv6 address, which a URL writes in brackets.
+        var literal = host
+        if host.contains(":") {
+            guard IPv6Address(host) != nil else { throw StarlinkError.invalidHost }
+            literal = "[\(host)]"
+        }
         guard let url = URL(string: "http://\(literal):\(port)/SpaceX.API.Device.Device/Handle"), url.host != nil else {
             throw StarlinkError.invalidHost
         }
@@ -93,16 +101,21 @@ enum GRPCWeb {
             guard bytes.count >= length else { throw StarlinkError.unexpectedResponse }
             let payload = Data(bytes.prefix(length))
             bytes = bytes.dropFirst(length)
-            // Compression is never requested, so a compressed frame cannot be read.
-            guard flag & 0x01 == 0 else { throw StarlinkError.unexpectedResponse }
-            if flag & 0x80 != 0 {
+            switch flag {
+            case 0x00:
+                if message == nil { message = payload }
+            case 0x80:
+                // The trailer block ends the call: nothing may follow it, and any non-zero
+                // status line in it is a failure.
+                guard bytes.isEmpty else { throw StarlinkError.unexpectedResponse }
                 let trailers = parseTrailers(payload)
-                if let code = trailers["grpc-status"].flatMap(Int.init) {
-                    guard code == 0 else { throw StarlinkError.grpc(status: code, message: decodeMessage(trailers["grpc-message"])) }
-                    status = code
+                for code in trailers.statuses where code != 0 {
+                    throw StarlinkError.grpc(status: code, message: decodeMessage(trailers.message))
                 }
-            } else if message == nil {
-                message = payload
+                if !trailers.statuses.isEmpty { status = 0 }
+            default:
+                // Compressed (0x01) or reserved flags: compression is never requested.
+                throw StarlinkError.unexpectedResponse
             }
         }
         guard status == 0, let message else { throw StarlinkError.unexpectedResponse }
@@ -115,13 +128,20 @@ enum GRPCWeb {
         return raw.removingPercentEncoding ?? raw
     }
 
-    static func parseTrailers(_ payload: Data) -> [String: String] {
-        var trailers: [String: String] = [:]
+    static func parseTrailers(_ payload: Data) -> (statuses: [Int], message: String?) {
+        var statuses: [Int] = []
+        var message: String?
         for line in String(decoding: payload, as: UTF8.self).split(whereSeparator: \.isNewline) {
             guard let colon = line.firstIndex(of: ":") else { continue }
-            trailers[line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()] =
-                line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            switch line[..<colon].trimmingCharacters(in: .whitespaces).lowercased() {
+            case "grpc-status":
+                // An unreadable status is not a success.
+                statuses.append(Int(value) ?? -1)
+            case "grpc-message": message = value
+            default: break
+            }
         }
-        return trailers
+        return (statuses, message)
     }
 }

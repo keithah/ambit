@@ -52,6 +52,17 @@ private let outageResponse = Data(base64Encoded:
         }
     }
 
+    @Test func aStatusCodeBeyondInt32IsMalformedNotSuccess() {
+        // 2^32 would truncate to 0, which reads as success.
+        let status = Data([0x08, 0x80, 0x80, 0x80, 0x80, 0x10])
+        #expect(throws: StarlinkError.unexpectedResponse) {
+            try StarlinkStatus(response: ProtoWire.message(field: 2, status))
+        }
+        // 2^32 + 6 must not read as cause 6 (obstructed).
+        let dish = ProtoWire.message(field: 1014, Data([0x08, 0x86, 0x80, 0x80, 0x80, 0x10]))
+        #expect((try? StarlinkStatus(response: ProtoWire.message(field: 2004, dish)))?.outage == .unknown)
+    }
+
     @Test func anOutOfRangeOutageCauseIsUnknown() throws {
         let cause = Data([0x08]) + Data(repeating: 0xFF, count: 9) + Data([0x01])
         let dish = ProtoWire.message(field: 1014, cause)
@@ -115,6 +126,22 @@ private let outageResponse = Data(base64Encoded:
         }
         // The status may instead come from the HTTP headers.
         #expect(try GRPCWeb.message(from: GRPCWeb.frame(onlineResponse), headerStatus: 0) == onlineResponse)
+    }
+
+    @Test func rejectsFramesAfterTheTrailersReservedFlagsAndMixedStatuses() {
+        let ok = trailerFrame("grpc-status: 0\r\n")
+        #expect(throws: StarlinkError.unexpectedResponse) {
+            try GRPCWeb.message(from: ok + GRPCWeb.frame(onlineResponse))
+        }
+        var reserved = GRPCWeb.frame(onlineResponse)
+        reserved[0] = 0x02
+        #expect(throws: StarlinkError.unexpectedResponse) { try GRPCWeb.message(from: reserved + ok) }
+        #expect(throws: StarlinkError.grpc(status: 5, message: "")) {
+            try GRPCWeb.message(from: GRPCWeb.frame(onlineResponse) + trailerFrame("grpc-status: 5\r\ngrpc-status: 0\r\n"))
+        }
+        #expect(throws: StarlinkError.grpc(status: -1, message: "")) {
+            try GRPCWeb.message(from: GRPCWeb.frame(onlineResponse) + trailerFrame("grpc-status: zero\r\n"))
+        }
     }
 
     @Test func rejectsACompressedFrame() {
@@ -270,7 +297,30 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
             #expect(throws: StarlinkError.invalidHost) { try StarlinkClient(host: host) }
         }
         #expect(throws: StarlinkError.invalidHost) { try StarlinkClient(port: 0) }
-        _ = try StarlinkClient(host: "fe80::1")
+        for host in ["192.168.100.1:9201", ":", "a:b", "host:8080"] {
+            #expect(throws: StarlinkError.invalidHost) { try StarlinkClient(host: host) }
+        }
+        for timeout in [TimeInterval.infinity, .nan, 0, -1] {
+            #expect(throws: StarlinkError.invalidHost) { try StarlinkClient(timeout: timeout) }
+        }
         _ = try StarlinkClient(host: "dishy.starlink.com")
+    }
+
+    @Test func anIPv6HostIsBracketedInTheAddress() async throws {
+        let host = "fd00::9201"
+        _ = try await client(host, .init(body: GRPCWeb.frame(onlineResponse) + okTrailers)).status()
+        #expect(StubProtocol.request(host: host)?.url?.absoluteString == "http://[fd00::9201]:9201/SpaceX.API.Device.Device/Handle")
+    }
+
+    @Test func cancellingTheCallerEndsTheCall() async throws {
+        let reply = StubProtocol.Reply(body: GRPCWeb.frame(onlineResponse) + okTrailers, delay: 5)
+        let dish = try client("dish-cancelled.test", reply, timeout: 4)
+        let task = Task { try await dish.status() }
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+        let started = ContinuousClock.now
+        let result = await task.result
+        #expect(ContinuousClock.now - started < .seconds(2))
+        #expect(throws: (any Error).self) { try result.get() }
     }
 }
