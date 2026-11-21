@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.dmg
+*.zip
+.env
