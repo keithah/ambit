@@ -51,7 +51,7 @@ deploy from branch `gh-pages`, root).
 
 ## Status
 
-2026-11-21: the pipeline ran end to end without publishing. `Ambit-0.1.0.dmg` was built universal,
-signed with Developer ID and hardened runtime, notarized (`Accepted`), stapled, and accepted by
-Gatekeeper; the appcast entry's signature verified against the public key. Not yet done: a
-`PUBLISH=1` run, enabling Pages, and an update from one installed version to the next.
+2026-11-21: v0.1.0 published with `PUBLISH=1` from `main`. The DMG on GitHub is universal, signed with
+Developer ID and hardened runtime, notarized (`Accepted`), stapled, and accepted by Gatekeeper after
+download. Pages serves the appcast (GitHub enabled it when `gh-pages` was first pushed). Not yet done:
+an update from one installed version to the next, which needs a second release.
