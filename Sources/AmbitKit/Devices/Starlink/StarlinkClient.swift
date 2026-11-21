@@ -65,7 +65,14 @@ public struct StarlinkClient: Sendable {
         let session = session
         let timeout = timeout
         return try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
-            group.addTask { try await session.data(for: request) }
+            group.addTask {
+                do {
+                    return try await session.data(for: request)
+                } catch let error as URLError where error.code == .timedOut {
+                    // URLSession's own idle timeout may fire first; report one timeout error.
+                    throw StarlinkError.timedOut
+                }
+            }
             group.addTask {
                 try await Task.sleep(for: .seconds(timeout))
                 throw StarlinkError.timedOut
