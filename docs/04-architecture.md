@@ -59,7 +59,7 @@ a verdict (`wifi`, `router`, `isp`, `dns`, `ok`). The v0 `network_diagnosis_matr
 |---|---|---|
 | Starlink | gRPC to `192.168.100.1:9200` | grpc-swift + SwiftProtobuf, generated from the dish proto. No Homebrew dependency |
 | GL.iNet | JSON-RPC over HTTP(S) to the router | Password from Keychain; hashing in-process (no `openssl` argv) |
-| LinkPower | CoreBluetooth, service `0x5301` | Notify on `0x4303` (battery), commands on `0x4302`. Protocol per `keithah/openwrt-wattline` docs; reimplemented, not copied (AGPL) |
+| LinkPower 3 | Wi-Fi/LAN if the spike finds a local interface; else CoreBluetooth, service `0x5301` | BLE: notify on `0x4303` (battery), commands on `0x4302`, per `keithah/openwrt-wattline` docs; reimplemented, not copied (AGPL). Wi-Fi protocol undocumented as of 2026-11-20 |
 
 Discovery: probe the well-known Starlink address, the default gateway for GL.iNet's RPC endpoint, and a BLE
 scan for the LinkPower service.

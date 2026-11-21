@@ -18,3 +18,6 @@ One line per decision. Newest at the bottom. Scope changes need a line here from
 | 2026-11-20 | Distribution via GitHub Releases and Pages; Developer ID is available. No Mac App Store. | Keith |
 | 2026-11-20 | Defaults chosen without asking: macOS 14+, Xcode app target + `AmbitKit` package (XcodeGen), Sparkle 2, no extension API in v1, alerts are fixed toggles, LinkPower over Bluetooth only, bundle ID `com.hadm.ambit`. Object to any of these by adding a line. | Claude |
 | 2026-11-20 | "User chooses" menu bar is implemented as per-device pinning, not the v0 slot system. | Claude |
+| 2026-11-20 | LinkPower 3 has Wi-Fi (Keith). Its Wi-Fi protocol is undocumented; the week-1 spike checks LAN first, Bluetooth as fallback. | Keith / Claude |
+| 2026-11-20 | Week-1 diagnosis keeps history in memory (30 min). SQLite history moves to the first device week, when there is more than one series to store. | Claude |
+| 2026-11-21 | Release credentials are file-based so the pipeline runs headless: dedicated signing keychain and App Store Connect API key (shared with the overhear project's kit in `~/.config/overhear-signing/`), and a Sparkle ed25519 key file in `~/.config/ambit-signing/`. Requested by Keith ("I want you to run them"). | Keith / Claude |
