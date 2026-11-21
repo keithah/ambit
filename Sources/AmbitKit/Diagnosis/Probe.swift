@@ -147,7 +147,14 @@ public struct TCPProbe: Probe {
                     case .failed(let error), .waiting(let error):
                         if resume.claim() {
                             box.value.cancel()
-                            continuation.resume(returning: ProbeSample(failure: Self.map(error)))
+                            // A refusal is an answer from the far end: the path works, so it counts
+                            // as reachable with the time it took to be refused.
+                            if Self.map(error) == .refused {
+                                let ms = Double(DispatchTime.now().uptimeNanoseconds &- start.uptimeNanoseconds) / 1_000_000
+                                continuation.resume(returning: ProbeSample(latencyMs: ms))
+                            } else {
+                                continuation.resume(returning: ProbeSample(failure: Self.map(error)))
+                            }
                         }
                     case .cancelled:
                         if resume.claim() {
@@ -182,6 +189,8 @@ public struct TCPProbe: Probe {
 }
 
 /// Time to resolve a hostname with the system resolver. Wrap in `TimeoutProbe`.
+/// Known limit: the system resolver may answer from its cache, so a success shows that names
+/// resolve on this Mac, not that the upstream resolver is answering fresh queries.
 public struct DNSProbe: Probe {
     public init() {}
 

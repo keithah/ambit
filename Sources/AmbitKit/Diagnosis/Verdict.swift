@@ -23,10 +23,16 @@ public struct HopStats: Sendable, Equatable {
         let recent = Array(samples.suffix(window))
         let latencies = recent.compactMap(\.latencyMs).sorted()
         sampleCount = recent.count
-        medianMs = latencies.isEmpty ? nil : latencies[latencies.count / 2]
+        medianMs = Self.median(latencies)
         lastMs = recent.last?.latencyMs
         lossFraction = recent.isEmpty ? 0 : Double(recent.count - latencies.count) / Double(recent.count)
         consecutiveFailures = recent.reversed().prefix { !$0.succeeded }.count
+    }
+
+    static func median(_ sorted: [Double]) -> Double? {
+        guard !sorted.isEmpty else { return nil }
+        let mid = sorted.count / 2
+        return sorted.count.isMultiple(of: 2) ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
     }
 }
 
@@ -46,14 +52,14 @@ public enum Health: Sendable, Equatable {
 }
 
 public enum Verdict: String, Sendable, Equatable, CaseIterable {
-    case checking, online, noNetwork, routerUnreachable, wifiSlow, internetDown, internetSlow, dnsFailing
+    case checking, online, noNetwork, routerUnreachable, wifiSlow, internetDown, internetSlow, dnsFailing, connectionDown
 
     public var health: Health {
         switch self {
         case .checking: .unknown
         case .online: .online
         case .wifiSlow, .internetSlow: .degraded
-        case .noNetwork, .routerUnreachable, .internetDown, .dnsFailing: .offline
+        case .noNetwork, .routerUnreachable, .internetDown, .dnsFailing, .connectionDown: .offline
         }
     }
 
@@ -67,6 +73,7 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
         case .internetDown: "Your internet provider is down"
         case .internetSlow: "Your internet provider is slow"
         case .dnsFailing: "DNS isn't working"
+        case .connectionDown: "Offline"
         }
     }
 
@@ -80,29 +87,42 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
         case .internetDown: "Your router is fine. The problem is beyond it."
         case .internetSlow: "Your router is fine. The slowdown is beyond it."
         case .dnsFailing: "The internet is reachable, but names aren't resolving."
+        case .connectionDown: "Your router doesn't answer pings, so Ambit can't tell which side failed."
         }
     }
 }
 
 /// Pure fault location: which hop is to blame given recent probe statistics.
+///
+/// `routerHasAnswered` says whether the current router has ever replied to a ping. A router that
+/// never replies cannot be told apart from a dead one, so it is never named as the failing hop.
 public func diagnose(
     hasGateway: Bool,
+    routerHasAnswered: Bool = true,
     router: HopStats,
     internet: HopStats,
     dns: HopStats,
     thresholds: DiagnosisThresholds = DiagnosisThresholds()
 ) -> Verdict {
-    guard hasGateway else { return .noNetwork }
+    // No default route normally means no network, unless traffic is demonstrably passing (an
+    // IPv6-only link, or a failed route lookup).
+    let internetAnswering = internet.sampleCount > 0 && internet.consecutiveFailures == 0
+    guard hasGateway || internetAnswering else { return .noNetwork }
     guard router.sampleCount > 0 || internet.sampleCount > 0 else { return .checking }
 
     let routerDown = router.sampleCount > 0 && router.consecutiveFailures >= thresholds.downAfter
     let internetDown = internet.sampleCount > 0 && internet.consecutiveFailures >= thresholds.downAfter
     let dnsDown = dns.sampleCount > 0 && dns.consecutiveFailures >= thresholds.downAfter
 
-    // A router that ignores pings but passes traffic is not at fault.
-    if routerDown && (internetDown || internet.sampleCount == 0) { return .routerUnreachable }
+    if routerDown && (internetDown || internet.sampleCount == 0) {
+        if routerHasAnswered { return .routerUnreachable }
+        return internetDown ? .connectionDown : .checking
+    }
     if internetDown { return .internetDown }
     if dnsDown { return .dnsFailing }
+
+    // Nothing has answered yet and nothing has failed long enough to name: keep checking.
+    if router.medianMs == nil && internet.medianMs == nil { return .checking }
 
     func lossy(_ hop: HopStats) -> Bool {
         hop.sampleCount >= thresholds.minSamplesForLoss && hop.lossFraction >= thresholds.lossy

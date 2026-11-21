@@ -65,6 +65,20 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         #expect(diagnose(hasGateway: true, router: stats(ms: 4), internet: stats(ms: 40, loss: 0.3), dns: stats()) == .internetSlow)
     }
 
+    @Test func silentRouterIsNeverBlamed() {
+        let down = stats(ms: nil, loss: 1, failures: 5)
+        #expect(diagnose(hasGateway: true, routerHasAnswered: false, router: down, internet: down, dns: down) == .connectionDown)
+    }
+
+    @Test func nothingAnsweredYetKeepsChecking() {
+        let first = stats(ms: nil, loss: 1, failures: 1, count: 1)
+        #expect(diagnose(hasGateway: true, router: first, internet: first, dns: first) == .checking)
+    }
+
+    @Test func workingInternetWithoutGatewayIsNotNoNetwork() {
+        #expect(diagnose(hasGateway: false, router: .empty, internet: stats(ms: 30), dns: stats()) == .online)
+    }
+
     @Test func everyVerdictHasCopy() {
         for verdict in Verdict.allCases {
             #expect(!verdict.title.isEmpty)
@@ -85,6 +99,11 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         #expect(stats.lastMs == nil)
         #expect(stats.lossFraction == 0.4)
         #expect(stats.consecutiveFailures == 2)
+    }
+
+    @Test func evenCountMedianAveragesTheMiddlePair() {
+        let stats = HopStats(samples: [ProbeSample(latencyMs: 20), ProbeSample(latencyMs: 90)])
+        #expect(stats.medianMs == 55)
     }
 
     @Test func onlyUsesTheWindow() {
@@ -154,6 +173,33 @@ private struct FixedGateway: GatewayFinding {
     func defaultGateway() async -> String? { address }
 }
 
+private actor SwitchingGateway: GatewayFinding {
+    private var address: String? = "192.168.8.1"
+    func set(_ value: String?) { address = value }
+    func defaultGateway() async -> String? { address }
+}
+
+@Suite struct ProcessRunnerTests {
+    @Test func capturesAllOutputAndExitCode() async throws {
+        let result = try await SystemProcessRunner().run(
+            executable: "/bin/sh", arguments: ["-c", "seq 1 20000; echo done >&2; exit 3"], timeout: 10
+        )
+        #expect(result.exitCode == 3)
+        #expect(result.stdout.split(separator: "\n").count == 20000)
+        #expect(result.stderr == "done\n")
+    }
+
+    @Test func timesOutAndKillsAChildThatIgnoresTerm() async {
+        let start = Date()
+        await #expect(throws: ProcessTimedOut.self) {
+            _ = try await SystemProcessRunner().run(
+                executable: "/bin/sh", arguments: ["-c", "trap '' TERM; sleep 30"], timeout: 0.3
+            )
+        }
+        #expect(Date().timeIntervalSince(start) < 5)
+    }
+}
+
 @Suite struct DiagnosisMonitorTests {
     @Test func reportsProviderDownAfterThreeFailedCycles() async {
         let monitor = DiagnosisMonitor(
@@ -169,6 +215,36 @@ private struct FixedGateway: GatewayFinding {
         #expect(snapshot.verdict == .internetDown)
         #expect(snapshot.gateway == "192.168.8.1")
         #expect(snapshot.internetHistory.count == 3)
+    }
+
+    @Test func gatewayChangeResetsDiagnosisButKeepsChart() async {
+        let gateway = SwitchingGateway()
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: gateway,
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(latencyMs: 400)),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        for _ in 0..<4 { await monitor.runCycle() }
+        await gateway.set("10.0.0.1")
+        let snapshot = await monitor.runCycle()
+        #expect(snapshot.gateway == "10.0.0.1")
+        #expect(snapshot.internet.sampleCount == 1)
+        #expect(snapshot.internetHistory.count == 5)
+    }
+
+    @Test func overlappingCyclesShareOneResult() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(latencyMs: 30)),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        async let first = monitor.runCycle()
+        async let second = monitor.runCycle()
+        let counts = await [first.internetHistory.count, second.internetHistory.count]
+        #expect(counts.max()! <= 2)
+        #expect(await monitor.runCycle().internetHistory.count == counts.max()! + 1)
     }
 
     @Test func noGatewayIsNoNetwork() async {

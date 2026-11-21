@@ -84,6 +84,7 @@ echo "==> Appcast"
 "$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   --link "https://github.com/$REPO" \
+  --maximum-deltas 0 \
   -o "$DIST/appcast.xml" "$DIST"
 
 if [[ "${PUBLISH:-0}" != "1" ]]; then
@@ -91,9 +92,19 @@ if [[ "${PUBLISH:-0}" != "1" ]]; then
 fi
 
 echo "==> Publish"
-git tag -a "v$VERSION" -m "Ambit $VERSION"
+# Each step is skipped when already done, so a failed publish can be re-run.
+if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+  [[ "$(git rev-parse "v$VERSION^{commit}")" == "$(git rev-parse HEAD)" ]] \
+    || { echo "Tag v$VERSION exists on a different commit."; exit 1; }
+else
+  git tag -a "v$VERSION" -m "Ambit $VERSION"
+fi
 git push origin "v$VERSION"
-gh release create "v$VERSION" "$DMG" --repo "$REPO" --title "Ambit $VERSION" --generate-notes
+if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
+  gh release upload "v$VERSION" "$DMG" --repo "$REPO" --clobber
+else
+  gh release create "v$VERSION" "$DMG" --repo "$REPO" --title "Ambit $VERSION" --generate-notes
+fi
 
 PAGES="$(mktemp -d)"
 if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
@@ -103,7 +114,7 @@ else
 fi
 cp "$DIST/appcast.xml" "$PAGES/appcast.xml"
 git -C "$PAGES" add appcast.xml
-git -C "$PAGES" commit -m "Appcast for $VERSION"
+git -C "$PAGES" diff --cached --quiet || git -C "$PAGES" commit -m "Appcast for $VERSION"
 git -C "$PAGES" push origin gh-pages
 git worktree remove "$PAGES"
 echo "Released v$VERSION"

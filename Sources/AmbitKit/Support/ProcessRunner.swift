@@ -34,35 +34,45 @@ public struct SystemProcessRunner: ProcessRunner {
             let stderrBuffer = OutputBuffer()
             process.standardOutput = stdout
             process.standardError = stderr
-            stdout.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty { stdoutBuffer.append(data) }
-            }
-            stderr.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty { stderrBuffer.append(data) }
-            }
+
+            // Each pipe is read to end-of-file by one reader, and the result is delivered only after
+            // both readers finish, so no output can arrive after the buffers are read.
+            let readers = DispatchGroup()
+            readers.enter()
+            readers.enter()
             process.terminationHandler = { process in
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                stdoutBuffer.append(stdout.fileHandleForReading.availableData)
-                stderrBuffer.append(stderr.fileHandleForReading.availableData)
-                state.resume(.success(ProcessResult(
-                    exitCode: process.terminationStatus,
-                    stdout: stdoutBuffer.string(),
-                    stderr: stderrBuffer.string()
-                )))
+                let status = process.terminationStatus
+                readers.notify(queue: .global(qos: .utility)) {
+                    state.resume(.success(ProcessResult(
+                        exitCode: status, stdout: stdoutBuffer.string(), stderr: stderrBuffer.string()
+                    )))
+                }
             }
             do {
                 try process.run()
             } catch {
+                readers.leave()
+                readers.leave()
                 state.resume(.failure(error))
                 return
             }
+            for (pipe, buffer) in [(stdout, stdoutBuffer), (stderr, stderrBuffer)] {
+                let handle = UncheckedSendableBox(pipe.fileHandleForReading)
+                DispatchQueue.global(qos: .utility).async {
+                    buffer.append(handle.value.readDataToEndOfFile())
+                    readers.leave()
+                }
+            }
+
             let box = UncheckedSendableBox(process)
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
                 guard state.resume(.failure(ProcessTimedOut())) else { return }
-                if box.value.isRunning { box.value.terminate() }
+                guard box.value.isRunning else { return }
+                box.value.terminate()
+                // A child that ignores SIGTERM is killed rather than left running.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+                    if box.value.isRunning { kill(box.value.processIdentifier, SIGKILL) }
+                }
             }
         }
     }

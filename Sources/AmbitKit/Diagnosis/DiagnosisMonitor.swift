@@ -35,6 +35,11 @@ public actor DiagnosisMonitor {
     private var routerSamples: [ProbeSample] = []
     private var internetSamples: [ProbeSample] = []
     private var dnsSamples: [ProbeSample] = []
+    /// Chart history survives a network change; the diagnosis windows above do not.
+    private var chartHistory: [ProbeSample] = []
+    private var routerHasAnswered = false
+    private var inFlight: Task<DiagnosisSnapshot, Never>?
+    private var generation = 0
     private var snapshot = DiagnosisSnapshot()
     private var loop: Task<Void, Never>?
     private var continuations: [UUID: AsyncStream<DiagnosisSnapshot>.Continuation] = [:]
@@ -55,7 +60,8 @@ public actor DiagnosisMonitor {
 
     public func snapshots() -> AsyncStream<DiagnosisSnapshot> {
         let id = UUID()
-        return AsyncStream { continuation in
+        // Only the latest snapshot matters to a display, so a slow consumer never builds a backlog.
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             continuation.yield(snapshot)
             continuations[id] = continuation
             continuation.onTermination = { [weak self] _ in
@@ -78,33 +84,57 @@ public actor DiagnosisMonitor {
     public func stop() {
         loop?.cancel()
         loop = nil
+        generation += 1
     }
 
-    /// Runs one probe cycle now (used on wake and network change, and by tests).
+    /// Runs one probe cycle now (used on wake and network change, and by tests). Cycles never
+    /// overlap: a call made while one is in flight waits for that cycle's result.
     @discardableResult
     public func runCycle() async -> DiagnosisSnapshot {
+        if let inFlight { return await inFlight.value }
+        let task = Task { await self.performCycle() }
+        inFlight = task
+        let result = await task.value
+        inFlight = nil
+        return result
+    }
+
+    private func performCycle() async -> DiagnosisSnapshot {
+        let startedIn = generation
         let gateway = await gatewayFinder.defaultGateway()
+
+        async let routerProbe: ProbeSample? = probeRouter(gateway)
+        async let internetProbe = probeInternet()
+        async let dnsProbeResult = dnsProbe.measure(ProbeTarget(host: config.dnsHost))
+        let (routerSample, internetSample, dnsSample) = await (routerProbe, internetProbe, dnsProbeResult)
+
+        // A cycle that was still probing when the monitor stopped commits nothing.
+        guard startedIn == generation else { return snapshot }
+
         if gateway != snapshot.gateway {
+            // Samples from the previous network say nothing about this one.
             routerSamples.removeAll()
+            internetSamples.removeAll()
+            dnsSamples.removeAll()
+            routerHasAnswered = false
         }
-
-        async let routerSample: ProbeSample? = probeRouter(gateway)
-        async let internetSample = probeInternet()
-        async let dnsSample = dnsProbe.measure(ProbeTarget(host: config.dnsHost))
-
-        if let sample = await routerSample { append(sample, to: &routerSamples) }
-        append(await internetSample, to: &internetSamples)
-        append(await dnsSample, to: &dnsSamples)
+        if let routerSample {
+            append(routerSample, to: &routerSamples)
+            if routerSample.succeeded { routerHasAnswered = true }
+        }
+        append(internetSample, to: &internetSamples)
+        append(dnsSample, to: &dnsSamples)
+        append(internetSample, to: &chartHistory)
 
         var next = snapshot
         next.gateway = gateway
         next.router = HopStats(samples: routerSamples)
         next.internet = HopStats(samples: internetSamples)
         next.dns = HopStats(samples: dnsSamples)
-        next.internetHistory = internetSamples
+        next.internetHistory = chartHistory
         next.updated = Date()
         let verdict = diagnose(
-            hasGateway: gateway != nil,
+            hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered,
             router: next.router, internet: next.internet, dns: next.dns,
             thresholds: config.thresholds
         )

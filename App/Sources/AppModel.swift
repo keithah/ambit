@@ -23,7 +23,7 @@ final class AppModel {
             snapshot.internet.lastMs.map { "\(Int($0.rounded())) ms" } ?? "…"
         case .noNetwork: "No network"
         case .routerUnreachable: "Router"
-        case .internetDown: "Offline"
+        case .internetDown, .connectionDown: "Offline"
         case .dnsFailing: "DNS"
         }
     }
