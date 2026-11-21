@@ -46,8 +46,8 @@ if [[ "${PUBLISH:-0}" == "1" ]] && gh release view "v$VERSION" --repo "$REPO" --
   gh release download "v$VERSION" --repo "$REPO" --pattern "$ASSET" --dir "$DIST" --clobber
   # Only a DMG that is notarized and signed by this team gets an appcast entry.
   spctl --assess --type open --context context:primary-signature "$DMG"
-  codesign -dv "$DMG" 2>&1 | grep -qx "TeamIdentifier=$TEAM" \
-    || { echo "Published DMG is not signed by team $TEAM."; exit 1; }
+  SIGNED_BY="$(codesign -dv "$DMG" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2}')"
+  [[ "$SIGNED_BY" == "$TEAM" ]] || { echo "Published DMG is not signed by team $TEAM."; exit 1; }
 elif [[ "${PUBLISH:-0}" == "1" ]]; then
   # A new published build must be exactly what is on origin/main; the build number (commit
   # count) is only monotonic along main. A retry of an already published version skips this,
