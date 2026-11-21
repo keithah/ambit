@@ -136,6 +136,7 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
     @Test func rejectsHostsThatLookLikeOptions() {
         #expect(ProbeTarget.isValidHost("192.168.8.1"))
         #expect(ProbeTarget.isValidHost("fe80::1"))
+        for target in DiagnosisConfig().internetTargets { #expect(ProbeTarget.isValidHost(target.host)) }
         #expect(ProbeTarget.isValidHost("example.com"))
         #expect(!ProbeTarget.isValidHost("-f"))
         #expect(!ProbeTarget.isValidHost(""))

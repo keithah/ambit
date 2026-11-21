@@ -120,6 +120,10 @@ cp "$DMG" "$FEED/"
   --link "https://github.com/$REPO" \
   --maximum-deltas 0 \
   -o "$FEED/appcast.xml" "$FEED"
+# generate_appcast writes an unsigned entry when it cannot reach the Sparkle private key; such a
+# feed would be rejected by every installed copy.
+grep -q 'sparkle:edSignature="' "$FEED/appcast.xml" \
+  || { echo "Appcast entry is not signed. Is the Sparkle private key in the keychain?"; exit 1; }
 cp "$FEED/appcast.xml" "$DIST/appcast.xml"
 
 if [[ "${PUBLISH:-0}" != "1" ]]; then
@@ -149,6 +153,16 @@ if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
 else
   rmdir "$PAGES"
   git worktree add --orphan -B gh-pages "$PAGES"
+fi
+# A retry of an older version must never replace a feed that already offers a newer build.
+feed_build() { sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<\/sparkle:version>.*/\1/p' "$1" | sort -n | tail -1; }
+if [[ -f "$PAGES/appcast.xml" ]]; then
+  PUBLISHED_BUILD="$(feed_build "$PAGES/appcast.xml")"
+  CANDIDATE_BUILD="$(feed_build "$DIST/appcast.xml")"
+  [[ -n "$CANDIDATE_BUILD" ]] || { echo "Could not read the build number from the new appcast."; exit 1; }
+  if [[ -n "$PUBLISHED_BUILD" && "$PUBLISHED_BUILD" -gt "$CANDIDATE_BUILD" ]]; then
+    echo "Published feed already offers build $PUBLISHED_BUILD (newer than $CANDIDATE_BUILD); leaving it."; exit 1
+  fi
 fi
 cp "$DIST/appcast.xml" "$PAGES/appcast.xml"
 git -C "$PAGES" add appcast.xml

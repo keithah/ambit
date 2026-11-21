@@ -2,7 +2,13 @@ import Foundation
 
 public struct DiagnosisConfig: Sendable {
     public var interval: TimeInterval = 5
-    public var internetTargets = [ProbeTarget(host: "1.1.1.1", port: 443), ProbeTarget(host: "8.8.8.8", port: 443)]
+    /// Any one answering counts as reachable. The IPv6 literal keeps IPv6-only links diagnosable
+    /// without depending on DNS.
+    public var internetTargets = [
+        ProbeTarget(host: "1.1.1.1", port: 443),
+        ProbeTarget(host: "8.8.8.8", port: 443),
+        ProbeTarget(host: "2606:4700:4700::1111", port: 443),
+    ]
     public var dnsHost = "apple.com"
     public var historyLimit = 360
     public var thresholds = DiagnosisThresholds()
