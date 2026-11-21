@@ -56,6 +56,8 @@ enum ProtoWire {
         var shift: UInt64 = 0
         while let byte = bytes.popFirst() {
             guard shift < 64 else { throw ProtoError() }
+            // The tenth byte holds only the top bit of a 64-bit value.
+            if shift == 63, byte & 0xFE != 0 { throw ProtoError() }
             result |= UInt64(byte & 0x7F) << shift
             if byte & 0x80 == 0 { return result }
             shift += 7

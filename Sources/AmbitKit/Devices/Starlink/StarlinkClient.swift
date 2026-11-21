@@ -9,8 +9,14 @@ public struct StarlinkClient: Sendable {
     private let session: URLSession
     private let timeout: TimeInterval
 
-    public init(host: String = StarlinkClient.defaultHost, port: Int = 9201, session: URLSession = .shared, timeout: TimeInterval = 4) {
-        self.endpoint = URL(string: "http://\(host):\(port)/SpaceX.API.Device.Device/Handle")!
+    /// `timeout` bounds the whole call, not only the gap between bytes.
+    public init(host: String = StarlinkClient.defaultHost, port: Int = 9201, session: URLSession = .shared, timeout: TimeInterval = 4) throws {
+        guard ProbeTarget.isValidHost(host), (1...65535).contains(port) else { throw StarlinkError.invalidHost }
+        let literal = host.contains(":") ? "[\(host)]" : host
+        guard let url = URL(string: "http://\(literal):\(port)/SpaceX.API.Device.Device/Handle"), url.host != nil else {
+            throw StarlinkError.invalidHost
+        }
+        self.endpoint = url
         self.session = session
         self.timeout = timeout
     }
@@ -27,20 +33,39 @@ public struct StarlinkClient: Sendable {
         _ = try await call(StarlinkRequest.stow(stowed))
     }
 
+    /// Returns the `Response` message, after checking the HTTP, gRPC and device status in turn.
     private func call(_ message: Data) async throws -> Data {
         var request = URLRequest(url: endpoint, timeoutInterval: timeout)
         request.httpMethod = "POST"
         request.setValue("application/grpc-web+proto", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "X-Grpc-Web")
         request.httpBody = GRPCWeb.frame(message)
-        let (body, response) = try await session.data(for: request)
+        let (body, response) = try await send(request)
         guard let http = response as? HTTPURLResponse else { throw StarlinkError.unexpectedResponse }
         guard http.statusCode == 200 else { throw StarlinkError.http(http.statusCode) }
         // A call that fails before any message is sent reports its status in the HTTP headers.
-        if let status = http.value(forHTTPHeaderField: "grpc-status").flatMap(Int.init), status != 0 {
-            throw StarlinkError.grpc(status: status, message: http.value(forHTTPHeaderField: "grpc-message") ?? "")
+        let headerStatus = http.value(forHTTPHeaderField: "grpc-status").flatMap(Int.init)
+        if let headerStatus, headerStatus != 0 {
+            throw StarlinkError.grpc(status: headerStatus, message: GRPCWeb.decodeMessage(http.value(forHTTPHeaderField: "grpc-message")))
         }
-        return try GRPCWeb.message(from: body)
+        let reply = try GRPCWeb.message(from: body, headerStatus: headerStatus)
+        try StarlinkError.checkDeviceStatus(in: reply)
+        return reply
+    }
+
+    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        let session = session
+        let timeout = timeout
+        return try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            group.addTask { try await session.data(for: request) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeout))
+                throw StarlinkError.timedOut
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw StarlinkError.unexpectedResponse }
+            return first
+        }
     }
 }
 
@@ -53,9 +78,13 @@ enum GRPCWeb {
         return out + message
     }
 
-    static func message(from body: Data) throws -> Data {
+    /// Returns the first message. The call must also have ended with status 0, reported in the
+    /// trailer frame or, failing that, in the HTTP headers (`headerStatus`); a body cut off before
+    /// its trailers is not a success.
+    static func message(from body: Data, headerStatus: Int? = nil) throws -> Data {
         var bytes = [UInt8](body)[...]
         var message: Data?
+        var status = headerStatus
         while !bytes.isEmpty {
             guard bytes.count >= 5 else { throw StarlinkError.unexpectedResponse }
             let flag = bytes[bytes.startIndex]
@@ -64,17 +93,26 @@ enum GRPCWeb {
             guard bytes.count >= length else { throw StarlinkError.unexpectedResponse }
             let payload = Data(bytes.prefix(length))
             bytes = bytes.dropFirst(length)
+            // Compression is never requested, so a compressed frame cannot be read.
+            guard flag & 0x01 == 0 else { throw StarlinkError.unexpectedResponse }
             if flag & 0x80 != 0 {
                 let trailers = parseTrailers(payload)
-                if let status = trailers["grpc-status"].flatMap(Int.init), status != 0 {
-                    throw StarlinkError.grpc(status: status, message: trailers["grpc-message"] ?? "")
+                if let code = trailers["grpc-status"].flatMap(Int.init) {
+                    guard code == 0 else { throw StarlinkError.grpc(status: code, message: decodeMessage(trailers["grpc-message"])) }
+                    status = code
                 }
             } else if message == nil {
                 message = payload
             }
         }
-        guard let message else { throw StarlinkError.unexpectedResponse }
+        guard status == 0, let message else { throw StarlinkError.unexpectedResponse }
         return message
+    }
+
+    /// `grpc-message` is percent-encoded on the wire.
+    static func decodeMessage(_ raw: String?) -> String {
+        guard let raw else { return "" }
+        return raw.removingPercentEncoding ?? raw
     }
 
     static func parseTrailers(_ payload: Data) -> [String: String] {
