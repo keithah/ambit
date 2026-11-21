@@ -2,7 +2,8 @@ import Foundation
 
 public protocol GatewayFinding: Sendable {
     /// The default gateway's address, or nil when the Mac has no default route.
-    func defaultGateway() async -> String?
+    /// Throws when the lookup itself failed, which says nothing about the route.
+    func defaultGateway() async throws -> String?
 }
 
 /// Reads the default route with `/sbin/route -n get default`.
@@ -13,10 +14,12 @@ public struct RouteGatewayFinder: GatewayFinding {
         self.runner = runner
     }
 
-    public func defaultGateway() async -> String? {
-        guard let result = try? await runner.run(
+    public func defaultGateway() async throws -> String? {
+        let result = try await runner.run(
             executable: "/sbin/route", arguments: ["-n", "get", "default"], timeout: 2
-        ), result.exitCode == 0 else { return nil }
+        )
+        // `route` exits non-zero when there is no default route ("not in table").
+        guard result.exitCode == 0 else { return nil }
         return Self.parseGateway(result.stdout)
     }
 

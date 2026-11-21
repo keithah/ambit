@@ -18,6 +18,7 @@ final class Updater {
         if let controller {
             controller.checkForUpdates(nil)
         } else {
+            NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = "Updates aren't set up in this build"
             alert.informativeText = "This is a development build without an update key."

@@ -56,9 +56,14 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         #expect(diagnose(hasGateway: true, router: stats(ms: 4), internet: stats(ms: 400), dns: stats()) == .internetSlow)
     }
 
-    @Test func oneEarlyFailureIsNotLoss() {
+    @Test func internetThatHasNeverAnsweredIsNotOnline() {
         let first = stats(ms: nil, loss: 1, failures: 1, count: 1)
-        #expect(diagnose(hasGateway: true, router: stats(ms: 4, count: 1), internet: first, dns: first) == .online)
+        #expect(diagnose(hasGateway: true, router: stats(ms: 4, count: 1), internet: first, dns: first) == .checking)
+    }
+
+    @Test func oneEarlyFailureAfterASuccessIsNotLoss() {
+        let early = stats(ms: 40, loss: 0.5, failures: 1, count: 2)
+        #expect(diagnose(hasGateway: true, router: stats(ms: 4, count: 2), internet: early, dns: stats()) == .online)
     }
 
     @Test func lossyInternetBlamesProvider() {
@@ -168,6 +173,18 @@ private struct FixedProbe: Probe {
     func measure(_ target: ProbeTarget) async -> ProbeSample { sample }
 }
 
+private struct SlowProbe: Probe {
+    func measure(_ target: ProbeTarget) async -> ProbeSample {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        return ProbeSample(latencyMs: 30)
+    }
+}
+
+private struct ThrowingGateway: GatewayFinding {
+    struct Failure: Error {}
+    func defaultGateway() async throws -> String? { throw Failure() }
+}
+
 private struct FixedGateway: GatewayFinding {
     var address: String?
     func defaultGateway() async -> String? { address }
@@ -189,14 +206,20 @@ private actor SwitchingGateway: GatewayFinding {
         #expect(result.stderr == "done\n")
     }
 
-    @Test func timesOutAndKillsAChildThatIgnoresTerm() async {
-        let start = Date()
+    @Test func timesOutAndKillsAChildThatIgnoresTerm() async throws {
+        let pidFile = FileManager.default.temporaryDirectory.appendingPathComponent("ambit-test-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        // `exec` keeps one process, so the PID written is the one that ignores SIGTERM.
         await #expect(throws: ProcessTimedOut.self) {
             _ = try await SystemProcessRunner().run(
-                executable: "/bin/sh", arguments: ["-c", "trap '' TERM; sleep 30"], timeout: 0.3
+                executable: "/bin/sh",
+                arguments: ["-c", "trap '' TERM; echo $$ > \"$0\"; exec sleep 30", pidFile.path],
+                timeout: 0.3
             )
         }
-        #expect(Date().timeIntervalSince(start) < 5)
+        let pid = try #require(pid_t((try String(contentsOf: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)))
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        #expect(kill(pid, 0) != 0, "child should have been killed after ignoring SIGTERM")
     }
 }
 
@@ -209,7 +232,7 @@ private actor SwitchingGateway: GatewayFinding {
             dns: FixedProbe(sample: ProbeSample(failure: .dns))
         )
         var snapshot = await monitor.runCycle()
-        #expect(snapshot.verdict == .online)
+        #expect(snapshot.verdict == .checking)
         snapshot = await monitor.runCycle()
         snapshot = await monitor.runCycle()
         #expect(snapshot.verdict == .internetDown)
@@ -237,14 +260,26 @@ private actor SwitchingGateway: GatewayFinding {
         let monitor = DiagnosisMonitor(
             gatewayFinder: FixedGateway(address: "192.168.8.1"),
             icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: SlowProbe(),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        let first = Task { await monitor.runCycle() }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        let second = Task { await monitor.runCycle() }
+        // The second call arrives while the first is still probing, so both see the same cycle.
+        #expect(await first.value.internetHistory.count == 1)
+        #expect(await second.value.internetHistory.count == 1)
+        #expect(await monitor.runCycle().internetHistory.count == 2)
+    }
+
+    @Test func failedGatewayLookupKeepsCheckingInsteadOfNoNetwork() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: ThrowingGateway(),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
             tcp: FixedProbe(sample: ProbeSample(latencyMs: 30)),
             dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
         )
-        async let first = monitor.runCycle()
-        async let second = monitor.runCycle()
-        let counts = await [first.internetHistory.count, second.internetHistory.count]
-        #expect(counts.max()! <= 2)
-        #expect(await monitor.runCycle().internetHistory.count == counts.max()! + 1)
+        #expect(await monitor.runCycle().verdict == .online)
     }
 
     @Test func noGatewayIsNoNetwork() async {
@@ -271,6 +306,15 @@ private actor SwitchingGateway: GatewayFinding {
         let back = alerts.evaluate(verdict: .online, now: start.addingTimeInterval(125))
         #expect(back == AlertMessage(title: "Back online", body: "The outage lasted 2 min."))
         #expect(alerts.evaluate(verdict: .online, now: start.addingTimeInterval(130)) == nil)
+    }
+
+    @Test func sleepDoesNotCountAsOutageTime() {
+        var alerts = ConnectionAlerts(offlineAfter: 30, maxGap: 20)
+        let start = Date(timeIntervalSince1970: 1_000)
+        #expect(alerts.evaluate(verdict: .noNetwork, now: start) == nil)
+        let wake = start.addingTimeInterval(8 * 3600)
+        #expect(alerts.evaluate(verdict: .noNetwork, now: wake) == nil)
+        #expect(alerts.evaluate(verdict: .online, now: wake.addingTimeInterval(5)) == nil)
     }
 
     @Test func shortBlipIsSilent() {

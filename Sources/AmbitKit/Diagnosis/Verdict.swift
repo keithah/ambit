@@ -121,8 +121,9 @@ public func diagnose(
     if internetDown { return .internetDown }
     if dnsDown { return .dnsFailing }
 
-    // Nothing has answered yet and nothing has failed long enough to name: keep checking.
-    if router.medianMs == nil && internet.medianMs == nil { return .checking }
+    // The internet hop has not answered in this window and has not failed long enough to be
+    // called down: say nothing yet rather than "Online".
+    if internet.medianMs == nil { return .checking }
 
     func lossy(_ hop: HopStats) -> Bool {
         hop.sampleCount >= thresholds.minSamplesForLoss && hop.lossFraction >= thresholds.lossy

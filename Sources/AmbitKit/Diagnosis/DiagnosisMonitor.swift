@@ -101,7 +101,9 @@ public actor DiagnosisMonitor {
 
     private func performCycle() async -> DiagnosisSnapshot {
         let startedIn = generation
-        let gateway = await gatewayFinder.defaultGateway()
+        // A failed lookup keeps the last known gateway instead of looking like a network change.
+        let gateway: String?
+        do { gateway = try await gatewayFinder.defaultGateway() } catch { gateway = snapshot.gateway }
 
         async let routerProbe: ProbeSample? = probeRouter(gateway)
         async let internetProbe = probeInternet()

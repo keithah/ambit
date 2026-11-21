@@ -34,6 +34,14 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo "Working tree is dirty. Commit first so the release matches a commit."; exit 1
 fi
 
+if [[ "${PUBLISH:-0}" == "1" ]]; then
+  # A published build must be exactly what is on origin/main; the build number (commit count)
+  # is only monotonic along main.
+  git fetch --quiet origin main
+  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
+    || { echo "PUBLISH=1 requires HEAD to equal origin/main."; exit 1; }
+fi
+
 echo "==> Tests"
 swift test
 
@@ -107,14 +115,15 @@ else
 fi
 
 PAGES="$(mktemp -d)"
+trap 'rm -rf "$STAGE"; git worktree remove --force "$PAGES" 2>/dev/null || true' EXIT
 if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
-  git worktree add "$PAGES" gh-pages
+  git fetch --quiet origin gh-pages
+  git worktree add -B gh-pages "$PAGES" origin/gh-pages
 else
-  git worktree add --orphan -b gh-pages "$PAGES"
+  git worktree add --orphan -B gh-pages "$PAGES"
 fi
 cp "$DIST/appcast.xml" "$PAGES/appcast.xml"
 git -C "$PAGES" add appcast.xml
 git -C "$PAGES" diff --cached --quiet || git -C "$PAGES" commit -m "Appcast for $VERSION"
 git -C "$PAGES" push origin gh-pages
-git worktree remove "$PAGES"
 echo "Released v$VERSION"
