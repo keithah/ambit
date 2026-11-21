@@ -46,6 +46,8 @@ public struct ConnectionAlerts: Sendable {
             let seconds = Int(now.timeIntervalSince(outageStart ?? now).rounded())
             return AlertMessage(title: "Back online", body: "The outage lasted \(Self.duration(seconds)).")
         case .unknown:
+            // An unannounced outage interrupted by "checking" is not a sustained outage.
+            if announcedVerdict == nil { offlineSince = nil }
             return nil
         }
     }

@@ -173,9 +173,37 @@ private struct FixedProbe: Probe {
     func measure(_ target: ProbeTarget) async -> ProbeSample { sample }
 }
 
-private struct SlowProbe: Probe {
+/// Holds probes until opened, and reports when the first probe has arrived.
+private actor Gate {
+    private var isOpen = false
+    private var entered = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func pass() async {
+        entered = true
+        entryWaiters.forEach { $0.resume() }
+        entryWaiters.removeAll()
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+}
+
+private struct GatedProbe: Probe {
+    let gate: Gate
     func measure(_ target: ProbeTarget) async -> ProbeSample {
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        await gate.pass()
         return ProbeSample(latencyMs: 30)
     }
 }
@@ -257,16 +285,19 @@ private actor SwitchingGateway: GatewayFinding {
     }
 
     @Test func overlappingCyclesShareOneResult() async {
+        let gate = Gate()
         let monitor = DiagnosisMonitor(
             gatewayFinder: FixedGateway(address: "192.168.8.1"),
             icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
-            tcp: SlowProbe(),
+            tcp: GatedProbe(gate: gate),
             dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
         )
         let first = Task { await monitor.runCycle() }
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await gate.waitUntilEntered()
+        // The first cycle is now parked inside its probe, so this call must join it.
         let second = Task { await monitor.runCycle() }
-        // The second call arrives while the first is still probing, so both see the same cycle.
+        for _ in 0..<50 { await Task.yield() }
+        await gate.open()
         #expect(await first.value.internetHistory.count == 1)
         #expect(await second.value.internetHistory.count == 1)
         #expect(await monitor.runCycle().internetHistory.count == 2)
@@ -315,6 +346,16 @@ private actor SwitchingGateway: GatewayFinding {
         let wake = start.addingTimeInterval(8 * 3600)
         #expect(alerts.evaluate(verdict: .noNetwork, now: wake) == nil)
         #expect(alerts.evaluate(verdict: .online, now: wake.addingTimeInterval(5)) == nil)
+    }
+
+    @Test func checkingInterruptsAnUnannouncedOutage() {
+        var alerts = ConnectionAlerts(offlineAfter: 30)
+        let start = Date(timeIntervalSince1970: 1_000)
+        #expect(alerts.evaluate(verdict: .internetDown, now: start) == nil)
+        for offset in stride(from: 5.0, through: 30, by: 5) {
+            #expect(alerts.evaluate(verdict: .checking, now: start.addingTimeInterval(offset)) == nil)
+        }
+        #expect(alerts.evaluate(verdict: .internetDown, now: start.addingTimeInterval(35)) == nil)
     }
 
     @Test func shortBlipIsSilent() {

@@ -42,65 +42,87 @@ if [[ "${PUBLISH:-0}" == "1" ]]; then
     || { echo "PUBLISH=1 requires HEAD to equal origin/main."; exit 1; }
 fi
 
-echo "==> Tests"
-swift test
-
-echo "==> Build $VERSION ($BUILD_NUMBER), universal, Release"
-xcodegen generate --quiet
-xcodebuild -project Ambit.xcodeproj -scheme Ambit -configuration Release \
-  -derivedDataPath "$DERIVED" -destination 'generic/platform=macOS' \
-  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
-  MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
-  OTHER_CODE_SIGN_FLAGS="--timestamp" -quiet build
-
-echo "==> Re-sign Sparkle helpers with hardened runtime, inside out"
-SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
-sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
-sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
-sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
-sign "$SPARKLE/Versions/B/Autoupdate"
-sign "$SPARKLE/Versions/B/Updater.app"
-sign "$SPARKLE"
-sign "$APP"
-codesign --verify --deep --strict --verbose=2 "$APP"
-
-if [[ -z "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]]; then
-  echo "SUPublicEDKey is empty: this build cannot auto-update. Set SPARKLE_PUBLIC_KEY in project.yml."; exit 1
-fi
-
-echo "==> DMG"
+# A version whose DMG is already published is never rebuilt: its bytes are what the appcast
+# signature must match. A retry reuses the published DMG and only finishes the missing steps.
+ASSET="Ambit-$VERSION.dmg"
+REUSE=0
 mkdir -p "$DIST"
-STAGE="$(mktemp -d)"
-trap 'rm -rf "$STAGE"' EXIT
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
-rm -f "$DMG"
-hdiutil create -volname "Ambit" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
-codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-
-if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
-  echo "Signed, not notarized: $DMG"; exit 0
+if [[ "${PUBLISH:-0}" == "1" ]] && gh release view "v$VERSION" --repo "$REPO" --json assets \
+     --jq '.assets[].name' 2>/dev/null | grep -qx "$ASSET"; then
+  echo "==> v$VERSION is already published; reusing its DMG"
+  REUSE=1
+  gh release download "v$VERSION" --repo "$REPO" --pattern "$ASSET" --dir "$DIST" --clobber
 fi
 
-echo "==> Notarize"
-xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
-xcrun stapler staple "$DMG"
-spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+STAGE="$(mktemp -d)"
+FEED="$(mktemp -d)"
+PAGES="$(mktemp -d)"
+trap 'rm -rf "$STAGE" "$FEED"; git worktree remove --force "$PAGES" 2>/dev/null || true; rm -rf "$PAGES"' EXIT
+
+xcodegen generate --quiet
+
+if [[ "$REUSE" == "0" ]]; then
+  echo "==> Tests"
+  swift test
+
+  echo "==> Build $VERSION ($BUILD_NUMBER), universal, Release"
+  xcodebuild -project Ambit.xcodeproj -scheme Ambit -configuration Release \
+    -derivedDataPath "$DERIVED" -destination 'generic/platform=macOS' \
+    ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+    MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+    CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$IDENTITY" DEVELOPMENT_TEAM="$TEAM" \
+    OTHER_CODE_SIGN_FLAGS="--timestamp" -quiet build
+
+  echo "==> Re-sign Sparkle helpers with hardened runtime, inside out"
+  SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+  sign() { codesign --force --options runtime --timestamp --sign "$IDENTITY" "$@"; }
+  sign "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
+  sign --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
+  sign "$SPARKLE/Versions/B/Autoupdate"
+  sign "$SPARKLE/Versions/B/Updater.app"
+  sign "$SPARKLE"
+  sign "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
+
+  if [[ -z "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]]; then
+    echo "SUPublicEDKey is empty: this build cannot auto-update. Set SPARKLE_PUBLIC_KEY in project.yml."; exit 1
+  fi
+
+  echo "==> DMG"
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  rm -f "$DMG"
+  hdiutil create -volname "Ambit" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+  codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+
+  if [[ "${SKIP_NOTARIZE:-0}" == "1" ]]; then
+    echo "Signed, not notarized: $DMG"; exit 0
+  fi
+
+  echo "==> Notarize"
+  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+  xcrun stapler staple "$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+else
+  xcodebuild -project Ambit.xcodeproj -scheme Ambit -derivedDataPath "$DERIVED" \
+    -resolvePackageDependencies -quiet
+fi
 
 echo "==> Appcast"
+# The feed is generated from a directory holding only this release's DMG, so stale archives in
+# dist/ can never be advertised under this version's download URL.
+cp "$DMG" "$FEED/"
 "$DERIVED/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast" \
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   --link "https://github.com/$REPO" \
   --maximum-deltas 0 \
-  -o "$DIST/appcast.xml" "$DIST"
+  -o "$DIST/appcast.xml" "$FEED"
 
 if [[ "${PUBLISH:-0}" != "1" ]]; then
   echo "Built $DMG and $DIST/appcast.xml. Re-run with PUBLISH=1 to upload."; exit 0
 fi
 
 echo "==> Publish"
-# Each step is skipped when already done, so a failed publish can be re-run.
 if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
   [[ "$(git rev-parse "v$VERSION^{commit}")" == "$(git rev-parse HEAD)" ]] \
     || { echo "Tag v$VERSION exists on a different commit."; exit 1; }
@@ -108,18 +130,20 @@ else
   git tag -a "v$VERSION" -m "Ambit $VERSION"
 fi
 git push origin "v$VERSION"
-if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
-  gh release upload "v$VERSION" "$DMG" --repo "$REPO" --clobber
-else
-  gh release create "v$VERSION" "$DMG" --repo "$REPO" --title "Ambit $VERSION" --generate-notes
+if [[ "$REUSE" == "0" ]]; then
+  if gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1; then
+    gh release upload "v$VERSION" "$DMG" --repo "$REPO"
+  else
+    gh release create "v$VERSION" "$DMG" --repo "$REPO" --title "Ambit $VERSION" --generate-notes
+  fi
 fi
 
-PAGES="$(mktemp -d)"
-trap 'rm -rf "$STAGE"; git worktree remove --force "$PAGES" 2>/dev/null || true' EXIT
 if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
   git fetch --quiet origin gh-pages
+  rmdir "$PAGES"
   git worktree add -B gh-pages "$PAGES" origin/gh-pages
 else
+  rmdir "$PAGES"
   git worktree add --orphan -B gh-pages "$PAGES"
 fi
 cp "$DIST/appcast.xml" "$PAGES/appcast.xml"
