@@ -44,6 +44,8 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "Copyright © 2026 keithah. MIT License."
         NSLocalNetworkUsageDescription: "Ambit checks your router and devices on your local network to show their status."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         SUFeedURL: https://keithah.github.io/ambit/appcast.xml
         SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
         SUEnableAutomaticChecks: true

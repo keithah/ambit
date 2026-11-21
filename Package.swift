@@ -7,6 +7,7 @@ let package = Package(
     products: [.library(name: "AmbitKit", targets: ["AmbitKit"])],
     targets: [
         .target(name: "AmbitKit"),
+        .executableTarget(name: "ambit-probe", dependencies: ["AmbitKit"]),
         .testTarget(name: "AmbitKitTests", dependencies: ["AmbitKit"]),
     ]
 )

@@ -57,7 +57,7 @@ a verdict (`wifi`, `router`, `isp`, `dns`, `ok`). The v0 `network_diagnosis_matr
 
 | Device | Transport | Notes |
 |---|---|---|
-| Starlink | gRPC to `192.168.100.1:9200` | grpc-swift + SwiftProtobuf, generated from the dish proto. No Homebrew dependency |
+| Starlink | gRPC-Web over HTTP to `192.168.100.1:9201` | URLSession plus a small protobuf reader (`ProtoWire`); no dependency. Unverified on hardware as of 2026-11-21; fallback is grpc-swift on port 9200 |
 | GL.iNet | JSON-RPC over HTTP(S) to the router | Password from Keychain; hashing in-process (no `openssl` argv) |
 | LinkPower 3 | Wi-Fi/LAN if the spike finds a local interface; else CoreBluetooth, service `0x5301` | BLE: notify on `0x4303` (battery), commands on `0x4302`, per `keithah/openwrt-wattline` docs; reimplemented, not copied (AGPL). Wi-Fi protocol undocumented as of 2026-11-20 |
 
@@ -78,7 +78,7 @@ threshold. Cooldown per alert. Delivered with `UNUserNotificationCenter`. No rul
 
 ## Dependencies
 
-Sparkle 2, grpc-swift, SwiftProtobuf. Nothing else without a decision-log entry.
+Sparkle 2. Nothing else without a decision-log entry.
 
 ## Permissions
 
