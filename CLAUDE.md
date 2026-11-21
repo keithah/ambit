@@ -26,4 +26,6 @@ stop that from happening again.
 
 ## Build
 
-Not set up yet. Week 1 delivers `make build`, `make test`, `make release` (see docs/04-architecture.md).
+`make test` (AmbitKit unit tests), `make build` (XcodeGen + xcodebuild), `make run`, `make release VERSION=x.y.z`
+(see [docs/releasing.md](docs/releasing.md)). `Ambit.xcodeproj` and `App/Info.plist` are generated from `project.yml`;
+never edit or commit them.

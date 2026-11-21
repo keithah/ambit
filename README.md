@@ -3,7 +3,7 @@
 Your whole connection stack in the Mac menu bar: Starlink, travel router, battery, and a plain answer to
 "is it my Wi-Fi, my router, or my ISP?"
 
-**Status (2026-11-20):** restart. No code on `main` yet. v1 ships 2026-12-20 as a free, signed, notarized,
+**Status (2026-11-20):** week 1 in progress. The app runs and diagnoses the connection; no release yet. v1 ships 2026-12-20 as a free, signed, notarized,
 auto-updating download. The plan is in [docs/05-plan.md](docs/05-plan.md).
 
 ## What v1 is
@@ -29,6 +29,16 @@ Not in v1: system stats (v1.1), Tesla via Tessie (v1.2), plugins, rules, iOS, cl
 | [docs/05-plan.md](docs/05-plan.md) | Four-week plan, weekly releases, kill criteria |
 | [docs/06-harvest.md](docs/06-harvest.md) | What to lift from the v0 archive |
 | [docs/decisions.md](docs/decisions.md) | Dated decision log |
+| [docs/releasing.md](docs/releasing.md) | Release setup and steps |
+
+## Build
+
+Needs Xcode 16 or later and `brew install xcodegen`.
+
+```sh
+make test   # unit tests
+make run    # build and launch the menu-bar app
+```
 
 ## The v0 archive
 

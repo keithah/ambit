@@ -8,3 +8,6 @@ xcuserdata/
 *.dmg
 *.zip
 .env
+Ambit.xcodeproj/
+App/Info.plist
+dist/

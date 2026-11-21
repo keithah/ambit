@@ -1,0 +1,55 @@
+name: Ambit
+options:
+  bundleIdPrefix: com.hadm
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  AmbitKit:
+    path: .
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    SPARKLE_PUBLIC_KEY: ""
+targets:
+  Ambit:
+    type: application
+    platform: macOS
+    sources:
+      - App/Sources
+      - App/Resources
+    dependencies:
+      - package: AmbitKit
+      - package: Sparkle
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hadm.ambit
+        PRODUCT_NAME: Ambit
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Ambit
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "Copyright © 2026 keithah. MIT License."
+        NSLocalNetworkUsageDescription: "Ambit checks your router and devices on your local network to show their status."
+        SUFeedURL: https://keithah.github.io/ambit/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
+        SUEnableAutomaticChecks: true
+schemes:
+  Ambit:
+    build:
+      targets:
+        Ambit: all
+    run:
+      config: Debug
