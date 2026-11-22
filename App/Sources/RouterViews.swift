@@ -35,7 +35,7 @@ struct RouterRow: View {
         if let problem = DeviceText.problem(reading.condition, noun: "router") { return problem }
         var parts: [String] = []
         if let wan = reading.status?.wan { parts.append(wan.text) }
-        if let count = reading.status?.clientCount { parts.append(count == 1 ? "1 device connected" : "\(count) devices connected") }
+        if let count = reading.status?.clientCount { parts.append(count == 1 ? "1 client" : "\(count) clients") }
         return parts.isEmpty ? "Online" : parts.joined(separator: " · ")
     }
 }
@@ -54,11 +54,11 @@ struct RouterDetail: View {
             if let problem = DeviceText.problem(reading.condition, noun: "router") {
                 Text(problem).font(.system(size: 13)).foregroundStyle(DeviceText.color(reading.condition))
             }
-            if reading.condition == .passwordNeeded || reading.condition == .wrongPassword {
+            if needsPassword(reading.condition) {
                 passwordEntry
             }
             DetailLine(label: "Internet through", value: status?.wan?.text ?? "–")
-            DetailLine(label: "Devices connected", value: status?.clientCount.map(String.init) ?? "–")
+            DetailLine(label: "Clients", value: status?.clientCount.map(String.init) ?? "–")
             DetailLine(label: "Running for", value: DeviceText.uptime(status?.uptimeSeconds))
             DetailLine(label: "Address", value: status?.lanIP ?? device.host)
             Divider()
@@ -70,8 +70,10 @@ struct RouterDetail: View {
                 ) {
                     failure = await model.setVPN(on: !vpn.isOn, device.id)
                 }
+                // If the VPN changes state while the question is open, the question goes away.
+                .id(vpn.isOn)
             } else {
-                DetailLine(label: "VPN", value: "Not set up on the router")
+                DetailLine(label: "VPN", value: reading.vpnKnown ? "Not set up on the router" : "–")
             }
             if let failure {
                 Text(failure).font(.system(size: 11)).foregroundStyle(.red)
@@ -81,8 +83,8 @@ struct RouterDetail: View {
             }
             Divider()
             ConfirmedButton(title: "Remove device", question: "Remove \(device.name) from Ambit?") {
-                model.remove(device.id)
-                close()
+                failure = model.remove(device.id)
+                if failure == nil { close() }
             }
         }
     }
@@ -96,6 +98,14 @@ struct RouterDetail: View {
                 Button("Save", action: savePassword).disabled(password.isEmpty)
             }
             Text("Stored in your Mac's Keychain.").font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Also during a lockout: the router then gets the corrected password when it accepts a try again.
+    private func needsPassword(_ condition: DeviceCondition) -> Bool {
+        switch condition {
+        case .passwordNeeded, .wrongPassword, .lockedOut: true
+        default: false
         }
     }
 

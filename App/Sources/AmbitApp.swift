@@ -11,7 +11,7 @@ struct AmbitApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = AppModel()
     private let updater = Updater()
     private var statusItem: NSStatusItem?
@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         popover.behavior = .transient
+        popover.delegate = self
         let content = NSHostingController(
             rootView: PopoverView(model: model, checkForUpdates: { [updater] in updater.checkForUpdates() })
         )
@@ -34,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onChange = { [weak self] in self?.renderStatusItem() }
         renderStatusItem()
         model.start()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        model.popoverDidClose()
     }
 
     @objc private func togglePopover() {

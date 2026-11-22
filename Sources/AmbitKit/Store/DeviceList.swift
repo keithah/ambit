@@ -33,13 +33,20 @@ public struct DeviceListFile: Sendable {
         return DeviceListFile(url: folder.appendingPathComponent("Ambit", isDirectory: true).appendingPathComponent("devices.json"))
     }
 
-    /// A missing file is an empty list. A file that cannot be read is set aside, not overwritten.
-    public func load() -> [SavedDevice] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
+    /// A missing file is an empty list. A file whose contents are not a device list is set aside
+    /// under a new name and the list starts empty. Any other failure is thrown, and the caller
+    /// must not save: a later save would replace a list that is still there.
+    public func load() throws -> [SavedDevice] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return []
+        }
         if let devices = try? JSONDecoder().decode([SavedDevice].self, from: data) { return devices }
-        let aside = url.appendingPathExtension("unreadable")
-        try? FileManager.default.removeItem(at: aside)
-        try? FileManager.default.moveItem(at: url, to: aside)
+        let stamp = Int(Date().timeIntervalSince1970)
+        let aside = url.deletingLastPathComponent().appendingPathComponent("devices.unreadable-\(stamp)-\(UUID().uuidString.prefix(8)).json")
+        try FileManager.default.moveItem(at: url, to: aside)
         return []
     }
 

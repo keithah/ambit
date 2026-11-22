@@ -26,6 +26,17 @@ private let outageResponse = Data(base64Encoded:
         #expect(status.isOnline)
     }
 
+    @Test func numbersThatAreNotFiniteAreNoReading() throws {
+        // dish_get_status { pop_ping_latency_ms: NaN, downlink_throughput_bps: +infinity }
+        func float(_ number: UInt64, _ value: Float) -> Data {
+            ProtoWire.encodeVarint(number << 3 | 5) + withUnsafeBytes(of: value.bitPattern.littleEndian) { Data($0) }
+        }
+        let status = try StarlinkStatus(response: ProtoWire.message(field: 2004, float(1009, .nan) + float(1007, .infinity)))
+        #expect(status.latencyMs == nil)
+        #expect(status.downlinkBps == nil)
+        #expect(status.uplinkBps == 0)
+    }
+
     @Test func decodesAnOutage() throws {
         let status = try StarlinkStatus(response: outageResponse)
         #expect(status.outage == .obstructed)
@@ -262,6 +273,9 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         let found = "dish-found.test", silent = "dish-not-there.test"
         #expect(await Discovery.answersAsStarlink(host: found, session: StubProtocol.session(host: found, reply: .init(body: GRPCWeb.frame(onlineResponse) + okTrailers))))
         #expect(await !Discovery.answersAsStarlink(host: silent, session: StubProtocol.session(host: silent, reply: .init(status: 404))))
+        // Another device at the dish's address that answers 200 with a web page is not a dish.
+        let other = "dish-is-a-web-page.test"
+        #expect(await !Discovery.answersAsStarlink(host: other, session: StubProtocol.session(host: other, reply: .init(body: Data("<html></html>".utf8)))))
     }
 
     @Test func aCommandTheDishRefusesIsAnError() async throws {

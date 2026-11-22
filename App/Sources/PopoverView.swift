@@ -34,6 +34,7 @@ struct PopoverView: View {
         }
         .padding(14)
         .frame(width: 340)
+        .onChange(of: model.popoverClosures) { page = .main }
     }
 
     @ViewBuilder

@@ -13,6 +13,8 @@ struct RouterReading: Equatable {
     var condition = DeviceCondition.loading
     var status: GLiNetStatus?
     var vpn: GLiNetVPN?
+    /// False until a VPN read has succeeded, so "no VPN" is not shown for a failed read.
+    var vpnKnown = false
 }
 
 @MainActor
@@ -22,6 +24,8 @@ final class AppModel {
     private(set) var devices: [SavedDevice] = []
     private(set) var dishes: [UUID: StarlinkReading] = [:]
     private(set) var routers: [UUID: RouterReading] = [:]
+    /// Goes up each time the popover closes, so the popover opens on its first page again.
+    private(set) var popoverClosures = 0
     @ObservationIgnored var onChange: (() -> Void)?
 
     @ObservationIgnored private let monitor = DiagnosisMonitor()
@@ -30,6 +34,10 @@ final class AppModel {
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
 
     @ObservationIgnored private let deviceFile = try? DeviceListFile.standard()
+    /// False when the saved list could not be read: saving then would replace it.
+    @ObservationIgnored private var canSaveDevices = false
+    /// The number of the latest poll started for each device. An older poll's result is dropped.
+    @ObservationIgnored private var latestPoll: [UUID: Int] = [:]
     @ObservationIgnored private let passwords = PasswordStore()
     @ObservationIgnored private var polls: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var trackers: [UUID: DeviceHealthTracker] = [:]
@@ -59,7 +67,10 @@ final class AppModel {
         ) { [monitor] _ in
             Task { await monitor.runCycle() }
         }
-        devices = deviceFile?.load() ?? []
+        if let deviceFile, let saved = try? deviceFile.load() {
+            devices = saved
+            canSaveDevices = true
+        }
         devices.forEach(startPolling)
         Task { [weak self, monitor] in
             await monitor.start()
@@ -108,15 +119,23 @@ extension AppModel {
         return nil
     }
 
-    func remove(_ id: UUID) {
-        guard save(devices.filter { $0.id != id }) else { return }
+    func popoverDidClose() {
+        popoverClosures += 1
+    }
+
+    /// Returns a sentence for the user if the device could not be removed.
+    func remove(_ id: UUID) -> String? {
+        guard save(devices.filter { $0.id != id }) else { return "Couldn't save the device list." }
         polls.removeValue(forKey: id)?.cancel()
         trackers[id] = nil
+        latestPoll[id] = nil
         dishClients[id] = nil
         routerClients[id] = nil
         dishes[id] = nil
         routers[id] = nil
+        // If this fails the password stays in the Keychain under an ID nothing uses any more.
         try? passwords.remove(for: id)
+        return nil
     }
 
     func setPassword(_ password: String, for id: UUID) async -> String? {
@@ -127,7 +146,10 @@ extension AppModel {
 
     /// Devices on the network that are not added yet.
     func discover() async -> [FoundDevice] {
-        await Discovery.find(gateway: snapshot.gateway).filter { found in
+        // The diagnosis may not have found the router yet when the page opens.
+        var gateway = snapshot.gateway
+        if gateway == nil { gateway = try? await RouteGatewayFinder().defaultGateway() }
+        return await Discovery.find(gateway: gateway).filter { found in
             !devices.contains { $0.kind == found.kind && $0.host == found.host }
         }
     }
@@ -163,7 +185,7 @@ extension AppModel {
     }
 
     private func save(_ next: [SavedDevice]) -> Bool {
-        guard let deviceFile, (try? deviceFile.save(next)) != nil else { return false }
+        guard canSaveDevices, let deviceFile, (try? deviceFile.save(next)) != nil else { return false }
         devices = next
         return true
     }
@@ -204,17 +226,24 @@ extension AppModel {
         }
     }
 
+    private func startPoll(_ id: UUID) -> Int {
+        let poll = (latestPoll[id] ?? 0) + 1
+        latestPoll[id] = poll
+        return poll
+    }
+
     private func pollDish(_ id: UUID) async {
         guard let client = dishClients[id] else { return }
+        let poll = startPoll(id)
         do {
             let status = try await client.status()
-            guard dishes[id] != nil else { return }
+            guard dishes[id] != nil, latestPoll[id] == poll else { return }
             trackers[id]?.succeeded()
             dishes[id] = StarlinkReading(condition: .online, status: status)
         } catch is CancellationError {
             return
         } catch {
-            guard dishes[id] != nil else { return }
+            guard dishes[id] != nil, latestPoll[id] == poll else { return }
             trackers[id]?.failed(DeviceFailure(starlink: error))
             dishes[id]?.condition = trackers[id]?.condition ?? .unreachable
         }
@@ -222,18 +251,22 @@ extension AppModel {
 
     private func pollRouter(_ id: UUID) async {
         guard let client = routerClients[id] else { return }
+        let poll = startPoll(id)
         do {
             let status = try await client.status()
-            // A failed VPN read keeps the last known state instead of hiding the switch.
-            var vpn = routers[id]?.vpn
-            do { vpn = try await client.vpn() } catch {}
-            guard routers[id] != nil else { return }
+            var vpn: GLiNetVPN?
+            var vpnRead = true
+            do { vpn = try await client.vpn() } catch { vpnRead = false }
+            guard let last = routers[id], latestPoll[id] == poll else { return }
             trackers[id]?.succeeded()
-            routers[id] = RouterReading(condition: .online, status: status, vpn: vpn)
+            // A failed VPN read keeps the last known state instead of hiding the switch.
+            routers[id] = vpnRead
+                ? RouterReading(condition: .online, status: status, vpn: vpn, vpnKnown: true)
+                : RouterReading(condition: .online, status: status, vpn: last.vpn, vpnKnown: last.vpnKnown)
         } catch is CancellationError {
             return
         } catch {
-            guard routers[id] != nil else { return }
+            guard routers[id] != nil, latestPoll[id] == poll else { return }
             trackers[id]?.failed(DeviceFailure(glinet: error))
             routers[id]?.condition = trackers[id]?.condition ?? .unreachable
         }

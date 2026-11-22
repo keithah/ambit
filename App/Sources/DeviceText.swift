@@ -33,7 +33,7 @@ enum DeviceText {
     }
 
     static func uptime(_ seconds: Double?) -> String {
-        guard let seconds, seconds >= 0 else { return "–" }
+        guard let seconds, seconds.isFinite, seconds >= 0 else { return "–" }
         return Duration.seconds(seconds.rounded()).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
     }
 }
@@ -77,7 +77,6 @@ struct ConfirmedButton: View {
                         working = false
                     }
                 }
-                .keyboardShortcut(.defaultAction)
             }
         } else {
             Button(title) { asking = true }

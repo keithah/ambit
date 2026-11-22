@@ -75,13 +75,15 @@ struct StarlinkDetail: View {
             ) {
                 failure = await model.setDishStowed(!stowed, device.id)
             }
+            // If the dish changes state while the question is open, the question goes away.
+            .id(stowed)
             if let failure {
                 Text(failure).font(.system(size: 11)).foregroundStyle(.red)
             }
             Divider()
             ConfirmedButton(title: "Remove device", question: "Remove \(device.name) from Ambit?") {
-                model.remove(device.id)
-                close()
+                failure = model.remove(device.id)
+                if failure == nil { close() }
             }
         }
     }

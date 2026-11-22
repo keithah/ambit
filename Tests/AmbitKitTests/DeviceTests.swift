@@ -83,8 +83,17 @@ import Testing
         return DeviceListFile(url: folder.appendingPathComponent("devices.json"))
     }
 
-    @Test func aMissingFileIsAnEmptyList() {
-        #expect(temporaryFile().load() == [])
+    @Test func aMissingFileIsAnEmptyList() throws {
+        #expect(try temporaryFile().load() == [])
+    }
+
+    @Test func aFileThatCannotBeReadIsAnErrorNotAnEmptyList() throws {
+        let file = temporaryFile()
+        defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
+        // A folder where the file should be: it exists, but reading it fails.
+        try FileManager.default.createDirectory(at: file.url, withIntermediateDirectories: true)
+        #expect(throws: (any Error).self) { try file.load() }
+        #expect(FileManager.default.fileExists(atPath: file.url.path))
     }
 
     @Test func savesAndLoadsDevices() throws {
@@ -95,7 +104,7 @@ import Testing
             SavedDevice(kind: .glinet, name: "Router", host: "192.168.8.1"),
         ]
         try file.save(devices)
-        #expect(file.load() == devices)
+        #expect(try file.load() == devices)
     }
 
     @Test func anUnreadableFileIsSetAsideNotLost() throws {
@@ -103,9 +112,14 @@ import Testing
         defer { try? FileManager.default.removeItem(at: file.url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: file.url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("not json".utf8).write(to: file.url)
-        #expect(file.load() == [])
-        let aside = file.url.appendingPathExtension("unreadable")
-        #expect(try String(contentsOf: aside, encoding: .utf8) == "not json")
+        #expect(try file.load() == [])
+        try Data("also not json".utf8).write(to: file.url)
+        #expect(try file.load() == [])
+        // Both bad files are kept, each under its own name.
+        let folder = file.url.deletingLastPathComponent()
+        let kept = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("devices.unreadable-") }
+        #expect(Set(try kept.map { try String(contentsOf: $0, encoding: .utf8) }) == ["not json", "also not json"])
         #expect(!FileManager.default.fileExists(atPath: file.url.path))
     }
 }

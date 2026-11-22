@@ -16,7 +16,14 @@ struct AddDeviceView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let found {
                 if found.isEmpty {
-                    Text("No new devices found on this network.").font(.system(size: 13)).foregroundStyle(.secondary)
+                    HStack {
+                        Text("No new devices found on this network.").font(.system(size: 13)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Look again") {
+                            self.found = nil
+                            Task { self.found = await model.discover() }
+                        }
+                    }
                 }
                 ForEach(found) { device in
                     foundRow(device)
