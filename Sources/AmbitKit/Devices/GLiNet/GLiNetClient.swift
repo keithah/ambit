@@ -77,6 +77,13 @@ public actor GLiNetClient {
         _ = try await call("vpn-client", "set_tunnel", ["tunnel_id": tunnel.tunnelID, "enabled": on])
     }
 
+    /// True if the host answers a login challenge the way this firmware does. It sends no
+    /// password and does not count as a login attempt.
+    public func answersLikeARouter() async -> Bool {
+        guard let reply = try? await send("challenge", ["username": username]) else { return false }
+        return reply["salt"] is String && reply["nonce"] is String
+    }
+
     // MARK: Calls
 
     private static let accessDenied = -32000

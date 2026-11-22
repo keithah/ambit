@@ -258,6 +258,12 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         #expect(request.value(forHTTPHeaderField: "X-Grpc-Web") == "1")
     }
 
+    @Test func discoveryRecognisesADishByItsStatus() async {
+        let found = "dish-found.test", silent = "dish-not-there.test"
+        #expect(await Discovery.answersAsStarlink(host: found, session: StubProtocol.session(host: found, reply: .init(body: GRPCWeb.frame(onlineResponse) + okTrailers))))
+        #expect(await !Discovery.answersAsStarlink(host: silent, session: StubProtocol.session(host: silent, reply: .init(status: 404))))
+    }
+
     @Test func aCommandTheDishRefusesIsAnError() async throws {
         // HTTP 200 and grpc-status 0, but Response { status { code: 7 } }.
         let refused = ProtoWire.message(field: 2, Data([0x08, 0x07]))

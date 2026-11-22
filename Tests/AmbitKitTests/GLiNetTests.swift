@@ -356,6 +356,16 @@ private final class Counter: @unchecked Sendable {
         await #expect(throws: GLiNetError.wrongPassword) { try await router.status() }
     }
 
+    @Test func discoveryRecognisesARouterByItsChallengeWithoutLoggingIn() async {
+        let found = "router-found.test", other = "router-other.test"
+        let router = FakeRouter.session(host: found, handler: Self.router { _, _, _, _ in Self.statusReply })
+        #expect(await Discovery.answersAsRouter(host: found, session: router))
+        #expect(FakeRouter.calls(host: found) == ["challenge"])
+        let notOne = FakeRouter.session(host: other) { _, _ in #"{"jsonrpc":"2.0","result":{}}"# }
+        #expect(await !Discovery.answersAsRouter(host: other, session: notOne))
+        #expect(await !Discovery.answersAsRouter(host: nil))
+    }
+
     @Test func aRefusedChallengeDoesNotCondemnThePassword() async throws {
         let host = "router-challenge-denied.test"
         let refuse = Box(true)
