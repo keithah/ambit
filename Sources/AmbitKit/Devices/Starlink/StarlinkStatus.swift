@@ -95,6 +95,10 @@ public struct StarlinkStatus: Sendable, Equatable {
             default: break
             }
         }
+        // A number that is not finite is no reading; the views round these to whole numbers.
+        for path in [\StarlinkStatus.dropRate, \.fractionObstructed, \.downlinkBps, \.uplinkBps, \.latencyMs] {
+            if let value = self[keyPath: path], !value.isFinite { self[keyPath: path] = nil }
+        }
     }
 }
 

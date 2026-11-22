@@ -356,6 +356,16 @@ private final class Counter: @unchecked Sendable {
         await #expect(throws: GLiNetError.wrongPassword) { try await router.status() }
     }
 
+    @Test func discoveryRecognisesARouterByItsChallengeWithoutLoggingIn() async {
+        let found = "router-found.test", other = "router-other.test"
+        let router = FakeRouter.session(host: found, handler: Self.router { _, _, _, _ in Self.statusReply })
+        #expect(await Discovery.answersAsRouter(host: found, session: router))
+        #expect(FakeRouter.calls(host: found) == ["challenge"])
+        let notOne = FakeRouter.session(host: other) { _, _ in #"{"jsonrpc":"2.0","result":{}}"# }
+        #expect(await !Discovery.answersAsRouter(host: other, session: notOne))
+        #expect(await !Discovery.answersAsRouter(host: nil))
+    }
+
     @Test func aRefusedChallengeDoesNotCondemnThePassword() async throws {
         let host = "router-challenge-denied.test"
         let refuse = Box(true)
@@ -444,6 +454,27 @@ private final class Counter: @unchecked Sendable {
             method == "challenge" ? Self.challenge : #"{"jsonrpc":"2.0","error":{"code":-32003,"message":"locked","data":{"wait":290}}}"#
         }
         await #expect(throws: GLiNetError.lockedOut(seconds: 290)) { try await router.status() }
+    }
+
+    @Test func anAbsurdLockoutWaitIsCappedAndDoesNotCrash() async throws {
+        let router = try client("router-locked-forever.test") { method, _ in
+            method == "challenge" ? Self.challenge : #"{"jsonrpc":"2.0","error":{"code":-32003,"message":"locked","data":{"wait":9223372036854775807}}}"#
+        }
+        await #expect(throws: GLiNetError.lockedOut(seconds: Int.max)) { try await router.status() }
+        // The second call answers from the remembered deadline, which is at most a day away.
+        do {
+            _ = try await router.status()
+            Issue.record("expected a lockout")
+        } catch GLiNetError.lockedOut(let seconds) {
+            #expect((seconds ?? 0) <= Int(GLiNetClient.longestLockout))
+        }
+    }
+
+    @Test func aClientCountThatCannotBeOneIsNoReading() throws {
+        let status = GLiNetStatus(systemStatus: try json(#"{"client":[{"cable_total":1e30,"wireless_total":9223372036854775807}]}"#))
+        #expect(status.clientCount == nil)
+        let mixed = GLiNetStatus(systemStatus: try json(#"{"client":[{"cable_total":-4,"wireless_total":3}]}"#))
+        #expect(mixed.clientCount == 3)
     }
 
     @Test func logsInAgainWhenTheSessionExpires() async throws {

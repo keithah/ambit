@@ -28,6 +28,8 @@ public actor GLiNetClient {
 
     /// When the router reports a lockout without saying for how long.
     static let defaultLockout: TimeInterval = 300
+    /// No lockout is believed to last longer than this, whatever the router says.
+    static let longestLockout: TimeInterval = 86_400
     /// How long a login that failed for an unknown reason is left alone.
     static let loginRetryDelay: TimeInterval = 60
     /// How long a call the router refuses is left alone.
@@ -75,6 +77,13 @@ public actor GLiNetClient {
     public func setVPN(on: Bool) async throws {
         guard let tunnel = try await vpn() else { throw GLiNetError.noVPN }
         _ = try await call("vpn-client", "set_tunnel", ["tunnel_id": tunnel.tunnelID, "enabled": on])
+    }
+
+    /// True if the host answers a login challenge the way this firmware does. It sends no
+    /// password and does not count as a login attempt.
+    public func answersLikeARouter() async -> Bool {
+        guard let reply = try? await send("challenge", ["username": username]) else { return false }
+        return reply["salt"] is String && reply["nonce"] is String
     }
 
     // MARK: Calls
@@ -180,7 +189,7 @@ public actor GLiNetClient {
             throw GLiNetError.wrongPassword
         } catch GLiNetError.lockedOut(let seconds) {
             let wait = seconds.flatMap { $0 > 0 ? TimeInterval($0) : nil } ?? Self.defaultLockout
-            lockedUntil = now().addingTimeInterval(wait)
+            lockedUntil = now().addingTimeInterval(min(wait, Self.longestLockout))
             throw GLiNetError.lockedOut(seconds: seconds)
         } catch is CancellationError {
             throw CancellationError()
