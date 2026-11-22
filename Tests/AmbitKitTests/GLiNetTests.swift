@@ -321,6 +321,23 @@ private final class Counter: @unchecked Sendable {
         #expect(try await router.status().clientCount == 3)
     }
 
+    @Test func aSuccessThatArrivesAfterADenialClearsIt() async throws {
+        let host = "router-works-late.test"
+        // The second and third requests are denied; the others succeed.
+        let requests = Counter()
+        let router = try client(host, Self.router { _, _, _, _ in
+            (2...3).contains(requests.next()) ? #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"# : Self.statusReply
+        })
+        FakeRouter.hold(host: host, name: "system.get_status", occurrence: 1)
+        async let late = router.status()
+        for _ in 0..<2_000 where !FakeRouter.isHolding(host: host) { try await Task.sleep(for: .milliseconds(1)) }
+        try #require(FakeRouter.isHolding(host: host))
+        await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
+        FakeRouter.release(host: host)
+        #expect(try await late.clientCount == 3)
+        #expect(try await router.status().clientCount == 3)
+    }
+
     @Test func aDenialFromBeforeAPasswordChangeIsNotKept() async throws {
         let host = "router-denies-old-password.test"
         let password = Box("test password")

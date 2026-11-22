@@ -93,6 +93,7 @@ public actor GLiNetClient {
         do {
             let result = try await send("call", [used, service, method, arguments])
             successes[name, default: 0] += 1
+            deniedCalls[name] = nil
             return result
         } catch GLiNetError.rpc(code: Self.accessDenied, _) {
             // Most likely the session expired (router restart, idle timeout): log in once more
@@ -104,6 +105,7 @@ public actor GLiNetClient {
             do {
                 let result = try await send("call", [fresh, service, method, arguments])
                 successes[name, default: 0] += 1
+                deniedCalls[name] = nil
                 return result
             } catch GLiNetError.rpc(code: Self.accessDenied, _) {
                 // Denied with a brand-new session: the router refuses this call itself. Asking
