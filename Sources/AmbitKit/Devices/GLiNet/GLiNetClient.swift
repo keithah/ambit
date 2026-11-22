@@ -23,6 +23,8 @@ public actor GLiNetClient {
     private var lockedUntil: Date?
     private var loginBackoff: (until: Date, error: any Error)?
     private var deniedCalls: [String: Date] = [:]
+    /// How often each call has succeeded, to recognise a denial that is older than a success.
+    private var successes: [String: Int] = [:]
 
     /// When the router reports a lockout without saying for how long.
     static let defaultLockout: TimeInterval = 300
@@ -89,22 +91,30 @@ public actor GLiNetClient {
         }
         let used = try await login()
         do {
-            return try await send("call", [used, service, method, arguments])
+            let result = try await send("call", [used, service, method, arguments])
+            successes[name, default: 0] += 1
+            return result
         } catch GLiNetError.rpc(code: Self.accessDenied, _) {
             // Most likely the session expired (router restart, idle timeout): log in once more
             // and retry. Another call may already have replaced the session; keep that one.
             if sessionID == used { sessionID = nil }
             let fresh = try await login()
             let passwordUsed = lastPassword
+            let successesBefore = successes[name, default: 0]
             do {
-                return try await send("call", [fresh, service, method, arguments])
+                let result = try await send("call", [fresh, service, method, arguments])
+                successes[name, default: 0] += 1
+                return result
             } catch GLiNetError.rpc(code: Self.accessDenied, _) {
                 // Denied with a brand-new session: the router refuses this call itself. Asking
                 // again would open a new session on every poll, so leave it alone for a while.
                 // This holds even if another call replaced the session meanwhile: otherwise two
                 // refused calls polled together would keep opening sessions for each other.
                 // A denial from before a password change says nothing about the new password.
-                if lastPassword == passwordUsed { deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay) }
+                // Nor does one that is older than a success of the same call.
+                if lastPassword == passwordUsed, successes[name, default: 0] == successesBefore {
+                    deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay)
+                }
                 throw GLiNetError.accessDenied
             }
         }

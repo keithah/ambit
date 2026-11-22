@@ -305,6 +305,22 @@ private final class Counter: @unchecked Sendable {
         #expect(FakeRouter.calls(host: host) == before)
     }
 
+    @Test func aDenialThatArrivesAfterTheSameCallSucceededIsNotKept() async throws {
+        let host = "router-denies-then-works.test"
+        // Only the third session is accepted.
+        let router = try client(host, Self.router { sid, _, _, _ in
+            sid == "sid3" ? Self.statusReply : #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"#
+        })
+        FakeRouter.hold(host: host, name: "system.get_status", occurrence: 2)
+        async let late: Void = { _ = try? await router.status() }()
+        for _ in 0..<2_000 where !FakeRouter.isHolding(host: host) { try await Task.sleep(for: .milliseconds(1)) }
+        try #require(FakeRouter.isHolding(host: host))
+        #expect(try await router.status().clientCount == 3)
+        FakeRouter.release(host: host)
+        await late
+        #expect(try await router.status().clientCount == 3)
+    }
+
     @Test func aDenialFromBeforeAPasswordChangeIsNotKept() async throws {
         let host = "router-denies-old-password.test"
         let password = Box("test password")
