@@ -4,16 +4,37 @@ import Observation
 import SwiftUI
 import UserNotifications
 
+struct StarlinkReading: Equatable {
+    var condition = DeviceCondition.loading
+    var status: StarlinkStatus?
+}
+
+struct RouterReading: Equatable {
+    var condition = DeviceCondition.loading
+    var status: GLiNetStatus?
+    var vpn: GLiNetVPN?
+}
+
 @MainActor
 @Observable
 final class AppModel {
     private(set) var snapshot = DiagnosisSnapshot()
+    private(set) var devices: [SavedDevice] = []
+    private(set) var dishes: [UUID: StarlinkReading] = [:]
+    private(set) var routers: [UUID: RouterReading] = [:]
     @ObservationIgnored var onChange: (() -> Void)?
 
     @ObservationIgnored private let monitor = DiagnosisMonitor()
     @ObservationIgnored private var alerts = ConnectionAlerts()
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+
+    @ObservationIgnored private let deviceFile = try? DeviceListFile.standard()
+    @ObservationIgnored private let passwords = PasswordStore()
+    @ObservationIgnored private var polls: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var trackers: [UUID: DeviceHealthTracker] = [:]
+    @ObservationIgnored private var dishClients: [UUID: StarlinkClient] = [:]
+    @ObservationIgnored private var routerClients: [UUID: GLiNetClient] = [:]
 
     /// Short readout for the menu bar: latency when online, otherwise the failing hop.
     var menuBarText: String {
@@ -38,6 +59,8 @@ final class AppModel {
         ) { [monitor] _ in
             Task { await monitor.runCycle() }
         }
+        devices = deviceFile?.load() ?? []
+        devices.forEach(startPolling)
         Task { [weak self, monitor] in
             await monitor.start()
             for await next in await monitor.snapshots() {
@@ -51,6 +74,168 @@ final class AppModel {
         onChange?()
         if let message = alerts.evaluate(verdict: next.verdict) {
             Notifier.deliver(message)
+        }
+    }
+}
+
+// MARK: Devices
+
+extension AppModel {
+    private static let dishInterval: Duration = .seconds(5)
+    private static let routerInterval: Duration = .seconds(10)
+
+    /// Adds a device and starts reading it. Returns a sentence for the user if it could not.
+    func add(kind: DeviceKind, host rawHost: String, password: String?) -> String? {
+        let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !devices.contains(where: { $0.kind == kind && $0.host == host }) else { return "That device is already added." }
+        let device: SavedDevice
+        switch kind {
+        case .starlink:
+            guard (try? StarlinkClient(host: host)) != nil else { return "That is not an address Ambit can use." }
+            device = SavedDevice(kind: kind, name: "Starlink", host: host)
+        case .glinet:
+            guard (try? GLiNetClient(host: host, password: { nil })) != nil else { return "That is not an address Ambit can use." }
+            device = SavedDevice(kind: kind, name: "Router", host: host)
+        }
+        if let password, !password.isEmpty {
+            do { try passwords.set(password, for: device.id) } catch { return "Couldn't save the password in your Keychain." }
+        }
+        guard save(devices + [device]) else {
+            try? passwords.remove(for: device.id)
+            return "Couldn't save the device list."
+        }
+        startPolling(device)
+        return nil
+    }
+
+    func remove(_ id: UUID) {
+        guard save(devices.filter { $0.id != id }) else { return }
+        polls.removeValue(forKey: id)?.cancel()
+        trackers[id] = nil
+        dishClients[id] = nil
+        routerClients[id] = nil
+        dishes[id] = nil
+        routers[id] = nil
+        try? passwords.remove(for: id)
+    }
+
+    func setPassword(_ password: String, for id: UUID) async -> String? {
+        do { try passwords.set(password, for: id) } catch { return "Couldn't save the password in your Keychain." }
+        await pollRouter(id)
+        return nil
+    }
+
+    /// Devices on the network that are not added yet.
+    func discover() async -> [FoundDevice] {
+        await Discovery.find(gateway: snapshot.gateway).filter { found in
+            !devices.contains { $0.kind == found.kind && $0.host == found.host }
+        }
+    }
+
+    func rebootDish(_ id: UUID) async -> String? {
+        await dishCommand(id) { try await $0.reboot() }
+    }
+
+    func setDishStowed(_ stowed: Bool, _ id: UUID) async -> String? {
+        await dishCommand(id) { try await $0.setStowed(stowed) }
+    }
+
+    func setVPN(on: Bool, _ id: UUID) async -> String? {
+        guard let client = routerClients[id] else { return "This device is no longer in Ambit." }
+        do {
+            try await client.setVPN(on: on)
+        } catch {
+            return "The router did not switch the VPN. Check that you're on its network."
+        }
+        await pollRouter(id)
+        return nil
+    }
+
+    private func dishCommand(_ id: UUID, _ command: (StarlinkClient) async throws -> Void) async -> String? {
+        guard let client = dishClients[id] else { return "This device is no longer in Ambit." }
+        do {
+            try await command(client)
+        } catch {
+            return "The dish did not accept that. Check that you're on its network."
+        }
+        await pollDish(id)
+        return nil
+    }
+
+    private func save(_ next: [SavedDevice]) -> Bool {
+        guard let deviceFile, (try? deviceFile.save(next)) != nil else { return false }
+        devices = next
+        return true
+    }
+
+    private func startPolling(_ device: SavedDevice) {
+        let id = device.id
+        trackers[id] = DeviceHealthTracker()
+        switch device.kind {
+        case .starlink:
+            dishes[id] = StarlinkReading()
+            guard let client = try? StarlinkClient(host: device.host) else {
+                dishes[id]?.condition = .unreachable
+                return
+            }
+            dishClients[id] = client
+            polls[id] = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    await self.pollDish(id)
+                    try? await Task.sleep(for: Self.dishInterval)
+                }
+            }
+        case .glinet:
+            routers[id] = RouterReading()
+            let passwords = passwords
+            guard let client = try? GLiNetClient(host: device.host, password: { passwords.password(for: id) }) else {
+                routers[id]?.condition = .unreachable
+                return
+            }
+            routerClients[id] = client
+            polls[id] = Task { [weak self] in
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    await self.pollRouter(id)
+                    try? await Task.sleep(for: Self.routerInterval)
+                }
+            }
+        }
+    }
+
+    private func pollDish(_ id: UUID) async {
+        guard let client = dishClients[id] else { return }
+        do {
+            let status = try await client.status()
+            guard dishes[id] != nil else { return }
+            trackers[id]?.succeeded()
+            dishes[id] = StarlinkReading(condition: .online, status: status)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard dishes[id] != nil else { return }
+            trackers[id]?.failed(DeviceFailure(starlink: error))
+            dishes[id]?.condition = trackers[id]?.condition ?? .unreachable
+        }
+    }
+
+    private func pollRouter(_ id: UUID) async {
+        guard let client = routerClients[id] else { return }
+        do {
+            let status = try await client.status()
+            // A failed VPN read keeps the last known state instead of hiding the switch.
+            var vpn = routers[id]?.vpn
+            do { vpn = try await client.vpn() } catch {}
+            guard routers[id] != nil else { return }
+            trackers[id]?.succeeded()
+            routers[id] = RouterReading(condition: .online, status: status, vpn: vpn)
+        } catch is CancellationError {
+            return
+        } catch {
+            guard routers[id] != nil else { return }
+            trackers[id]?.failed(DeviceFailure(glinet: error))
+            routers[id]?.condition = trackers[id]?.condition ?? .unreachable
         }
     }
 }

@@ -24,9 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
 
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
+        let content = NSHostingController(
             rootView: PopoverView(model: model, checkForUpdates: { [updater] in updater.checkForUpdates() })
         )
+        // The popover follows the content's height as pages and device rows change.
+        content.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = content
 
         model.onChange = { [weak self] in self?.renderStatusItem() }
         renderStatusItem()
