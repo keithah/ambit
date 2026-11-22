@@ -73,7 +73,8 @@ private func json(_ text: String) throws -> [String: Any] {
 /// A scripted router: each test registers a handler under its own host name, so tests running
 /// in parallel do not see each other's requests.
 final class FakeRouter: URLProtocol, @unchecked Sendable {
-    typealias Handler = @Sendable (_ method: String, _ params: Any) -> String
+    /// Returns the reply body, or nil to never answer.
+    typealias Handler = @Sendable (_ method: String, _ params: Any) -> String?
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
@@ -106,8 +107,9 @@ final class FakeRouter: URLProtocol, @unchecked Sendable {
         var name = method
         if method == "call", let list = params as? [Any], list.count == 4 { name = "\(list[1]).\(list[2])" }
         Self.lock.withLock { Self.log[host, default: []].append(name) }
+        guard let reply = handler(method, params) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(handler(method, params).utf8))
+        client?.urlProtocol(self, didLoad: Data(reply.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 
@@ -240,6 +242,78 @@ private final class Counter: @unchecked Sendable {
         #expect(FakeRouter.calls(host: host) == ["challenge", "login", "system.get_status", "challenge", "login", "system.get_status"])
     }
 
+    @Test func twoDeniedCallsPolledInTurnDoNotOpenSessionsForever() async throws {
+        let host = "router-denies-two.test"
+        let clock = Box(Date(timeIntervalSince1970: 1_000))
+        let handler = Self.router { _, _, _, _ in #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"# }
+        let router = try GLiNetClient(host: host, password: { "test password" }, session: FakeRouter.session(host: host, handler: handler), now: { clock.value })
+        for _ in 0..<10 {
+            await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
+            await #expect(throws: GLiNetError.accessDenied) { _ = try await router.vpn() }
+        }
+        // One login to start, one retry for each of the two calls, then silence.
+        #expect(FakeRouter.calls(host: host).filter { $0 == "login" }.count == 3)
+        let before = FakeRouter.calls(host: host).count
+        // Later the call is tried again, in case the router changed its mind.
+        clock.value += GLiNetClient.deniedCallDelay + 1
+        await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
+        #expect(FakeRouter.calls(host: host).count > before)
+    }
+
+    @Test func aRefusedChallengeDoesNotCondemnThePassword() async throws {
+        let host = "router-challenge-denied.test"
+        let refuse = Box(true)
+        let inner = Self.router { _, _, _, _ in Self.statusReply }
+        let router = try client(host) { method, params in
+            method == "challenge" && refuse.value ? #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"# : inner(method, params)
+        }
+        await #expect(throws: GLiNetError.rpc(code: -32000, message: "Access denied")) { try await router.status() }
+        refuse.value = false
+        #expect(try await router.status().clientCount == 3)
+    }
+
+    @Test func aLoginThatFailsForAnUnknownReasonIsNotRepeatedAtOnce() async throws {
+        let host = "router-login-garbage.test"
+        let clock = Box(Date(timeIntervalSince1970: 1_000))
+        let broken = Box(true)
+        let inner = Self.router { _, _, _, _ in Self.statusReply }
+        let handler: FakeRouter.Handler = { method, params in
+            method == "login" && broken.value ? #"{"jsonrpc":"2.0","error":{"code":-1,"message":"busy"}}"# : inner(method, params)
+        }
+        let router = try GLiNetClient(host: host, password: { "test password" }, session: FakeRouter.session(host: host, handler: handler), now: { clock.value })
+        for _ in 0..<3 {
+            await #expect(throws: GLiNetError.rpc(code: -1, message: "busy")) { try await router.status() }
+        }
+        #expect(FakeRouter.calls(host: host) == ["challenge", "login"])
+        broken.value = false
+        clock.value += GLiNetClient.loginRetryDelay + 1
+        #expect(try await router.status().clientCount == 3)
+    }
+
+    @Test func aLockoutWithoutAUsableWaitUsesTheDefault() async throws {
+        for (index, data) in [#""data":{"wait":0}"#, #""data":{}"#].enumerated() {
+            let host = "router-lock-default-\(index).test"
+            let clock = Box(Date(timeIntervalSince1970: 1_000))
+            let handler: FakeRouter.Handler = { method, _ in
+                method == "challenge" ? Self.challenge : #"{"jsonrpc":"2.0","error":{"code":-32003,"message":"locked",\#(data)}}"#
+            }
+            let router = try GLiNetClient(host: host, password: { "test password" }, session: FakeRouter.session(host: host, handler: handler), now: { clock.value })
+            await #expect(throws: GLiNetError.self) { try await router.status() }
+            clock.value += GLiNetClient.defaultLockout - 10
+            await #expect(throws: GLiNetError.lockedOut(seconds: 10)) { try await router.status() }
+            #expect(FakeRouter.calls(host: host) == ["challenge", "login"])
+        }
+    }
+
+    @Test func cancellingTheCallerEndsTheCall() async throws {
+        let host = "router-cancelled.test"
+        let router = try GLiNetClient(host: host, password: { "test password" }, session: FakeRouter.session(host: host) { _, _ in nil }, timeout: 1)
+        let task = Task { try await router.status() }
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+        await #expect(throws: (any Error).self) { try await task.value }
+    }
+
     @Test func usesTheOuterHashTheRouterNames() async throws {
         let crypted = "$5$abcdefgh$6tq8p6LhUUVxOuvmdPwyMbL06DwgG.rVrYZ9PbUucj6"
         let expected = SHA256.hash(data: Data("root:\(crypted):n0nce".utf8)).map { String(format: "%02x", $0) }.joined()
@@ -257,10 +331,7 @@ private final class Counter: @unchecked Sendable {
 
     @Test func givesUpAfterTheTimeout() async throws {
         let host = "router-slow.test"
-        let session = FakeRouter.session(host: host) { _, _ in
-            Thread.sleep(forTimeInterval: 2)
-            return Self.challenge
-        }
+        let session = FakeRouter.session(host: host) { _, _ in nil }
         let router = try GLiNetClient(host: host, password: { "test password" }, session: session, timeout: 0.2)
         await #expect(throws: GLiNetError.timedOut) { try await router.status() }
     }

@@ -19,11 +19,17 @@ public actor GLiNetClient {
     // seconds. So a failed login is remembered and not repeated until something has changed.
     private var loginInFlight: Task<String, Error>?
     private var rejectedPassword: SHA256Digest?
+    private var lastPassword: SHA256Digest?
     private var lockedUntil: Date?
-    private var deniedCalls: Set<String> = []
+    private var loginBackoff: (until: Date, error: any Error)?
+    private var deniedCalls: [String: Date] = [:]
 
     /// When the router reports a lockout without saying for how long.
     static let defaultLockout: TimeInterval = 300
+    /// How long a login that failed for an unknown reason is left alone.
+    static let loginRetryDelay: TimeInterval = 60
+    /// How long a call the router refuses is left alone.
+    static let deniedCallDelay: TimeInterval = 300
 
     /// `password` is asked for at each login, so it can come straight from the Keychain.
     /// `timeout` bounds each request as a whole.
@@ -77,7 +83,10 @@ public actor GLiNetClient {
 
     private func call(_ service: String, _ method: String, _ arguments: [String: any Sendable] = [:]) async throws -> [String: Any] {
         let name = "\(service).\(method)"
-        guard !deniedCalls.contains(name) else { throw GLiNetError.accessDenied }
+        if let until = deniedCalls[name] {
+            guard until <= now() else { throw GLiNetError.accessDenied }
+            deniedCalls[name] = nil
+        }
         let used = try await login()
         do {
             return try await send("call", [used, service, method, arguments])
@@ -90,8 +99,9 @@ public actor GLiNetClient {
                 return try await send("call", [fresh, service, method, arguments])
             } catch GLiNetError.rpc(code: Self.accessDenied, _) {
                 // Denied with a brand-new session: the router refuses this call itself. Asking
-                // again would open a new session on every poll.
-                deniedCalls.insert(name)
+                // again would open a new session on every poll, so leave it alone for a while.
+                // If the session was replaced meanwhile, this answer says nothing about the new one.
+                if sessionID == fresh { deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay) }
                 throw GLiNetError.accessDenied
             }
         }
@@ -111,34 +121,57 @@ public actor GLiNetClient {
     private func performLogin() async throws -> String {
         guard let password = password(), !password.isEmpty else { throw GLiNetError.noPassword }
         let digest = SHA256.hash(data: Data(password.utf8))
+        if digest != lastPassword {
+            // A new password is a new situation: forget what the old one was refused.
+            lastPassword = digest
+            loginBackoff = nil
+            deniedCalls = [:]
+        }
         guard digest != rejectedPassword else { throw GLiNetError.wrongPassword }
         if let lockedUntil {
             let remaining = lockedUntil.timeIntervalSince(now())
             guard remaining <= 0 else { throw GLiNetError.lockedOut(seconds: Int(remaining.rounded(.up))) }
             self.lockedUntil = nil
         }
+        if let loginBackoff {
+            guard loginBackoff.until <= now() else { throw loginBackoff.error }
+            self.loginBackoff = nil
+        }
+        // A failed challenge costs nothing on the router, so it is simply reported.
+        let challenge = try await send("challenge", ["username": username])
+        guard let algorithm = (challenge["alg"] as? NSNumber)?.intValue,
+              let scheme = UnixCrypt.Scheme(rawValue: algorithm),
+              let salt = challenge["salt"] as? String,
+              let nonce = challenge["nonce"] as? String else { throw GLiNetError.unexpectedResponse }
+        let hash: String
         do {
-            let challenge = try await send("challenge", ["username": username])
-            guard let algorithm = (challenge["alg"] as? NSNumber)?.intValue,
-                  let scheme = UnixCrypt.Scheme(rawValue: algorithm),
-                  let salt = challenge["salt"] as? String,
-                  let nonce = challenge["nonce"] as? String else { throw GLiNetError.unexpectedResponse }
-            let hash = try Self.loginHash(
+            hash = try Self.loginHash(
                 username: username, password: password, scheme: scheme, salt: salt, nonce: nonce,
                 method: challenge["hash-method"] as? String
             )
+        } catch GLiNetError.wrongPassword {
+            rejectedPassword = digest
+            throw GLiNetError.wrongPassword
+        }
+        // From here the router may count a failed attempt, so no failure is retried at once.
+        do {
             let reply = try await send("login", ["username": username, "hash": hash])
             guard let sid = reply["sid"] as? String, !sid.isEmpty else { throw GLiNetError.unexpectedResponse }
             sessionID = sid
             rejectedPassword = nil
-            deniedCalls = []
             return sid
-        } catch GLiNetError.rpc(code: Self.accessDenied, _), GLiNetError.wrongPassword {
+        } catch GLiNetError.rpc(code: Self.accessDenied, _) {
             rejectedPassword = digest
             throw GLiNetError.wrongPassword
         } catch GLiNetError.lockedOut(let seconds) {
-            lockedUntil = now().addingTimeInterval(seconds.map(TimeInterval.init) ?? Self.defaultLockout)
+            let wait = seconds.flatMap { $0 > 0 ? TimeInterval($0) : nil } ?? Self.defaultLockout
+            lockedUntil = now().addingTimeInterval(wait)
             throw GLiNetError.lockedOut(seconds: seconds)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            loginBackoff = (now().addingTimeInterval(Self.loginRetryDelay), error)
+            throw error
         }
     }
 
