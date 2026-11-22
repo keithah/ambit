@@ -100,8 +100,9 @@ public actor GLiNetClient {
             } catch GLiNetError.rpc(code: Self.accessDenied, _) {
                 // Denied with a brand-new session: the router refuses this call itself. Asking
                 // again would open a new session on every poll, so leave it alone for a while.
-                // If the session was replaced meanwhile, this answer says nothing about the new one.
-                if sessionID == fresh { deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay) }
+                // This holds even if another call replaced the session meanwhile: otherwise two
+                // refused calls polled together would keep opening sessions for each other.
+                deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay)
                 throw GLiNetError.accessDenied
             }
         }

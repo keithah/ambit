@@ -79,6 +79,20 @@ final class FakeRouter: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var handlers: [String: Handler] = [:]
     nonisolated(unsafe) private static var log: [String: [String]] = [:]
+    nonisolated(unsafe) private static var holds: [String: (name: String, occurrence: Int)] = [:]
+    nonisolated(unsafe) private static var held: [String: @Sendable () -> Void] = [:]
+
+    /// Keeps back the reply to the nth request of that name until `release(host:)`.
+    static func hold(host: String, name: String, occurrence: Int) {
+        lock.withLock { holds[host] = (name, occurrence) }
+    }
+
+    static func isHolding(host: String) -> Bool { lock.withLock { held[host] != nil } }
+
+    static func release(host: String) {
+        let deliver = lock.withLock { held.removeValue(forKey: host) }
+        deliver?()
+    }
 
     static func session(host: String, handler: @escaping Handler) -> URLSession {
         lock.withLock { handlers[host] = handler }
@@ -106,11 +120,23 @@ final class FakeRouter: URLProtocol, @unchecked Sendable {
         }
         var name = method
         if method == "call", let list = params as? [Any], list.count == 4 { name = "\(list[1]).\(list[2])" }
-        Self.lock.withLock { Self.log[host, default: []].append(name) }
+        let seen = Self.lock.withLock {
+            Self.log[host, default: []].append(name)
+            return Self.log[host, default: []].filter { $0 == name }.count
+        }
         guard let reply = handler(method, params) else { return }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(reply.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        let deliver: @Sendable () -> Void = { [self] in
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(reply.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        let parked = Self.lock.withLock {
+            guard let hold = Self.holds[host], hold.name == name, hold.occurrence == seen else { return false }
+            Self.holds[host] = nil
+            Self.held[host] = deliver
+            return true
+        }
+        if !parked { deliver() }
     }
 
     private static func read(_ stream: InputStream) -> Data {
@@ -258,6 +284,25 @@ private final class Counter: @unchecked Sendable {
         clock.value += GLiNetClient.deniedCallDelay + 1
         await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
         #expect(FakeRouter.calls(host: host).count > before)
+    }
+
+    @Test func aDenialThatArrivesAfterTheSessionWasReplacedStillStopsTheCall() async throws {
+        let host = "router-denies-late.test"
+        let router = try client(host, Self.router { _, _, _, _ in
+            #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"#
+        })
+        // status() is denied, logs in again, and its retry stays unanswered for now.
+        FakeRouter.hold(host: host, name: "system.get_status", occurrence: 2)
+        async let late: Void = { _ = try? await router.status() }()
+        for _ in 0..<2_000 where !FakeRouter.isHolding(host: host) { try await Task.sleep(for: .milliseconds(1)) }
+        try #require(FakeRouter.isHolding(host: host))
+        // Meanwhile vpn() is denied too and replaces the session.
+        await #expect(throws: GLiNetError.accessDenied) { _ = try await router.vpn() }
+        FakeRouter.release(host: host)
+        await late
+        let before = FakeRouter.calls(host: host)
+        await #expect(throws: GLiNetError.accessDenied) { try await router.status() }
+        #expect(FakeRouter.calls(host: host) == before)
     }
 
     @Test func aRefusedChallengeDoesNotCondemnThePassword() async throws {
