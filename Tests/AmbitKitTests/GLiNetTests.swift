@@ -305,6 +305,24 @@ private final class Counter: @unchecked Sendable {
         #expect(FakeRouter.calls(host: host) == before)
     }
 
+    @Test func aDenialFromBeforeAPasswordChangeIsNotKept() async throws {
+        let host = "router-denies-old-password.test"
+        let password = Box("test password")
+        let handler = Self.router { _, _, _, _ in #"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Access denied"}}"# }
+        let router = try GLiNetClient(host: host, password: { password.value }, session: FakeRouter.session(host: host, handler: handler))
+        FakeRouter.hold(host: host, name: "system.get_status", occurrence: 2)
+        async let late: Void = { _ = try? await router.status() }()
+        for _ in 0..<2_000 where !FakeRouter.isHolding(host: host) { try await Task.sleep(for: .milliseconds(1)) }
+        try #require(FakeRouter.isHolding(host: host))
+        // The password changes while the retry is unanswered; the next login uses the new one.
+        password.value = "another password"
+        await #expect(throws: GLiNetError.wrongPassword) { _ = try await router.vpn() }
+        FakeRouter.release(host: host)
+        await late
+        // The late denial belongs to the old password, so it must not hide the real problem.
+        await #expect(throws: GLiNetError.wrongPassword) { try await router.status() }
+    }
+
     @Test func aRefusedChallengeDoesNotCondemnThePassword() async throws {
         let host = "router-challenge-denied.test"
         let refuse = Box(true)

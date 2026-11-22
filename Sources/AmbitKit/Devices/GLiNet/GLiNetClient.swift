@@ -95,6 +95,7 @@ public actor GLiNetClient {
             // and retry. Another call may already have replaced the session; keep that one.
             if sessionID == used { sessionID = nil }
             let fresh = try await login()
+            let passwordUsed = lastPassword
             do {
                 return try await send("call", [fresh, service, method, arguments])
             } catch GLiNetError.rpc(code: Self.accessDenied, _) {
@@ -102,7 +103,8 @@ public actor GLiNetClient {
                 // again would open a new session on every poll, so leave it alone for a while.
                 // This holds even if another call replaced the session meanwhile: otherwise two
                 // refused calls polled together would keep opening sessions for each other.
-                deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay)
+                // A denial from before a password change says nothing about the new password.
+                if lastPassword == passwordUsed { deniedCalls[name] = now().addingTimeInterval(Self.deniedCallDelay) }
                 throw GLiNetError.accessDenied
             }
         }
