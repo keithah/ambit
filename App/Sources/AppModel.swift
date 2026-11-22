@@ -129,6 +129,10 @@ extension AppModel {
 
     /// Returns a sentence for the user if the device could not be removed.
     func remove(_ id: UUID) -> String? {
+        // The password goes first. Once the device is off the list nothing remembers its ID, so a
+        // password left behind could never be removed. If the list then cannot be saved, the device
+        // stays and asks for its password again.
+        do { try passwords.remove(for: id) } catch { return "Couldn't remove the password from your Keychain." }
         guard save(devices.filter { $0.id != id }) else { return "Couldn't save the device list." }
         polls.removeValue(forKey: id)?.cancel()
         trackers[id] = nil
@@ -137,8 +141,6 @@ extension AppModel {
         routerClients[id] = nil
         dishes[id] = nil
         routers[id] = nil
-        // If this fails the password stays in the Keychain under an ID nothing uses any more.
-        try? passwords.remove(for: id)
         return nil
     }
 

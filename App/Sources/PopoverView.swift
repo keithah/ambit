@@ -47,6 +47,24 @@ struct PopoverView: View {
         LatencyChart(samples: snapshot.internetHistory)
             .frame(height: 56)
         Divider()
+        // The popover grows to fit its content, so a long list would push the footer off the screen.
+        // A short list is laid out as before; a scroll view has no height of its own to grow to.
+        if model.devices.count > Self.rowsBeforeScrolling {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) { deviceRows }
+            }
+            .frame(height: 300)
+            Divider()
+        } else {
+            deviceRows
+        }
+        footer(snapshot)
+    }
+
+    private static let rowsBeforeScrolling = 6
+
+    @ViewBuilder
+    private var deviceRows: some View {
         ForEach(model.devices) { device in
             Button {
                 page = .device(device.id)
@@ -59,7 +77,6 @@ struct PopoverView: View {
             .buttonStyle(.plain)
             Divider()
         }
-        footer(snapshot)
     }
 
     private func titleBar(_ title: String) -> some View {
