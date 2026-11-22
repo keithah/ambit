@@ -15,6 +15,8 @@ struct RouterReading: Equatable {
     var vpn: GLiNetVPN?
     /// False until a VPN read has succeeded, so "no VPN" is not shown for a failed read.
     var vpnKnown = false
+    /// True while VPN reads fail and `vpn` is what the router said earlier.
+    var vpnIsOld = false
 }
 
 @MainActor
@@ -262,7 +264,7 @@ extension AppModel {
             // A failed VPN read keeps the last known state instead of hiding the switch.
             routers[id] = vpnRead
                 ? RouterReading(condition: .online, status: status, vpn: vpn, vpnKnown: true)
-                : RouterReading(condition: .online, status: status, vpn: last.vpn, vpnKnown: last.vpnKnown)
+                : RouterReading(condition: .online, status: status, vpn: last.vpn, vpnKnown: last.vpnKnown, vpnIsOld: last.vpnKnown)
         } catch is CancellationError {
             return
         } catch {

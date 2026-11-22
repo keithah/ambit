@@ -26,6 +26,12 @@ enum DeviceText {
         }
     }
 
+    /// A reading as a whole number. A device may send any number; one too large to show is no reading.
+    static func whole(_ value: Double?) -> String? {
+        guard let value, value.isFinite, abs(value) < 1_000_000 else { return nil }
+        return String(Int(value.rounded()))
+    }
+
     static func megabits(_ bitsPerSecond: Double?) -> String {
         guard let bitsPerSecond else { return "–" }
         let value = bitsPerSecond / 1_000_000
@@ -33,7 +39,7 @@ enum DeviceText {
     }
 
     static func uptime(_ seconds: Double?) -> String {
-        guard let seconds, seconds.isFinite, seconds >= 0 else { return "–" }
+        guard let seconds, seconds.isFinite, seconds >= 0, seconds < 1e10 else { return "–" }
         return Duration.seconds(seconds.rounded()).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
     }
 }

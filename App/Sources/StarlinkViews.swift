@@ -37,7 +37,7 @@ struct StarlinkRow: View {
         if let problem = DeviceText.problem(reading.condition, noun: "dish") { return problem }
         guard let status = reading.status else { return "Online" }
         if let outage = status.outage { return outage.text }
-        return status.latencyMs.map { "Online · \(Int($0.rounded())) ms" } ?? "Online"
+        return DeviceText.whole(status.latencyMs).map { "Online · \($0) ms" } ?? "Online"
     }
 }
 
@@ -57,7 +57,7 @@ struct StarlinkDetail: View {
             HStack(spacing: 8) {
                 tile("Down", DeviceText.megabits(status?.downlinkBps), "Mbps")
                 tile("Up", DeviceText.megabits(status?.uplinkBps), "Mbps")
-                tile("Ping", status?.latencyMs.map { "\(Int($0.rounded()))" } ?? "–", "ms")
+                tile("Ping", DeviceText.whole(status?.latencyMs) ?? "–", "ms")
             }
             DetailLine(label: "State", value: status.map { $0.outage?.text ?? "Online" } ?? "–")
             DetailLine(label: "Obstructed", value: status?.fractionObstructed.map { String(format: "%.1f%% of the time", $0 * 100) } ?? "–")

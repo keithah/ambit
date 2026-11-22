@@ -18,6 +18,7 @@ struct RouterRow: View {
             Spacer()
             if showsReadings, let vpn = reading.vpn {
                 Text(vpn.isOn ? "VPN on" : "VPN off").font(.system(size: 13))
+                    .foregroundStyle(reading.vpnIsOld ? .secondary : .primary)
             }
             Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary).accessibilityHidden(true)
         }
@@ -63,7 +64,7 @@ struct RouterDetail: View {
             DetailLine(label: "Address", value: status?.lanIP ?? device.host)
             Divider()
             if let vpn = reading.vpn {
-                DetailLine(label: "VPN", value: vpnState(vpn))
+                DetailLine(label: reading.vpnIsOld ? "VPN, last known" : "VPN", value: vpnState(vpn))
                 ConfirmedButton(
                     title: vpn.isOn ? "Turn VPN off" : "Turn VPN on",
                     question: vpn.isOn ? "Turn the VPN off? Traffic will go out unprotected." : "Turn the VPN on?"
