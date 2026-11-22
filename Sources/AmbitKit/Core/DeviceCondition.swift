@@ -83,7 +83,7 @@ public struct DeviceHealthTracker: Sendable {
             // Keep the first deadline: later polls report the time that is left, not a new lockout.
             if case .lockedOut(let until) = condition, until > date { return }
             let wait = seconds.flatMap { $0 > 0 ? TimeInterval($0) : nil } ?? Self.defaultLockout
-            condition = .lockedOut(until: date.addingTimeInterval(wait))
+            condition = .lockedOut(until: date.addingTimeInterval(min(wait, 86_400)))
         case .unexpectedReply:
             missed = 0
             condition = .unexpectedReply

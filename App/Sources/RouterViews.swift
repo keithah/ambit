@@ -73,6 +73,7 @@ struct RouterDetail: View {
                 }
                 // If the VPN changes state while the question is open, the question goes away.
                 .id(vpn.isOn)
+                .disabled(model.busy.contains(device.id))
             } else {
                 DetailLine(label: "VPN", value: reading.vpnKnown ? "Not set up on the router" : "–")
             }

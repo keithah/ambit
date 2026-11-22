@@ -456,6 +456,27 @@ private final class Counter: @unchecked Sendable {
         await #expect(throws: GLiNetError.lockedOut(seconds: 290)) { try await router.status() }
     }
 
+    @Test func anAbsurdLockoutWaitIsCappedAndDoesNotCrash() async throws {
+        let router = try client("router-locked-forever.test") { method, _ in
+            method == "challenge" ? Self.challenge : #"{"jsonrpc":"2.0","error":{"code":-32003,"message":"locked","data":{"wait":9223372036854775807}}}"#
+        }
+        await #expect(throws: GLiNetError.lockedOut(seconds: Int.max)) { try await router.status() }
+        // The second call answers from the remembered deadline, which is at most a day away.
+        do {
+            _ = try await router.status()
+            Issue.record("expected a lockout")
+        } catch GLiNetError.lockedOut(let seconds) {
+            #expect((seconds ?? 0) <= Int(GLiNetClient.longestLockout))
+        }
+    }
+
+    @Test func aClientCountThatCannotBeOneIsNoReading() throws {
+        let status = GLiNetStatus(systemStatus: try json(#"{"client":[{"cable_total":1e30,"wireless_total":9223372036854775807}]}"#))
+        #expect(status.clientCount == nil)
+        let mixed = GLiNetStatus(systemStatus: try json(#"{"client":[{"cable_total":-4,"wireless_total":3}]}"#))
+        #expect(mixed.clientCount == 3)
+    }
+
     @Test func logsInAgainWhenTheSessionExpires() async throws {
         let host = "router-expired.test"
         // The router accepts only the second session, as if it restarted after the first login.

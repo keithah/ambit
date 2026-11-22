@@ -28,6 +28,8 @@ final class AppModel {
     private(set) var routers: [UUID: RouterReading] = [:]
     /// Goes up each time the popover closes, so the popover opens on its first page again.
     private(set) var popoverClosures = 0
+    /// Devices with a command under way. Their command buttons are disabled meanwhile.
+    private(set) var busy: Set<UUID> = []
     @ObservationIgnored var onChange: (() -> Void)?
 
     @ObservationIgnored private let monitor = DiagnosisMonitor()
@@ -166,6 +168,8 @@ extension AppModel {
 
     func setVPN(on: Bool, _ id: UUID) async -> String? {
         guard let client = routerClients[id] else { return "This device is no longer in Ambit." }
+        guard busy.insert(id).inserted else { return nil }
+        defer { busy.remove(id) }
         do {
             try await client.setVPN(on: on)
         } catch {
@@ -177,6 +181,8 @@ extension AppModel {
 
     private func dishCommand(_ id: UUID, _ command: (StarlinkClient) async throws -> Void) async -> String? {
         guard let client = dishClients[id] else { return "This device is no longer in Ambit." }
+        guard busy.insert(id).inserted else { return nil }
+        defer { busy.remove(id) }
         do {
             try await command(client)
         } catch {

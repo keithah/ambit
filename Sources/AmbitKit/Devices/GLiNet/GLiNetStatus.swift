@@ -51,8 +51,12 @@ public struct GLiNetStatus: Sendable, Equatable {
         lanIP = system?["lan_ip"] as? String
         uptimeSeconds = (system?["uptime"] as? NSNumber)?.doubleValue
         if let clients = (payload["client"] as? [[String: Any]])?.first {
-            let cable = (clients["cable_total"] as? NSNumber)?.intValue
-            let wireless = (clients["wireless_total"] as? NSNumber)?.intValue
+            // The router may send any number; one that cannot be a client count is no reading.
+            func count(_ key: String) -> Int? {
+                guard let value = (clients[key] as? NSNumber)?.doubleValue, (0...100_000).contains(value) else { return nil }
+                return Int(value)
+            }
+            let cable = count("cable_total"), wireless = count("wireless_total")
             if cable != nil || wireless != nil { clientCount = (cable ?? 0) + (wireless ?? 0) }
         }
     }

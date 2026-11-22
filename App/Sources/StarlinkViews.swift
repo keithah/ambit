@@ -68,6 +68,7 @@ struct StarlinkDetail: View {
             ConfirmedButton(title: "Reboot", question: "Reboot the dish? You'll be offline for a few minutes.") {
                 failure = await model.rebootDish(device.id)
             }
+            .disabled(model.busy.contains(device.id))
             let stowed = status?.stowRequested ?? false
             ConfirmedButton(
                 title: stowed ? "Unstow" : "Stow",
@@ -77,6 +78,7 @@ struct StarlinkDetail: View {
             }
             // If the dish changes state while the question is open, the question goes away.
             .id(stowed)
+            .disabled(model.busy.contains(device.id))
             if let failure {
                 Text(failure).font(.system(size: 11)).foregroundStyle(.red)
             }

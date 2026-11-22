@@ -28,6 +28,8 @@ public actor GLiNetClient {
 
     /// When the router reports a lockout without saying for how long.
     static let defaultLockout: TimeInterval = 300
+    /// No lockout is believed to last longer than this, whatever the router says.
+    static let longestLockout: TimeInterval = 86_400
     /// How long a login that failed for an unknown reason is left alone.
     static let loginRetryDelay: TimeInterval = 60
     /// How long a call the router refuses is left alone.
@@ -187,7 +189,7 @@ public actor GLiNetClient {
             throw GLiNetError.wrongPassword
         } catch GLiNetError.lockedOut(let seconds) {
             let wait = seconds.flatMap { $0 > 0 ? TimeInterval($0) : nil } ?? Self.defaultLockout
-            lockedUntil = now().addingTimeInterval(wait)
+            lockedUntil = now().addingTimeInterval(min(wait, Self.longestLockout))
             throw GLiNetError.lockedOut(seconds: seconds)
         } catch is CancellationError {
             throw CancellationError()
