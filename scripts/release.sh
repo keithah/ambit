@@ -92,7 +92,11 @@ elif [[ "${PUBLISH:-0}" == "1" ]]; then
   # Installed copies are only offered a build number higher than their own. A second version cut
   # from a commit that is already released, or a commit whose time is not later, would publish
   # an update nobody receives. Checked here, before anything is built, tagged or uploaded.
-  if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+  # Status 2 means there is no gh-pages branch yet (first release). Any other failure stops here.
+  LOOKUP=0
+  git ls-remote --exit-code --heads origin gh-pages >/dev/null || LOOKUP=$?
+  [[ "$LOOKUP" == "0" || "$LOOKUP" == "2" ]] || { echo "Could not look up the published appcast."; exit 1; }
+  if [[ "$LOOKUP" == "0" ]]; then
     git fetch --quiet origin gh-pages
     LIVE_BUILD="$(git show origin/gh-pages:appcast.xml 2>/dev/null | feed_build || true)"
     if [[ -n "$LIVE_BUILD" && "$BUILD_NUMBER" -le "$LIVE_BUILD" ]]; then
