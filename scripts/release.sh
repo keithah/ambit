@@ -31,7 +31,10 @@ APP="$DERIVED/Build/Products/Release/Ambit.app"
 DMG="$DIST/Ambit-$VERSION.dmg"
 PROFILE="${AMBIT_NOTARY_PROFILE:-ambit}"
 REPO="keithah/ambit"
-BUILD_NUMBER="$(git rev-list --count HEAD)"
+# The build number is the time of the commit being released, in UTC, as YYYYMMDDHHMM. It is what
+# Sparkle compares, so it must only go up; the version string may stay the same between builds.
+BUILD_NUMBER="$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y%m%d%H%M HEAD)"
+[[ "$BUILD_NUMBER" =~ ^[0-9]{12}$ ]] || { echo "Could not read the commit time for the build number."; exit 1; }
 
 RELEASE_ENV="${AMBIT_RELEASE_ENV:-$HOME/.config/ambit-signing/release.env}"
 if [[ -r "$RELEASE_ENV" ]]; then

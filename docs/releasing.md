@@ -8,7 +8,9 @@ PUBLISH=1 make release VERSION=0.1.0   # the same, then tag, GitHub release, pus
 ```
 
 - `SKIP_NOTARIZE=1` stops after signing, to test the pipeline without Apple's service.
-- The build number is the commit count. The working tree must be clean.
+- The build number is the commit's time in UTC (`YYYYMMDDHHMM`); `make build` uses the current time. The
+  working tree must be clean.
+- The version stays at 0.1.0 until Keith calls a release. The build number tells builds apart.
 - `PUBLISH=1` requires `HEAD` to equal `origin/main`.
 - A failed publish can be re-run. A version whose DMG is already on GitHub is never rebuilt; the
   retry reuses the published bytes and only finishes the missing steps.

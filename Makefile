@@ -7,7 +7,7 @@ gen:
 
 build: gen
 	xcodebuild -project Ambit.xcodeproj -scheme Ambit -configuration Debug \
-		-derivedDataPath $(DERIVED) -quiet build
+		-derivedDataPath $(DERIVED) CURRENT_PROJECT_VERSION=$$(date -u +%Y%m%d%H%M) -quiet build
 
 test:
 	swift test
