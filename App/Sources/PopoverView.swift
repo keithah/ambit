@@ -1,5 +1,4 @@
 import AmbitKit
-import Charts
 import SwiftUI
 
 struct PopoverView: View {
@@ -23,6 +22,7 @@ struct PopoverView: View {
                     switch device.kind {
                     case .starlink: StarlinkDetail(model: model, device: device) { page = .main }
                     case .glinet: RouterDetail(model: model, device: device) { page = .main }
+                    case .ping: PingDetail(model: model, device: device) { page = .main }
                     }
                 } else {
                     main
@@ -44,8 +44,7 @@ struct PopoverView: View {
         Text(hopLine(snapshot))
             .font(.system(size: 11).monospacedDigit())
             .foregroundStyle(.secondary)
-        LatencyChart(samples: snapshot.internetHistory)
-            .frame(height: 56)
+        HistoryChart(model: model, device: nil, label: "Internet latency", recent: snapshot.internetHistory)
         Divider()
         // The popover grows to fit its content, so a long list would push the footer off the screen.
         // A short list is laid out as before; a scroll view has no height of its own to grow to.
@@ -72,6 +71,7 @@ struct PopoverView: View {
                 switch device.kind {
                 case .starlink: StarlinkRow(device: device, reading: model.dishes[device.id] ?? StarlinkReading())
                 case .glinet: RouterRow(device: device, reading: model.routers[device.id] ?? RouterReading())
+                case .ping: PingRow(device: device, reading: model.pings[device.id] ?? PingReading())
                 }
             }
             .buttonStyle(.plain)
@@ -154,35 +154,5 @@ struct PopoverView: View {
         }
         return [reading("Router", snapshot.router), reading("Internet", snapshot.internet), reading("DNS", snapshot.dns)]
             .joined(separator: " · ")
-    }
-}
-
-/// Internet latency over the retained window; failed probes are drawn as red rules.
-private struct LatencyChart: View {
-    let samples: [ProbeSample]
-
-    var body: some View {
-        Chart {
-            ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
-                if let ms = sample.latencyMs {
-                    LineMark(x: .value("Time", sample.date), y: .value("Latency", ms))
-                        .foregroundStyle(.green)
-                        .interpolationMethod(.monotone)
-                } else {
-                    RuleMark(x: .value("Time", sample.date))
-                        .foregroundStyle(.red.opacity(0.6))
-                }
-            }
-        }
-        .chartXAxis(.hidden)
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: .automatic(desiredCount: 2)) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let ms = value.as(Double.self) { Text("\(Int(ms)) ms").font(.system(size: 9)) }
-                }
-            }
-        }
-        .accessibilityLabel("Internet latency, last 30 minutes")
     }
 }

@@ -276,6 +276,25 @@ private actor SwitchingGateway: GatewayFinding {
         #expect(snapshot.internetHistory.count == 3)
     }
 
+    @Test func earlierSamplesGoOnTheGraphButNotIntoTheVerdict() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(latencyMs: 20)),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        let earlier = (0..<4).map { ProbeSample(date: Date(timeIntervalSinceNow: -600 + Double($0)), failure: .timeout) }
+        await monitor.seed(history: earlier)
+        let snapshot = await monitor.runCycle()
+        #expect(snapshot.internetHistory.count == 5)
+        #expect(snapshot.internetHistory.first == earlier.first)
+        #expect(snapshot.internet.sampleCount == 1)
+        #expect(snapshot.verdict == .online)
+        // Once there are samples, seeding again changes nothing.
+        await monitor.seed(history: earlier)
+        #expect(await monitor.runCycle().internetHistory.count == 6)
+    }
+
     @Test func gatewayChangeResetsDiagnosisButKeepsChart() async {
         let gateway = SwitchingGateway()
         let monitor = DiagnosisMonitor(

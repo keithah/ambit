@@ -76,6 +76,14 @@ public actor DiagnosisMonitor {
         }
     }
 
+    /// Puts earlier samples, oldest first, on the graph before the first probe. Used at launch
+    /// with what the last run stored. Does nothing once there are samples.
+    public func seed(history: [ProbeSample]) {
+        guard chartHistory.isEmpty else { return }
+        chartHistory = Array(history.suffix(config.historyLimit))
+        snapshot.internetHistory = chartHistory
+    }
+
     public func start() {
         guard loop == nil else { return }
         loop = Task { [weak self] in
