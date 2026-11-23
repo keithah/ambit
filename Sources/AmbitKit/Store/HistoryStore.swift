@@ -18,11 +18,11 @@ public struct HistoryBucket: Sendable, Equatable {
 }
 
 extension HistoryBucket {
-    /// The stretch as one point on a graph: its mean latency, or a failure when at least half
-    /// of its probes got no reply.
-    public var sample: ProbeSample {
-        if let averageMs, failures * 2 < count { return ProbeSample(date: start, latencyMs: averageMs) }
-        return ProbeSample(date: start, failure: .unknown)
+    /// The stretch as one point on a graph, placed at `date`: its mean latency, or a failure
+    /// when at least half of its probes got no reply.
+    public func sample(at date: Date) -> ProbeSample {
+        if let averageMs, failures * 2 < count { return ProbeSample(date: date, latencyMs: averageMs) }
+        return ProbeSample(date: date, failure: .unknown)
     }
 }
 
@@ -39,7 +39,12 @@ extension Array where Element == ProbeSample {
 }
 
 public struct HistoryError: Error, Equatable {
+    /// The SQLite result code.
+    public var code: Int32
     public var message: String
+
+    /// True when the file is there but is not a database SQLite can read.
+    public var fileIsNotADatabase: Bool { code == SQLITE_NOTADB || code == SQLITE_CORRUPT }
 }
 
 /// Latency samples in one SQLite file, kept for a day. A sample without a value is a probe that
@@ -67,7 +72,7 @@ public actor HistoryStore {
         try connection.run("DELETE FROM sample WHERE ts < ?", [.number(Date().timeIntervalSince1970 - Self.keep)])
     }
 
-    /// `~/Library/Application Support/Ambit/samples.sqlite`. A file that cannot be used is
+    /// `~/Library/Application Support/Ambit/samples.sqlite`. A file that is not a database is
     /// replaced by an empty one.
     public static func standard() throws -> HistoryStore {
         let folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -77,7 +82,9 @@ public actor HistoryStore {
     static func open(replacingIfUnusable url: URL) throws -> HistoryStore {
         do {
             return try HistoryStore(url: url)
-        } catch {
+        } catch let error as HistoryError where error.fileIsNotADatabase {
+            // Any other failure (a locked file, a full disk, no permission) leaves the file alone:
+            // it may be healthy, and another copy of Ambit may be using it.
             for suffix in ["", "-wal", "-shm"] {
                 try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
             }
@@ -165,7 +172,7 @@ private final class Connection: @unchecked Sendable {
         guard status == SQLITE_OK, let handle else {
             let message = handle.map { String(cString: sqlite3_errmsg($0)) } ?? "could not open"
             sqlite3_close(handle)
-            throw HistoryError(message: message)
+            throw HistoryError(code: status, message: message)
         }
         db = handle
         sqlite3_busy_timeout(db, 2_000)
@@ -203,6 +210,7 @@ private final class Connection: @unchecked Sendable {
     }
 
     private func failure() -> HistoryError {
-        HistoryError(message: String(cString: sqlite3_errmsg(db)))
+        // The primary code: SQLITE_CORRUPT rather than one of its extended forms.
+        HistoryError(code: sqlite3_errcode(db) & 0xFF, message: String(cString: sqlite3_errmsg(db)))
     }
 }

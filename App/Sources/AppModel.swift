@@ -21,8 +21,11 @@ struct RouterReading: Equatable {
 
 struct PingReading: Equatable {
     var condition = DeviceCondition.loading
-    /// The last half hour, oldest first. A sample without a latency got no reply.
+    /// This run's samples, at most the last half hour, oldest first. A sample without a latency
+    /// got no reply.
     var samples: [ProbeSample] = []
+    /// Samples an earlier run stored. They are drawn on the graph and counted nowhere.
+    var earlier: [ProbeSample] = []
 }
 
 @MainActor
@@ -53,6 +56,11 @@ final class AppModel {
     /// Nil when the history file cannot be used: graphs then show this run only.
     @ObservationIgnored private let history = try? HistoryStore.standard()
     @ObservationIgnored private let pingProbe = ICMPProbe()
+    /// Internet samples up to this time are already stored.
+    @ObservationIgnored private var storedThrough = Date()
+
+    /// False when there is no stored history, so there is no 24-hour graph to offer.
+    var hasHistory: Bool { history != nil }
     @ObservationIgnored private var polls: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var trackers: [UUID: DeviceHealthTracker] = [:]
     @ObservationIgnored private var dishClients: [UUID: StarlinkClient] = [:]
@@ -90,6 +98,7 @@ final class AppModel {
             let earlier = try? await history?.samples(
                 device: HistoryStore.connection, series: Self.latencySeries, since: Date().addingTimeInterval(-Self.graphSpan)
             )
+            if let last = earlier?.last?.date, let self { self.storedThrough = max(self.storedThrough, last) }
             await monitor.seed(history: earlier ?? [])
             await monitor.start()
             for await next in await monitor.snapshots() {
@@ -99,9 +108,10 @@ final class AppModel {
     }
 
     private func apply(_ next: DiagnosisSnapshot) {
-        // Each probe cycle adds one sample; a snapshot without a new cycle adds none.
-        if next.updated != nil, next.updated != snapshot.updated, let sample = next.internetHistory.last {
+        // Usually one new sample. More when a snapshot was skipped because this actor was busy.
+        for sample in next.internetHistory.reversed().prefix(while: { $0.date > storedThrough }).reversed() {
             record(sample, device: HistoryStore.connection)
+            storedThrough = sample.date
         }
         snapshot = next
         onChange?()
@@ -125,7 +135,9 @@ extension AppModel {
     /// Adds a device and starts reading it. Returns a sentence for the user if it could not.
     func add(kind: DeviceKind, host rawHost: String, password: String?) -> String? {
         let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !devices.contains(where: { $0.kind == kind && $0.host == host }) else { return "That device is already added." }
+        guard !devices.contains(where: { $0.kind == kind && $0.host.lowercased() == host.lowercased() }) else {
+            return "That device is already added."
+        }
         let device: SavedDevice
         switch kind {
         case .starlink:
@@ -135,7 +147,10 @@ extension AppModel {
             guard (try? GLiNetClient(host: host, password: { nil })) != nil else { return "That is not an address Ambit can use." }
             device = SavedDevice(kind: kind, name: "Router", host: host)
         case .ping:
-            guard ProbeTarget.isValidHost(host) else { return "That is not an address Ambit can ping." }
+            // `/sbin/ping` is IPv4 only, so an IPv6 address would never answer.
+            guard ProbeTarget.isValidHost(host), !host.contains(":") else {
+                return "Ambit can ping a name or an IPv4 address, such as 9.9.9.9."
+            }
             device = SavedDevice(kind: kind, name: host, host: host)
         }
         if let password, !password.isEmpty {
@@ -270,9 +285,7 @@ extension AppModel {
                 let earlier = try? await history?.samples(
                     device: id.uuidString, series: Self.latencySeries, since: Date().addingTimeInterval(-Self.graphSpan)
                 )
-                if let earlier, let self, self.pings[id]?.samples.isEmpty == true {
-                    self.pings[id]?.samples = Array(earlier.suffix(Self.samplesKept))
-                }
+                if let earlier, let self { self.pings[id]?.earlier = Array(earlier.suffix(Self.samplesKept)) }
                 while !Task.isCancelled {
                     guard let self else { return }
                     await self.pollPing(id, host: host)
@@ -292,7 +305,8 @@ extension AppModel {
             device: device?.uuidString ?? HistoryStore.connection, series: Self.latencySeries,
             since: Date().addingTimeInterval(-86_400), seconds: Self.dayBucket
         )
-        return (buckets ?? []).map(\.sample)
+        // Each point sits in the middle of its five minutes.
+        return (buckets ?? []).map { $0.sample(at: $0.start.addingTimeInterval(Double(Self.dayBucket) / 2)) }
     }
 
     private func record(_ sample: ProbeSample, device: String) {

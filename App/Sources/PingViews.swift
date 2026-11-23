@@ -42,7 +42,7 @@ struct PingDetail: View {
             if let problem = PingText.problem(reading.condition) {
                 Text(problem).font(.system(size: 13)).foregroundStyle(DeviceText.color(reading.condition))
             }
-            HistoryChart(model: model, device: device.id, label: "Latency to \(device.name)", recent: reading.samples)
+            HistoryChart(model: model, device: device.id, label: "Latency to \(device.name)", recent: reading.earlier + reading.samples)
             DetailLine(label: "Latency", value: PingText.latency(reading).map { "\($0) ms" } ?? "–")
             DetailLine(
                 label: "No reply",

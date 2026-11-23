@@ -88,10 +88,29 @@ import Testing
         #expect(try await store.samples(device: "a", series: "latency", since: start).count == 1)
     }
 
+    @Test func aDatabaseThatCannotBeWrittenIsLeftAlone() async throws {
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        do {
+            let store = try HistoryStore(url: url)
+            try await store.record(device: "a", series: "latency", sample: ProbeSample(date: start, latencyMs: 3))
+        }
+        // Fold the write-ahead log into the file, then make the file read-only.
+        for suffix in ["-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
+        let before = try Data(contentsOf: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)
+
+        #expect(throws: HistoryError.self) { try HistoryStore.open(replacingIfUnusable: url) }
+        #expect(try Data(contentsOf: url) == before)
+    }
+
     @Test func aBucketIsAFailureOnTheGraphWhenHalfItsProbesGotNoReply() {
-        #expect(HistoryBucket(start: start, averageMs: 20, failures: 1, count: 3).sample == ProbeSample(date: start, latencyMs: 20))
-        #expect(HistoryBucket(start: start, averageMs: 20, failures: 2, count: 4).sample.succeeded == false)
-        #expect(HistoryBucket(start: start, averageMs: nil, failures: 1, count: 1).sample.succeeded == false)
+        let middle = start + 150
+        #expect(HistoryBucket(start: start, averageMs: 20, failures: 1, count: 3).sample(at: middle) == ProbeSample(date: middle, latencyMs: 20))
+        #expect(HistoryBucket(start: start, averageMs: 20, failures: 2, count: 4).sample(at: middle).succeeded == false)
+        #expect(HistoryBucket(start: start, averageMs: nil, failures: 1, count: 1).sample(at: middle).succeeded == false)
     }
 
     @Test func aPauseStartsANewRun() {

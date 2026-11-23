@@ -20,12 +20,18 @@ struct HistoryChart: View {
         let end = Date()
         let start = end.addingTimeInterval(showsDay ? -86_400 : -AppModel.graphSpan)
         let samples = (showsDay ? day : recent).filter { $0.date >= start && $0.date <= end }
-        // A pause of more than a few samples is a gap, not a line.
-        let runs = samples.runs(brokenBy: showsDay ? 900 : 60)
+        // A pause is a gap, not a line: a few missed samples, or five minutes with none at all.
+        let runs = samples.runs(brokenBy: showsDay ? 450 : 60)
+        let answered = Dictionary(grouping: samples.indices.filter { samples[$0].succeeded }, by: { runs[$0] }).mapValues(\.count)
         VStack(alignment: .trailing, spacing: 4) {
             Chart {
                 ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
-                    if let ms = sample.latencyMs {
+                    if let ms = sample.latencyMs, answered[runs[index]] == 1 {
+                        // A line needs two points; a lone sample is a dot.
+                        PointMark(x: .value("Time", sample.date), y: .value("Latency", ms))
+                            .foregroundStyle(.green)
+                            .symbolSize(8)
+                    } else if let ms = sample.latencyMs {
                         LineMark(x: .value("Time", sample.date), y: .value("Latency", ms), series: .value("Run", runs[index]))
                             .foregroundStyle(.green)
                             .interpolationMethod(.monotone)
@@ -47,18 +53,24 @@ struct HistoryChart: View {
             }
             .frame(height: 56)
             .accessibilityLabel("\(label), last \(showsDay ? "24 hours" : "30 minutes")")
-            Picker("Graph covers", selection: $showsDay) {
-                Text("30 min").tag(false)
-                Text("24 h").tag(true)
+            if model.hasHistory {
+                Picker("Graph covers", selection: $showsDay) {
+                    Text("30 min").tag(false)
+                    Text("24 h").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .labelsHidden()
+                .fixedSize()
             }
-            .pickerStyle(.segmented)
-            .controlSize(.mini)
-            .labelsHidden()
-            .fixedSize()
         }
-        // Read again each time the 24-hour graph is chosen and each time the popover opens.
-        .task(id: [showsDay ? 1 : 0, model.popoverClosures]) {
-            if showsDay { day = await model.dayHistory(device: device) }
+        // While the 24-hour graph is chosen it is read again every minute, so it is current when
+        // the popover is opened again.
+        .task(id: showsDay) {
+            while showsDay, !Task.isCancelled {
+                day = await model.dayHistory(device: device)
+                try? await Task.sleep(for: .seconds(60))
+            }
         }
     }
 }
