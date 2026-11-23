@@ -31,7 +31,10 @@ APP="$DERIVED/Build/Products/Release/Ambit.app"
 DMG="$DIST/Ambit-$VERSION.dmg"
 PROFILE="${AMBIT_NOTARY_PROFILE:-ambit}"
 REPO="keithah/ambit"
-BUILD_NUMBER="$(git rev-list --count HEAD)"
+# The build number is the time of the commit being released, in UTC, as YYYYMMDDHHMM. It is what
+# Sparkle compares, so it must only go up; the version string may stay the same between builds.
+BUILD_NUMBER="$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y%m%d%H%M HEAD)"
+[[ "$BUILD_NUMBER" =~ ^[0-9]{12}$ ]] || { echo "Could not read the commit time for the build number."; exit 1; }
 
 RELEASE_ENV="${AMBIT_RELEASE_ENV:-$HOME/.config/ambit-signing/release.env}"
 if [[ -r "$RELEASE_ENV" ]]; then
@@ -62,6 +65,9 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo "Working tree is dirty. Commit first so the release matches a commit."; exit 1
 fi
 
+# The highest build number in an appcast, read from the named file or from standard input.
+feed_build() { sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<\/sparkle:version>.*/\1/p' "$@" | sort -n | tail -1; }
+
 # A version whose DMG is already published is never rebuilt: its bytes are what the appcast
 # signature must match. A retry reuses the published DMG and only finishes the missing steps.
 ASSET="Ambit-$VERSION.dmg"
@@ -78,11 +84,25 @@ if [[ "${PUBLISH:-0}" == "1" ]] && gh release view "v$VERSION" --repo "$REPO" --
   [[ "$SIGNED_BY" == "$TEAM" ]] || { echo "Published DMG is not signed by team $TEAM."; exit 1; }
 elif [[ "${PUBLISH:-0}" == "1" ]]; then
   # A new published build must be exactly what is on origin/main; the build number (commit
-  # count) is only monotonic along main. A retry of an already published version skips this,
+  # time) only goes up along main. A retry of an already published version skips this,
   # because main may have moved on since.
   git fetch --quiet origin main
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
     || { echo "PUBLISH=1 requires HEAD to equal origin/main."; exit 1; }
+  # Installed copies are only offered a build number higher than their own. A second version cut
+  # from a commit that is already released, or a commit whose time is not later, would publish
+  # an update nobody receives. Checked here, before anything is built, tagged or uploaded.
+  # Status 2 means there is no gh-pages branch yet (first release). Any other failure stops here.
+  LOOKUP=0
+  git ls-remote --exit-code --heads origin gh-pages >/dev/null || LOOKUP=$?
+  [[ "$LOOKUP" == "0" || "$LOOKUP" == "2" ]] || { echo "Could not look up the published appcast."; exit 1; }
+  if [[ "$LOOKUP" == "0" ]]; then
+    git fetch --quiet origin gh-pages
+    LIVE_BUILD="$(git show origin/gh-pages:appcast.xml 2>/dev/null | feed_build || true)"
+    if [[ -n "$LIVE_BUILD" && "$BUILD_NUMBER" -le "$LIVE_BUILD" ]]; then
+      echo "Build $BUILD_NUMBER is not newer than published build $LIVE_BUILD. Release from a newer commit."; exit 1
+    fi
+  fi
 fi
 
 STAGE="$(mktemp -d)"
@@ -201,7 +221,6 @@ else
   git worktree add --orphan -B gh-pages "$PAGES"
 fi
 # A retry of an older version must never replace a feed that already offers a newer build.
-feed_build() { sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<\/sparkle:version>.*/\1/p' "$1" | sort -n | tail -1; }
 if [[ -f "$PAGES/appcast.xml" ]]; then
   PUBLISHED_BUILD="$(feed_build "$PAGES/appcast.xml")"
   CANDIDATE_BUILD="$(feed_build "$DIST/appcast.xml")"
