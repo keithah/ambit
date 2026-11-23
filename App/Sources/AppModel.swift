@@ -26,6 +26,8 @@ struct PingReading: Equatable {
     var samples: [ProbeSample] = []
     /// Samples an earlier run stored. They are drawn on the graph and counted nowhere.
     var earlier: [ProbeSample] = []
+    /// Whether the last answer came from an address on the internet. Nil until there is an answer.
+    var answersFromTheInternet: Bool?
 }
 
 @MainActor
@@ -183,6 +185,7 @@ extension AppModel {
         dishes[id] = nil
         routers[id] = nil
         pings[id] = nil
+        Task { [monitor] in await monitor.forget(target: id.uuidString) }
         if let history {
             Task { try? await history.remove(device: id.uuidString) }
         }
@@ -325,7 +328,14 @@ extension AppModel {
         if let count = pings[id]?.samples.count, count > Self.samplesKept {
             pings[id]?.samples.removeFirst(count - Self.samplesKept)
         }
+        if let address = sample.answeredFrom {
+            pings[id]?.answersFromTheInternet = ProbeTarget.isOnTheInternet(ipv4: address)
+        }
         record(sample, device: id.uuidString)
+        // An answer from the internet is evidence for the diagnosis.
+        await monitor.report(sample, fromTarget: id.uuidString)
+        // The target may have been removed while that was under way.
+        if pings[id] == nil { await monitor.forget(target: id.uuidString) }
     }
 
     private func startPoll(_ id: UUID) -> Int {

@@ -49,9 +49,11 @@ struct PingDetail: View {
                 value: stats.sampleCount == 0 ? "–" : "\(Int((stats.lossFraction * Double(stats.sampleCount)).rounded())) of the last \(stats.sampleCount)"
             )
             DetailLine(label: "Address", value: device.host)
-            Text("A ping target is shown here only. It does not change what Ambit says about your connection.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let note = PingText.note(reading) {
+                Text(note)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let failure {
                 Text(failure).font(.system(size: 11)).foregroundStyle(.red)
             }
@@ -75,6 +77,15 @@ private enum PingText {
         switch condition {
         case .unreachable: "No reply. The address may be wrong, or it may not answer pings."
         default: DeviceText.problem(condition, noun: "ping target")
+        }
+    }
+
+    /// What this target tells Ambit about the connection.
+    static func note(_ reading: PingReading) -> String? {
+        switch reading.answersFromTheInternet {
+        case true?: "This address is on the internet. While it answers, Ambit knows the internet is reachable."
+        case false?: "This address is on a local network, so it does not tell Ambit whether the internet is reachable."
+        case nil: nil
         }
     }
 

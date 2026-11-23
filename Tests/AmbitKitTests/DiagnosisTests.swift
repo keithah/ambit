@@ -127,6 +127,22 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         #expect(ICMPProbe.parseLatencyMs("Request timeout for icmp_seq 0") == nil)
     }
 
+    @Test func readsTheAddressAPingWasAnsweredFrom() {
+        #expect(ICMPProbe.parseAnsweringAddress("PING one.one.one.one (1.1.1.1): 56 data bytes\n64 bytes from 1.0.0.1: icmp_seq=0 ttl=57 time=12.345 ms\n") == "1.0.0.1")
+        #expect(ICMPProbe.parseAnsweringAddress("Request timeout for icmp_seq 0") == nil)
+    }
+
+    @Test func onlyPublicAddressesAreOnTheInternet() {
+        for address in ["1.1.1.1", "9.9.9.9", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "192.167.1.1", "223.255.255.1"] {
+            #expect(ProbeTarget.isOnTheInternet(ipv4: address), "\(address)")
+        }
+        for address in ["10.0.0.2", "192.168.8.1", "192.168.100.1", "172.16.0.1", "172.31.255.1", "127.0.0.1", "169.254.1.1",
+                        "100.64.0.1", "100.127.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255",
+                        "", "1.1.1", "1.1.1.1.1", "1.1.1.256", "a.b.c.d", "1.1.1.-1", "2606:4700::1111", "example.com"] {
+            #expect(!ProbeTarget.isOnTheInternet(ipv4: address), "\(address)")
+        }
+    }
+
     @Test func classifiesPingFailures() {
         #expect(ICMPProbe.classify(ProcessResult(exitCode: 68, stdout: "", stderr: "ping: cannot resolve nope: Unknown host")) == .dns)
         #expect(ICMPProbe.classify(ProcessResult(exitCode: 2, stdout: "", stderr: "ping: sendto: No route to host")) == .unreachable)
@@ -294,6 +310,52 @@ private actor SwitchingGateway: GatewayFinding {
         // Once there are samples, seeding again changes nothing.
         await monitor.seed(history: earlier)
         #expect(await monitor.runCycle().internetHistory.count == 6)
+    }
+
+    @Test func aPingTargetOnTheInternetThatAnswersShowsTheInternetIsReachable() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(failure: .timeout)),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        func answer(from address: String?, age: TimeInterval = 0) -> ProbeSample {
+            var sample = ProbeSample(date: Date(timeIntervalSinceNow: -age), latencyMs: 40)
+            sample.answeredFrom = address
+            return sample
+        }
+        // Nothing reported: the built-in targets fail.
+        #expect(await monitor.runCycle().internet.lastMs == nil)
+        // An answer from a local address, or from an unknown one, shows nothing.
+        await monitor.report(answer(from: "192.168.8.20"), fromTarget: "nas")
+        await monitor.report(answer(from: nil), fromTarget: "unknown")
+        #expect(await monitor.runCycle().internet.lastMs == nil)
+        // An answer from the internet counts.
+        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        #expect(await monitor.runCycle().internet.lastMs == 40)
+        // An old answer does not.
+        await monitor.report(answer(from: "9.9.9.9", age: 60), fromTarget: "quad9")
+        #expect(await monitor.runCycle().internet.lastMs == nil)
+        // Neither does a target that stopped answering, or one that was removed.
+        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        await monitor.report(ProbeSample(failure: .timeout), fromTarget: "quad9")
+        #expect(await monitor.runCycle().internet.lastMs == nil)
+        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        await monitor.forget(target: "quad9")
+        #expect(await monitor.runCycle().internet.lastMs == nil)
+    }
+
+    @Test func aPingTargetDoesNotReplaceABuiltInAnswer() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(latencyMs: 80)),
+            dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
+        )
+        var sample = ProbeSample(latencyMs: 2)
+        sample.answeredFrom = "9.9.9.9"
+        await monitor.report(sample, fromTarget: "quad9")
+        #expect(await monitor.runCycle().internet.lastMs == 80)
     }
 
     @Test func gatewayChangeResetsDiagnosisButKeepsChart() async {

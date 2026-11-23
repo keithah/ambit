@@ -46,6 +46,8 @@ public actor DiagnosisMonitor {
     /// Chart history survives a network change; the diagnosis windows above do not.
     private var chartHistory: [ProbeSample] = []
     private var routerHasAnswered = false
+    /// The latest answer from each ping target that is on the internet, by the target's name.
+    private var targetAnswers: [String: ProbeSample] = [:]
     private var inFlight: Task<DiagnosisSnapshot, Never>?
     private var generation = 0
     private var snapshot = DiagnosisSnapshot()
@@ -84,6 +86,22 @@ public actor DiagnosisMonitor {
         guard chartHistory.isEmpty else { return }
         chartHistory = Array(history.suffix(config.historyLimit))
         snapshot.internetHistory = chartHistory
+    }
+
+    /// Takes a ping target's latest sample as evidence about the internet. An answer from an
+    /// address on the internet shows the internet is reachable, so the next cycles count it when
+    /// none of the built-in targets answers. A target that does not answer, or answers from a
+    /// local address, shows nothing either way: it may be switched off, or on this network.
+    public func report(_ sample: ProbeSample, fromTarget name: String) {
+        if sample.succeeded, let address = sample.answeredFrom, ProbeTarget.isOnTheInternet(ipv4: address) {
+            targetAnswers[name] = sample
+        } else {
+            targetAnswers[name] = nil
+        }
+    }
+
+    public func forget(target name: String) {
+        targetAnswers[name] = nil
     }
 
     public func start() {
@@ -183,6 +201,12 @@ public actor DiagnosisMonitor {
             return collected
         }
         if let best = samples.compactMap(\.latencyMs).min() {
+            return ProbeSample(latencyMs: best)
+        }
+        // Ping targets are pinged on their own schedule; only a recent answer counts.
+        let now = Date()
+        let recent = targetAnswers.values.filter { abs(now.timeIntervalSince($0.date)) <= config.interval * 3 }
+        if let best = recent.compactMap(\.latencyMs).min() {
             return ProbeSample(latencyMs: best)
         }
         return ProbeSample(failure: samples.first?.failure ?? .unknown)
