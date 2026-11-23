@@ -10,7 +10,9 @@ PUBLISH=1 make release VERSION=0.1.0   # the same, then tag, GitHub release, pus
 - `SKIP_NOTARIZE=1` stops after signing, to test the pipeline without Apple's service.
 - The build number is the commit's time in UTC (`YYYYMMDDHHMM`); `make build` uses the current time. The
   working tree must be clean.
-- The version stays at 0.1.0 until Keith calls a release. The build number tells builds apart.
+- The version stays at 0.1.0 until Keith calls a release. The build number tells builds apart. Until
+  then nothing new can be published: `PUBLISH=1` with 0.1.0 reuses the DMG already on GitHub, and
+  the `v0.1.0` tag is on an older commit. Local builds (`make release VERSION=0.1.0`) still work.
 - `PUBLISH=1` requires `HEAD` to equal `origin/main`.
 - A failed publish can be re-run. A version whose DMG is already on GitHub is never rebuilt; the
   retry reuses the published bytes and only finishes the missing steps.
@@ -56,4 +58,4 @@ deploy from branch `gh-pages`, root).
 2026-11-21: v0.1.0 published with `PUBLISH=1` from `main`. The DMG on GitHub is universal, signed with
 Developer ID and hardened runtime, notarized (`Accepted`), stapled, and accepted by Gatekeeper after
 download. Pages serves the appcast (GitHub enabled it when `gh-pages` was first pushed). Not yet done:
-an update from one installed version to the next, which needs a second release.
+an update from one installed version to the next, which needs a second published release under a new version.

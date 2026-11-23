@@ -81,7 +81,7 @@ if [[ "${PUBLISH:-0}" == "1" ]] && gh release view "v$VERSION" --repo "$REPO" --
   [[ "$SIGNED_BY" == "$TEAM" ]] || { echo "Published DMG is not signed by team $TEAM."; exit 1; }
 elif [[ "${PUBLISH:-0}" == "1" ]]; then
   # A new published build must be exactly what is on origin/main; the build number (commit
-  # count) is only monotonic along main. A retry of an already published version skips this,
+  # time) only goes up along main. A retry of an already published version skips this,
   # because main may have moved on since.
   git fetch --quiet origin main
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
