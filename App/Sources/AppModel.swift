@@ -56,8 +56,8 @@ final class AppModel {
     /// Nil when the history file cannot be used: graphs then show this run only.
     @ObservationIgnored private let history = try? HistoryStore.standard()
     @ObservationIgnored private let pingProbe = ICMPProbe()
-    /// Internet samples up to this time are already stored.
-    @ObservationIgnored private var storedThrough = Date()
+    /// The samples of this many probe cycles are already stored.
+    @ObservationIgnored private var storedCycles = 0
 
     /// False when there is no stored history, so there is no 24-hour graph to offer.
     var hasHistory: Bool { history != nil }
@@ -98,7 +98,6 @@ final class AppModel {
             let earlier = try? await history?.samples(
                 device: HistoryStore.connection, series: Self.latencySeries, since: Date().addingTimeInterval(-Self.graphSpan)
             )
-            if let last = earlier?.last?.date, let self { self.storedThrough = max(self.storedThrough, last) }
             await monitor.seed(history: earlier ?? [])
             await monitor.start()
             for await next in await monitor.snapshots() {
@@ -109,10 +108,11 @@ final class AppModel {
 
     private func apply(_ next: DiagnosisSnapshot) {
         // Usually one new sample. More when a snapshot was skipped because this actor was busy.
-        for sample in next.internetHistory.reversed().prefix(while: { $0.date > storedThrough }).reversed() {
+        // Counted by cycle, not by time, so a clock change neither skips nor repeats a sample.
+        for sample in next.internetHistory.suffix(max(0, next.cycles - storedCycles)) {
             record(sample, device: HistoryStore.connection)
-            storedThrough = sample.date
         }
+        storedCycles = next.cycles
         snapshot = next
         onChange?()
         if let message = alerts.evaluate(verdict: next.verdict) {
@@ -305,8 +305,9 @@ extension AppModel {
             device: device?.uuidString ?? HistoryStore.connection, series: Self.latencySeries,
             since: Date().addingTimeInterval(-86_400), seconds: Self.dayBucket
         )
-        // Each point sits in the middle of its five minutes.
-        return (buckets ?? []).map { $0.sample(at: $0.start.addingTimeInterval(Double(Self.dayBucket) / 2)) }
+        // Each point sits in the middle of its five minutes; the five minutes still running end now.
+        let now = Date()
+        return (buckets ?? []).map { $0.sample(at: min(now, $0.start.addingTimeInterval(Double(Self.dayBucket) / 2))) }
     }
 
     private func record(_ sample: ProbeSample, device: String) {

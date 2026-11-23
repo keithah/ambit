@@ -26,6 +26,8 @@ public struct DiagnosisSnapshot: Sendable, Equatable {
     /// Internet latency samples, oldest first. A nil latency is a failed probe.
     public var internetHistory: [ProbeSample] = []
     public var updated: Date?
+    /// How many probe cycles have finished. Each adds one sample to the end of `internetHistory`.
+    public var cycles = 0
 
     public init() {}
 }
@@ -149,6 +151,7 @@ public actor DiagnosisMonitor {
         next.dns = HopStats(samples: dnsSamples)
         next.internetHistory = chartHistory
         next.updated = Date()
+        next.cycles += 1
         let verdict = diagnose(
             hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered,
             router: next.router, internet: next.internet, dns: next.dns,

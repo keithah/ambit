@@ -287,6 +287,7 @@ private actor SwitchingGateway: GatewayFinding {
         await monitor.seed(history: earlier)
         let snapshot = await monitor.runCycle()
         #expect(snapshot.internetHistory.count == 5)
+        #expect(snapshot.cycles == 1)
         #expect(snapshot.internetHistory.first == earlier.first)
         #expect(snapshot.internet.sampleCount == 1)
         #expect(snapshot.verdict == .online)
