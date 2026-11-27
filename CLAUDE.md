@@ -27,5 +27,7 @@ stop that from happening again.
 ## Build
 
 `make test` (AmbitKit unit tests), `make build` (XcodeGen + xcodebuild), `make run`, `make release VERSION=x.y.z`
-(see [docs/releasing.md](docs/releasing.md)). `Ambit.xcodeproj` and `App/Info.plist` are generated from `project.yml`;
+(see [docs/releasing.md](docs/releasing.md)). `make uitest` runs the XCUITests in `UITests/` against the built app;
+agents run the same with `xcodebuildmcp macos test --project-path Ambit.xcodeproj --scheme Ambit --derived-data-path build`
+(the `test_macos` tool) after `xcodegen generate`. They take over the pointer, so run one UI test job at a time. `Ambit.xcodeproj` and `App/Info.plist` are generated from `project.yml`;
 never edit or commit them.
