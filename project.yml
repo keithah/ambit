@@ -49,10 +49,30 @@ targets:
         SUFeedURL: https://keithah.github.io/ambit/appcast.xml
         SUPublicEDKey: $(SPARKLE_PUBLIC_KEY)
         SUEnableAutomaticChecks: true
+  # Drives the built app through its menu bar item. Run with `make uitest`.
+  AmbitUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - UITests
+    dependencies:
+      - target: Ambit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hadm.ambit.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Ambit
+        # With the hardened runtime the ad-hoc signed runner refuses to load the test bundle.
+        ENABLE_HARDENED_RUNTIME: NO
 schemes:
   Ambit:
     build:
       targets:
         Ambit: all
+        AmbitUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - AmbitUITests
     run:
       config: Debug

@@ -23,7 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         item.button?.action = #selector(togglePopover)
         statusItem = item
 
-        popover.behavior = .transient
+        // A transient popover closes whenever another app takes the focus, which a UI test on a
+        // busy machine cannot prevent. Under test it stays open until the menu bar item is clicked.
+        popover.behavior = AppModel.testDataFolder == nil ? .transient : .applicationDefined
         popover.delegate = self
         let content = NSHostingController(
             rootView: PopoverView(model: model, checkForUpdates: { [updater] in updater.checkForUpdates() })

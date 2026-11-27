@@ -18,7 +18,8 @@ stop that from happening again.
 6. **Never disable or delete a working user-visible feature** without a shipped replacement.
 7. **Docs cap:** one page per document. No per-milestone spec-and-plan pairs.
 8. **No migrations, golden fixtures or parity tests** before the first external user. Test device parsers,
-   probe logic and the diagnosis matrix; nothing else is mandatory.
+   probe logic and the diagnosis matrix, and give every user-visible change an XCUITest in `UITests/`
+   (Keith, 2026-11-27); nothing else is mandatory.
 9. **`archive/v0` is read-only.** Copy files out of it per [docs/06-harvest.md](docs/06-harvest.md); never
    merge it, never port its tests wholesale.
 10. **User-facing words** come from [docs/03-design.md](docs/03-design.md). No "entity", "slot", "provider",
@@ -27,5 +28,7 @@ stop that from happening again.
 ## Build
 
 `make test` (AmbitKit unit tests), `make build` (XcodeGen + xcodebuild), `make run`, `make release VERSION=x.y.z`
-(see [docs/releasing.md](docs/releasing.md)). `Ambit.xcodeproj` and `App/Info.plist` are generated from `project.yml`;
+(see [docs/releasing.md](docs/releasing.md)). `make uitest` runs the XCUITests in `UITests/` against the built app;
+agents run the same with `xcodebuildmcp macos test --project-path Ambit.xcodeproj --scheme Ambit --derived-data-path build`
+(the `test_macos` tool) after `xcodegen generate`. They take over the pointer, so run one UI test job at a time. `Ambit.xcodeproj` and `App/Info.plist` are generated from `project.yml`;
 never edit or commit them.

@@ -16,3 +16,13 @@ jobs:
           xcodegen generate --quiet
           xcodebuild -project Ambit.xcodeproj -scheme Ambit -configuration Debug \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO -quiet build
+      - name: UI tests
+        run: |
+          xcodebuild -project Ambit.xcodeproj -scheme Ambit -derivedDataPath build \
+            -resultBundlePath build/UITests.xcresult -quiet test
+      - name: Keep the UI test result
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UITests.xcresult
+          path: build/UITests.xcresult

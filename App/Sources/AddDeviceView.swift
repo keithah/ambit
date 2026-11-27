@@ -57,6 +57,8 @@ struct AddDeviceView: View {
                     add(manualKind, manualHost, manualKind == .glinet ? manualPassword : nil)
                 }
                 .disabled(manualHost.trimmingCharacters(in: .whitespaces).isEmpty)
+                // Found devices have "Add" buttons too; the UI tests need this one.
+                .accessibilityIdentifier("add-by-address")
             }
         }
         .task { found = await model.discover() }

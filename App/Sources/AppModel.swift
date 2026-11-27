@@ -49,14 +49,21 @@ final class AppModel {
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
 
-    @ObservationIgnored private let deviceFile = try? DeviceListFile.standard()
+    /// The UI tests name a folder here, so a run starts with no devices and leaves the user's own
+    /// devices and history alone. The updater stays off as well.
+    static let testDataFolder = ProcessInfo.processInfo.environment["AMBIT_UI_TEST_DATA"]
+        .map { URL(fileURLWithPath: $0, isDirectory: true) }
+
+    @ObservationIgnored private let deviceFile = AppModel.testDataFolder
+        .map { DeviceListFile(url: $0.appendingPathComponent("devices.json")) } ?? (try? DeviceListFile.standard())
     /// False when the saved list could not be read: saving then would replace it.
     @ObservationIgnored private var canSaveDevices = false
     /// The number of the latest poll started for each device. An older poll's result is dropped.
     @ObservationIgnored private var latestPoll: [UUID: Int] = [:]
     @ObservationIgnored private let passwords = PasswordStore()
     /// Nil when the history file cannot be used: graphs then show this run only.
-    @ObservationIgnored private let history = try? HistoryStore.standard()
+    @ObservationIgnored private let history = AppModel.testDataFolder
+        .map { try? HistoryStore(url: $0.appendingPathComponent("samples.sqlite")) } ?? (try? HistoryStore.standard())
     @ObservationIgnored private let pingProbe = ICMPProbe()
     /// The samples of this many probe cycles are already stored.
     @ObservationIgnored private var storedCycles = 0

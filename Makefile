@@ -1,4 +1,4 @@
-.PHONY: gen build test run release clean
+.PHONY: gen build test uitest run release clean
 
 DERIVED := build
 
@@ -11,6 +11,11 @@ build: gen
 
 test:
 	swift test
+
+# Drives the built app through its menu bar item. Takes over the pointer and keyboard while it
+# runs, so nothing else may be using the screen (another UI test run included).
+uitest: gen
+	xcodebuild -project Ambit.xcodeproj -scheme Ambit -derivedDataPath $(DERIVED) -quiet test
 
 run: build
 	open $(DERIVED)/Build/Products/Debug/Ambit.app

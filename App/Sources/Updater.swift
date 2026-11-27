@@ -9,7 +9,8 @@ final class Updater {
 
     init() {
         let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? ""
-        controller = key.isEmpty
+        // A UI test run must not be interrupted by an update window.
+        controller = key.isEmpty || AppModel.testDataFolder != nil
             ? nil
             : SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     }
