@@ -18,6 +18,29 @@ public struct ProbeTarget: Sendable, Hashable {
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:")
         return host.unicodeScalars.allSatisfy(allowed.contains)
     }
+
+    /// True for an IPv4 address that can only be reached across the internet. Private, loopback,
+    /// link-local, carrier-shared (100.64/10, also used by VPNs), documentation, benchmarking
+    /// (198.18/15, which some proxies answer locally), multicast and reserved addresses are not,
+    /// and neither is anything that is not an IPv4 address.
+    public static func isOnTheInternet(ipv4 address: String) -> Bool {
+        let parts = address.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 else { return false }
+        // Digits only, written the usual way: no sign, no leading zero.
+        let octets = parts.compactMap { part -> UInt8? in
+            guard !part.isEmpty, part.count <= 3, part.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            guard part.count == 1 || part.first != "0" else { return nil }
+            return UInt8(part)
+        }
+        guard octets.count == 4 else { return false }
+        switch (octets[0], octets[1], octets[2]) {
+        case (0, _, _), (10, _, _), (127, _, _), (169, 254, _), (192, 168, _): return false
+        case (172, 16...31, _), (100, 64...127, _), (198, 18...19, _): return false
+        case (192, 0, 0), (192, 0, 2), (192, 88, 99), (198, 51, 100), (203, 0, 113): return false
+        case (224..., _, _): return false
+        default: return true
+        }
+    }
 }
 
 public enum ProbeFailure: String, Sendable, Equatable {
@@ -28,6 +51,8 @@ public struct ProbeSample: Sendable, Equatable {
     public var date: Date
     public var latencyMs: Double?
     public var failure: ProbeFailure?
+    /// The address a ping was answered from, when the probe knows it.
+    public var answeredFrom: String?
 
     public init(date: Date = Date(), latencyMs: Double) {
         self.date = date
@@ -96,7 +121,9 @@ public struct ICMPProbe: Probe {
                 timeout: target.timeout + 1
             )
             if result.exitCode == 0, let ms = Self.parseLatencyMs(result.stdout) {
-                return ProbeSample(latencyMs: ms)
+                var sample = ProbeSample(latencyMs: ms)
+                sample.answeredFrom = Self.parseAnsweringAddress(result.stdout)
+                return sample
             }
             return ProbeSample(failure: Self.classify(result))
         } catch {
@@ -107,6 +134,17 @@ public struct ICMPProbe: Probe {
     static func parseLatencyMs(_ output: String) -> Double? {
         guard let range = output.range(of: "time=") else { return nil }
         return Double(output[range.upperBound...].prefix { $0.isNumber || $0 == "." })
+    }
+
+    /// The address in "64 bytes from 1.1.1.1: icmp_seq=0 ttl=57 time=12.3 ms". Only the line
+    /// with the echo's time counts: a router's redirect notice also says "bytes from".
+    static func parseAnsweringAddress(_ output: String) -> String? {
+        for line in output.split(whereSeparator: \.isNewline) where line.contains("time=") {
+            guard let range = line.range(of: "bytes from ") else { continue }
+            let address = line[range.upperBound...].prefix { $0.isNumber || $0 == "." }
+            if !address.isEmpty { return String(address) }
+        }
+        return nil
     }
 
     static func classify(_ result: ProcessResult) -> ProbeFailure {

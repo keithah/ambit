@@ -19,6 +19,17 @@ struct RouterReading: Equatable {
     var vpnIsOld = false
 }
 
+struct PingReading: Equatable {
+    var condition = DeviceCondition.loading
+    /// This run's samples, at most the last half hour, oldest first. A sample without a latency
+    /// got no reply.
+    var samples: [ProbeSample] = []
+    /// Samples an earlier run stored. They are drawn on the graph and counted nowhere.
+    var earlier: [ProbeSample] = []
+    /// Whether the last answer came from an address on the internet. Nil until there is an answer.
+    var answersFromTheInternet: Bool?
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -26,6 +37,7 @@ final class AppModel {
     private(set) var devices: [SavedDevice] = []
     private(set) var dishes: [UUID: StarlinkReading] = [:]
     private(set) var routers: [UUID: RouterReading] = [:]
+    private(set) var pings: [UUID: PingReading] = [:]
     /// Goes up each time the popover closes, so the popover opens on its first page again.
     private(set) var popoverClosures = 0
     /// Devices with a command under way. Their command buttons are disabled meanwhile.
@@ -43,6 +55,14 @@ final class AppModel {
     /// The number of the latest poll started for each device. An older poll's result is dropped.
     @ObservationIgnored private var latestPoll: [UUID: Int] = [:]
     @ObservationIgnored private let passwords = PasswordStore()
+    /// Nil when the history file cannot be used: graphs then show this run only.
+    @ObservationIgnored private let history = try? HistoryStore.standard()
+    @ObservationIgnored private let pingProbe = ICMPProbe()
+    /// The samples of this many probe cycles are already stored.
+    @ObservationIgnored private var storedCycles = 0
+
+    /// False when there is no stored history, so there is no 24-hour graph to offer.
+    var hasHistory: Bool { history != nil }
     @ObservationIgnored private var polls: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var trackers: [UUID: DeviceHealthTracker] = [:]
     @ObservationIgnored private var dishClients: [UUID: StarlinkClient] = [:]
@@ -57,6 +77,7 @@ final class AppModel {
         case .noNetwork: "No network"
         case .routerUnreachable: "Router"
         case .internetDown, .connectionDown: "Offline"
+        case .internetPartial: "Limited"
         case .dnsFailing: "DNS"
         }
     }
@@ -76,7 +97,11 @@ final class AppModel {
             canSaveDevices = true
         }
         devices.forEach(startPolling)
-        Task { [weak self, monitor] in
+        Task { [weak self, monitor, history] in
+            let earlier = try? await history?.samples(
+                device: HistoryStore.connection, series: Self.latencySeries, since: Date().addingTimeInterval(-Self.graphSpan)
+            )
+            await monitor.seed(history: earlier ?? [])
             await monitor.start()
             for await next in await monitor.snapshots() {
                 self?.apply(next)
@@ -85,6 +110,12 @@ final class AppModel {
     }
 
     private func apply(_ next: DiagnosisSnapshot) {
+        // Usually one new sample. More when a snapshot was skipped because this actor was busy.
+        // Counted by cycle, not by time, so a clock change neither skips nor repeats a sample.
+        for sample in next.internetHistory.suffix(max(0, next.cycles - storedCycles)) {
+            record(sample, device: HistoryStore.connection)
+        }
+        storedCycles = next.cycles
         snapshot = next
         onChange?()
         if let message = alerts.evaluate(verdict: next.verdict) {
@@ -98,11 +129,18 @@ final class AppModel {
 extension AppModel {
     private static let dishInterval: Duration = .seconds(5)
     private static let routerInterval: Duration = .seconds(10)
+    private static let pingInterval: Duration = .seconds(5)
+    static let latencySeries = "latency"
+    /// How far back the short graph goes.
+    static let graphSpan: TimeInterval = 1_800
+    private static let samplesKept = 360
 
     /// Adds a device and starts reading it. Returns a sentence for the user if it could not.
     func add(kind: DeviceKind, host rawHost: String, password: String?) -> String? {
         let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !devices.contains(where: { $0.kind == kind && $0.host == host }) else { return "That device is already added." }
+        guard !devices.contains(where: { $0.kind == kind && $0.host.lowercased() == host.lowercased() }) else {
+            return "That device is already added."
+        }
         let device: SavedDevice
         switch kind {
         case .starlink:
@@ -111,6 +149,12 @@ extension AppModel {
         case .glinet:
             guard (try? GLiNetClient(host: host, password: { nil })) != nil else { return "That is not an address Ambit can use." }
             device = SavedDevice(kind: kind, name: "Router", host: host)
+        case .ping:
+            // `/sbin/ping` is IPv4 only, so an IPv6 address would never answer.
+            guard ProbeTarget.isValidHost(host), !host.contains(":") else {
+                return "Ambit can ping a name or an IPv4 address, such as 9.9.9.9."
+            }
+            device = SavedDevice(kind: kind, name: host, host: host)
         }
         if let password, !password.isEmpty {
             do { try passwords.set(password, for: device.id) } catch { return "Couldn't save the password in your Keychain." }
@@ -141,6 +185,11 @@ extension AppModel {
         routerClients[id] = nil
         dishes[id] = nil
         routers[id] = nil
+        pings[id] = nil
+        Task { [monitor] in await monitor.forget(target: id.uuidString) }
+        if let history {
+            Task { try? await history.remove(device: id.uuidString) }
+        }
         return nil
     }
 
@@ -233,7 +282,60 @@ extension AppModel {
                     try? await Task.sleep(for: Self.routerInterval)
                 }
             }
+        case .ping:
+            pings[id] = PingReading()
+            let host = device.host
+            polls[id] = Task { [weak self, history] in
+                let earlier = try? await history?.samples(
+                    device: id.uuidString, series: Self.latencySeries, since: Date().addingTimeInterval(-Self.graphSpan)
+                )
+                if let earlier, let self { self.pings[id]?.earlier = Array(earlier.suffix(Self.samplesKept)) }
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    await self.pollPing(id, host: host)
+                    try? await Task.sleep(for: Self.pingInterval)
+                }
+            }
         }
+    }
+
+    /// Half-hour buckets are too coarse and one-minute ones too many for a graph this wide.
+    private static let dayBucket = 300
+
+    /// The last 24 hours of a graph, one point for each five minutes that has samples.
+    /// `device` is nil for the connection itself.
+    func dayHistory(device: UUID?) async -> [ProbeSample] {
+        let now = Date()
+        let buckets = try? await history?.buckets(
+            device: device?.uuidString ?? HistoryStore.connection, series: Self.latencySeries,
+            since: now.addingTimeInterval(-86_400), until: now, seconds: Self.dayBucket
+        )
+        // Each point sits in the middle of its five minutes; the five minutes still running end now.
+        return (buckets ?? []).map { $0.sample(at: min(now, $0.start.addingTimeInterval(Double(Self.dayBucket) / 2))) }
+    }
+
+    private func record(_ sample: ProbeSample, device: String) {
+        guard let history else { return }
+        Task { try? await history.record(device: device, series: Self.latencySeries, sample: sample) }
+    }
+
+    private func pollPing(_ id: UUID, host: String) async {
+        let sample = await pingProbe.measure(ProbeTarget(host: host, timeout: 2))
+        // The target may have been removed while the ping was out.
+        guard pings[id] != nil, !Task.isCancelled else { return }
+        if sample.succeeded { trackers[id]?.succeeded() } else { trackers[id]?.failed(.noReply) }
+        pings[id]?.condition = trackers[id]?.condition ?? .unreachable
+        pings[id]?.samples.append(sample)
+        if let count = pings[id]?.samples.count, count > Self.samplesKept {
+            pings[id]?.samples.removeFirst(count - Self.samplesKept)
+        }
+        // Known only while the target answers; a name may lead somewhere else on another network.
+        pings[id]?.answersFromTheInternet = sample.answeredFrom.map(ProbeTarget.isOnTheInternet(ipv4:))
+        record(sample, device: id.uuidString)
+        // An answer from the internet tells the diagnosis that traffic gets past the router.
+        await monitor.report(sample, fromTarget: id.uuidString)
+        // The target may have been removed while that was under way.
+        if pings[id] == nil { await monitor.forget(target: id.uuidString) }
     }
 
     private func startPoll(_ id: UUID) -> Int {

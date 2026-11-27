@@ -38,10 +38,11 @@ struct AddDeviceView: View {
             Picker("Kind", selection: $manualKind) {
                 Text("Starlink").tag(DeviceKind.starlink)
                 Text("GL.iNet router").tag(DeviceKind.glinet)
+                Text("Ping target").tag(DeviceKind.ping)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            TextField(manualKind == .starlink ? "192.168.100.1" : "192.168.8.1", text: $manualHost)
+            TextField(manualPlaceholder, text: $manualHost)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Address")
             if manualKind == .glinet {
@@ -59,6 +60,14 @@ struct AddDeviceView: View {
             }
         }
         .task { found = await model.discover() }
+    }
+
+    private var manualPlaceholder: String {
+        switch manualKind {
+        case .starlink: "192.168.100.1"
+        case .glinet: "192.168.8.1"
+        case .ping: "Address or name, such as 9.9.9.9"
+        }
     }
 
     @ViewBuilder

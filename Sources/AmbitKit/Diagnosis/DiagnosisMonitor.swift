@@ -26,6 +26,8 @@ public struct DiagnosisSnapshot: Sendable, Equatable {
     /// Internet latency samples, oldest first. A nil latency is a failed probe.
     public var internetHistory: [ProbeSample] = []
     public var updated: Date?
+    /// How many probe cycles have finished. Each adds one sample to the end of `internetHistory`.
+    public var cycles = 0
 
     public init() {}
 }
@@ -44,6 +46,8 @@ public actor DiagnosisMonitor {
     /// Chart history survives a network change; the diagnosis windows above do not.
     private var chartHistory: [ProbeSample] = []
     private var routerHasAnswered = false
+    /// The latest answer from each ping target that is on the internet, by the target's name.
+    private var targetAnswers: [String: ProbeSample] = [:]
     private var inFlight: Task<DiagnosisSnapshot, Never>?
     private var generation = 0
     private var snapshot = DiagnosisSnapshot()
@@ -74,6 +78,32 @@ public actor DiagnosisMonitor {
                 Task { await self?.removeContinuation(id) }
             }
         }
+    }
+
+    /// Puts earlier samples, oldest first, on the graph before the first probe. Used at launch
+    /// with what the last run stored. Does nothing once there are samples.
+    public func seed(history: [ProbeSample]) {
+        guard chartHistory.isEmpty else { return }
+        chartHistory = Array(history.suffix(config.historyLimit))
+        snapshot.internetHistory = chartHistory
+    }
+
+    /// Takes a ping target's latest sample as evidence for the diagnosis. A recent answer from an
+    /// address on the internet shows that traffic gets past the router, which changes what an
+    /// outage is called (see `diagnose`). A target that does not answer, or answers from a local
+    /// address, shows nothing either way: it may be switched off, or on this network.
+    public func report(_ sample: ProbeSample, fromTarget name: String) {
+        // One missed reply does not take back an earlier answer; the answer goes out of date.
+        guard sample.succeeded else { return }
+        if let address = sample.answeredFrom, ProbeTarget.isOnTheInternet(ipv4: address) {
+            targetAnswers[name] = sample
+        } else {
+            targetAnswers[name] = nil
+        }
+    }
+
+    public func forget(target name: String) {
+        targetAnswers[name] = nil
     }
 
     public func start() {
@@ -125,6 +155,7 @@ public actor DiagnosisMonitor {
             internetSamples.removeAll()
             dnsSamples.removeAll()
             routerHasAnswered = false
+            targetAnswers.removeAll()
         }
         if let routerSample {
             append(routerSample, to: &routerSamples)
@@ -141,14 +172,24 @@ public actor DiagnosisMonitor {
         next.dns = HopStats(samples: dnsSamples)
         next.internetHistory = chartHistory
         next.updated = Date()
+        next.cycles += 1
+        // An answer counts only if it came during the failures that make the internet "down":
+        // no earlier than the first of the last few internet samples, and not dated ahead of now.
+        // An answer from before the trouble started says nothing about it.
+        let now = Date()
+        let earliest = internetSamples.suffix(config.thresholds.downAfter).first?.date ?? now
+        let targetAnswering = targetAnswers.values.contains { $0.date >= earliest && $0.date <= now }
         let verdict = diagnose(
-            hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered,
+            hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered, targetAnswering: targetAnswering,
             router: next.router, internet: next.internet, dns: next.dns,
             thresholds: config.thresholds
         )
         if verdict != next.verdict {
+            // An outage that is only renamed by a ping target is the same outage, with the same start.
+            let renamed = verdict.health == .offline && next.verdict.health == .offline
+                && (verdict == .internetPartial || next.verdict == .internetPartial)
+            if !renamed { next.since = Date() }
             next.verdict = verdict
-            next.since = Date()
         }
         snapshot = next
         for continuation in continuations.values { continuation.yield(next) }

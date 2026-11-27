@@ -66,8 +66,8 @@ scan for the LinkPower service.
 
 ## Storage
 
-- **History:** one SQLite file, table `sample(device_id, series, ts, value)`, 24 h at full resolution and
-  30 days downsampled. Batched writes, pruned daily.
+- **History:** one SQLite file, table `sample(device, series, ts, value)`, kept 25 hours at full
+  resolution; a missing value is a probe with no reply. See decisions.md, 2026-11-22.
 - **Config:** one JSON file in Application Support (devices, menu-bar choices, alert settings). One store.
 - **Secrets:** Keychain generic passwords, service `com.hadm.ambit`, account = device UUID.
 

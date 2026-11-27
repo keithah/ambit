@@ -1,7 +1,8 @@
 import Foundation
 
 public enum DeviceKind: String, Codable, Sendable {
-    case starlink, glinet
+    /// `ping` is a host that is only pinged: a ping target.
+    case starlink, glinet, ping
 }
 
 /// One device the user added. The password, if any, is in the Keychain under `id`.
