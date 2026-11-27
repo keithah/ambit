@@ -48,8 +48,6 @@ public actor DiagnosisMonitor {
     private var routerHasAnswered = false
     /// The latest answer from each ping target that is on the internet, by the target's name.
     private var targetAnswers: [String: ProbeSample] = [:]
-    /// Answers from before this time came over another network and are not counted.
-    private var answersCountFrom = Date.distantPast
     private var inFlight: Task<DiagnosisSnapshot, Never>?
     private var generation = 0
     private var snapshot = DiagnosisSnapshot()
@@ -95,7 +93,9 @@ public actor DiagnosisMonitor {
     /// outage is called (see `diagnose`). A target that does not answer, or answers from a local
     /// address, shows nothing either way: it may be switched off, or on this network.
     public func report(_ sample: ProbeSample, fromTarget name: String) {
-        if sample.succeeded, let address = sample.answeredFrom, ProbeTarget.isOnTheInternet(ipv4: address) {
+        // One missed reply does not take back an earlier answer; the answer goes out of date.
+        guard sample.succeeded else { return }
+        if let address = sample.answeredFrom, ProbeTarget.isOnTheInternet(ipv4: address) {
             targetAnswers[name] = sample
         } else {
             targetAnswers[name] = nil
@@ -156,8 +156,6 @@ public actor DiagnosisMonitor {
             dnsSamples.removeAll()
             routerHasAnswered = false
             targetAnswers.removeAll()
-            // Leaving a network is what makes earlier answers stale; the first network is not a change.
-            if snapshot.gateway != nil { answersCountFrom = Date() }
         }
         if let routerSample {
             append(routerSample, to: &routerSamples)
@@ -175,19 +173,22 @@ public actor DiagnosisMonitor {
         next.internetHistory = chartHistory
         next.updated = Date()
         next.cycles += 1
-        // Ping targets are pinged on their own schedule; only a recent answer counts.
+        // An answer counts only if it came during the failures that make the internet "down":
+        // no earlier than the first of the last few internet samples, and not dated ahead of now.
+        // An answer from before the trouble started says nothing about it.
         let now = Date()
-        let targetAnswering = targetAnswers.values.contains { answer in
-            answer.date >= answersCountFrom && (0...config.interval * 3).contains(now.timeIntervalSince(answer.date))
-        }
+        let earliest = internetSamples.suffix(config.thresholds.downAfter).first?.date ?? now
+        let targetAnswering = targetAnswers.values.contains { $0.date >= earliest && $0.date <= now }
         let verdict = diagnose(
             hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered, targetAnswering: targetAnswering,
             router: next.router, internet: next.internet, dns: next.dns,
             thresholds: config.thresholds
         )
         if verdict != next.verdict {
-            // An outage that gets another name is still the same outage, with the same start.
-            if !(verdict.health == .offline && next.verdict.health == .offline) { next.since = Date() }
+            // An outage that is only renamed by a ping target is the same outage, with the same start.
+            let renamed = verdict.health == .offline && next.verdict.health == .offline
+                && (verdict == .internetPartial || next.verdict == .internetPartial)
+            if !renamed { next.since = Date() }
             next.verdict = verdict
         }
         snapshot = next

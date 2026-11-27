@@ -26,7 +26,12 @@ public struct ProbeTarget: Sendable, Hashable {
     public static func isOnTheInternet(ipv4 address: String) -> Bool {
         let parts = address.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 4 else { return false }
-        let octets = parts.compactMap { part in part.count <= 3 && part.allSatisfy(\.isASCII) ? UInt8(part) : nil }
+        // Digits only, written the usual way: no sign, no leading zero.
+        let octets = parts.compactMap { part -> UInt8? in
+            guard !part.isEmpty, part.count <= 3, part.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            guard part.count == 1 || part.first != "0" else { return nil }
+            return UInt8(part)
+        }
         guard octets.count == 4 else { return false }
         switch (octets[0], octets[1], octets[2]) {
         case (0, _, _), (10, _, _), (127, _, _), (169, 254, _), (192, 168, _): return false

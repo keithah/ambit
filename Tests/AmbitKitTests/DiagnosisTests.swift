@@ -153,7 +153,7 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         for address in ["10.0.0.2", "192.168.8.1", "192.168.100.1", "172.16.0.1", "172.31.255.1", "127.0.0.1", "169.254.1.1",
                         "100.64.0.1", "100.127.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255",
                         "198.18.0.1", "198.19.255.1", "192.0.2.1", "198.51.100.7", "203.0.113.9", "192.0.0.8", "192.88.99.1", "240.0.0.1",
-                        "", "1.1.1", "1.1.1.1.1", "1.1.1.256", "a.b.c.d", "1.1.1.-1", "2606:4700::1111", "example.com"] {
+                        "", "1.1.1", "1.1.1.1.1", "1.1.1.256", "a.b.c.d", "1.1.1.-1", "+1.1.1.1", "01.1.1.1", "1.1.1.", "1..1.1", "2606:4700::1111", "example.com"] {
             #expect(!ProbeTarget.isOnTheInternet(ipv4: address), "\(address)")
         }
     }
@@ -335,43 +335,72 @@ private actor SwitchingGateway: GatewayFinding {
             tcp: FixedProbe(sample: ProbeSample(failure: .timeout)),
             dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
         )
-        func answer(from address: String?, age: TimeInterval = 0) -> ProbeSample {
-            var sample = ProbeSample(date: Date(timeIntervalSinceNow: -age), latencyMs: 40)
+        func answer(from address: String?, at date: Date = Date()) -> ProbeSample {
+            var sample = ProbeSample(date: date, latencyMs: 40)
             sample.answeredFrom = address
             return sample
         }
-        for _ in 0..<3 { await monitor.runCycle() }
-        #expect(await monitor.runCycle().verdict == .internetDown)
+        func afterThreeCycles() async -> DiagnosisSnapshot {
+            await monitor.runCycle()
+            await monitor.runCycle()
+            return await monitor.runCycle()
+        }
+        let beforeTheOutage = Date()
+        let down = await afterThreeCycles()
+        #expect(down.verdict == .internetDown)
         // An answer from a local address, or from an unknown one, shows nothing.
         await monitor.report(answer(from: "192.168.8.20"), fromTarget: "nas")
         await monitor.report(answer(from: nil), fromTarget: "unknown")
         #expect(await monitor.runCycle().verdict == .internetDown)
-        // An answer from the internet renames the outage. The internet reading itself stays failed.
+        // Neither does an answer from before the failures, or one dated ahead of now.
+        await monitor.report(answer(from: "9.9.9.9", at: beforeTheOutage), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetDown)
+        await monitor.report(answer(from: "9.9.9.9", at: Date(timeIntervalSinceNow: 60)), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetDown)
+        // An answer from the internet during the failures renames the outage. The internet reading
+        // itself stays failed, and the outage keeps its start.
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
         var snapshot = await monitor.runCycle()
         #expect(snapshot.verdict == .internetPartial)
         #expect(snapshot.verdict.health == .offline)
         #expect(snapshot.internet.lastMs == nil)
         #expect(snapshot.internetHistory.last?.succeeded == false)
-        // An answer just inside the time allowed counts; an old one, or one dated ahead, does not.
-        await monitor.report(answer(from: "9.9.9.9", age: 13), fromTarget: "quad9")
-        #expect(await monitor.runCycle().verdict == .internetPartial)
-        await monitor.report(answer(from: "9.9.9.9", age: 17), fromTarget: "quad9")
-        #expect(await monitor.runCycle().verdict == .internetDown)
-        await monitor.report(answer(from: "9.9.9.9", age: -30), fromTarget: "quad9")
-        #expect(await monitor.runCycle().verdict == .internetDown)
-        // Neither does a target that stopped answering, or one that was removed.
-        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        #expect(snapshot.since == down.since)
+        // One missed reply does not take the answer back.
         await monitor.report(ProbeSample(failure: .timeout), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetPartial)
+        // The answer goes out of date once three later checks have failed without a new one.
+        snapshot = await afterThreeCycles()
+        #expect(snapshot.verdict == .internetDown)
+        #expect(snapshot.since == down.since)
+        // A target that now answers from a local address, or was removed, no longer counts.
+        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        await monitor.report(answer(from: "10.0.0.9"), fromTarget: "quad9")
         #expect(await monitor.runCycle().verdict == .internetDown)
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
         await monitor.forget(target: "quad9")
         #expect(await monitor.runCycle().verdict == .internetDown)
-        // An answer that came over the previous network is dropped when the network changes.
+        // An answer that came over the previous network does not count on the next one.
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
         await gateway.set("10.0.0.1")
-        for _ in 0..<3 { snapshot = await monitor.runCycle() }
-        #expect(snapshot.verdict == .internetDown)
+        #expect(await afterThreeCycles().verdict == .internetDown)
+    }
+
+    @Test func theStartOfAnOutageIsSetOnceWhileItsVerdictStaysTheSame() async {
+        let monitor = DiagnosisMonitor(
+            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
+            tcp: FixedProbe(sample: ProbeSample(failure: .timeout)),
+            dns: FixedProbe(sample: ProbeSample(failure: .dns))
+        )
+        var first = await monitor.runCycle()
+        #expect(first.verdict == .checking)
+        await monitor.runCycle()
+        first = await monitor.runCycle()
+        #expect(first.verdict == .internetDown)
+        #expect(first.since > Date(timeIntervalSinceNow: -5))
+        let again = await monitor.runCycle()
+        #expect(again.since == first.since)
     }
 
     @Test func aPingTargetDoesNotChangeAWorkingConnection() async {

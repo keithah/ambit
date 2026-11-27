@@ -86,7 +86,7 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
         case .routerUnreachable: "The problem is between this Mac and the router."
         case .wifiSlow: "The link to your router is slow or dropping packets."
         case .internetDown: "Your router is fine. The problem is beyond it."
-        case .internetPartial: "Ambit's own checks fail, but one of your ping targets on the internet still answers. A sign-in page, a firewall or a partial outage may be in the way."
+        case .internetPartial: "Ambit's own checks fail, but one of your ping targets still answers from a public address. A sign-in page, a firewall or a partial outage may be in the way."
         case .internetSlow: "Your router is fine. The slowdown is beyond it."
         case .dnsFailing: "The internet is reachable, but names aren't resolving."
         case .connectionDown: "Your router doesn't answer pings, so Ambit can't tell which side failed."

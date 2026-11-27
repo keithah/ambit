@@ -329,9 +329,8 @@ extension AppModel {
         if let count = pings[id]?.samples.count, count > Self.samplesKept {
             pings[id]?.samples.removeFirst(count - Self.samplesKept)
         }
-        if let address = sample.answeredFrom {
-            pings[id]?.answersFromTheInternet = ProbeTarget.isOnTheInternet(ipv4: address)
-        }
+        // Known only while the target answers; a name may lead somewhere else on another network.
+        pings[id]?.answersFromTheInternet = sample.answeredFrom.map(ProbeTarget.isOnTheInternet(ipv4:))
         record(sample, device: id.uuidString)
         // An answer from the internet tells the diagnosis that traffic gets past the router.
         await monitor.report(sample, fromTarget: id.uuidString)
