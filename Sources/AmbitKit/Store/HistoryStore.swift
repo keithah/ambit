@@ -118,16 +118,17 @@ public actor HistoryStore {
         }
     }
 
-    /// Samples at or after `since` grouped into stretches of `seconds`, oldest first. Stretches
-    /// with no samples are left out.
-    public func buckets(device: String, series: String, since: Date, seconds: Int) throws -> [HistoryBucket] {
+    /// Samples from `since` to `until` grouped into stretches of `seconds`, oldest first.
+    /// Stretches with no samples are left out. `until` keeps out samples dated ahead of now,
+    /// which a clock that was set back leaves behind.
+    public func buckets(device: String, series: String, since: Date, until: Date, seconds: Int) throws -> [HistoryBucket] {
         let width = Double(max(1, seconds))
         return try connection.rows(
             """
             SELECT CAST(ts / ? AS INTEGER) AS bucket, AVG(value), COUNT(*) - COUNT(value), COUNT(*)
-            FROM sample WHERE device = ? AND series = ? AND ts >= ? GROUP BY bucket ORDER BY bucket
+            FROM sample WHERE device = ? AND series = ? AND ts >= ? AND ts <= ? GROUP BY bucket ORDER BY bucket
             """,
-            [.number(width), .text(device), .text(series), .number(since.timeIntervalSince1970)]
+            [.number(width), .text(device), .text(series), .number(since.timeIntervalSince1970), .number(until.timeIntervalSince1970)]
         ) { row in
             HistoryBucket(
                 start: Date(timeIntervalSince1970: row.double(0) * width),

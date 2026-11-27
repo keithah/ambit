@@ -52,14 +52,14 @@ public enum Health: Sendable, Equatable {
 }
 
 public enum Verdict: String, Sendable, Equatable, CaseIterable {
-    case checking, online, noNetwork, routerUnreachable, wifiSlow, internetDown, internetSlow, dnsFailing, connectionDown
+    case checking, online, noNetwork, routerUnreachable, wifiSlow, internetDown, internetPartial, internetSlow, dnsFailing, connectionDown
 
     public var health: Health {
         switch self {
         case .checking: .unknown
         case .online: .online
         case .wifiSlow, .internetSlow: .degraded
-        case .noNetwork, .routerUnreachable, .internetDown, .dnsFailing, .connectionDown: .offline
+        case .noNetwork, .routerUnreachable, .internetDown, .internetPartial, .dnsFailing, .connectionDown: .offline
         }
     }
 
@@ -71,6 +71,7 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
         case .routerUnreachable: "Can't reach your router"
         case .wifiSlow: "Your Wi-Fi or router is slow"
         case .internetDown: "Your internet provider is down"
+        case .internetPartial: "The internet is only partly reachable"
         case .internetSlow: "Your internet provider is slow"
         case .dnsFailing: "DNS isn't working"
         case .connectionDown: "Offline"
@@ -85,6 +86,7 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
         case .routerUnreachable: "The problem is between this Mac and the router."
         case .wifiSlow: "The link to your router is slow or dropping packets."
         case .internetDown: "Your router is fine. The problem is beyond it."
+        case .internetPartial: "Ambit's own checks fail, but one of your ping targets on the internet still answers. A sign-in page, a firewall or a partial outage may be in the way."
         case .internetSlow: "Your router is fine. The slowdown is beyond it."
         case .dnsFailing: "The internet is reachable, but names aren't resolving."
         case .connectionDown: "Your router doesn't answer pings, so Ambit can't tell which side failed."
@@ -96,9 +98,14 @@ public enum Verdict: String, Sendable, Equatable, CaseIterable {
 ///
 /// `routerHasAnswered` says whether the current router has ever replied to a ping. A router that
 /// never replies cannot be told apart from a dead one, so it is never named as the failing hop.
+///
+/// `targetAnswering` says that one of the user's ping targets on the internet answered just now.
+/// It never makes the connection "online": the built-in checks decide that. It only changes what
+/// an outage is called, because traffic is plainly getting past the router.
 public func diagnose(
     hasGateway: Bool,
     routerHasAnswered: Bool = true,
+    targetAnswering: Bool = false,
     router: HopStats,
     internet: HopStats,
     dns: HopStats,
@@ -114,6 +121,7 @@ public func diagnose(
     let internetDown = internet.sampleCount > 0 && internet.consecutiveFailures >= thresholds.downAfter
     let dnsDown = dns.sampleCount > 0 && dns.consecutiveFailures >= thresholds.downAfter
 
+    if internetDown && targetAnswering { return .internetPartial }
     if routerDown && (internetDown || internet.sampleCount == 0) {
         if routerHasAnswered { return .routerUnreachable }
         return internetDown ? .connectionDown : .checking

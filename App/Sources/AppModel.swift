@@ -77,6 +77,7 @@ final class AppModel {
         case .noNetwork: "No network"
         case .routerUnreachable: "Router"
         case .internetDown, .connectionDown: "Offline"
+        case .internetPartial: "Limited"
         case .dnsFailing: "DNS"
         }
     }
@@ -304,12 +305,12 @@ extension AppModel {
     /// The last 24 hours of a graph, one point for each five minutes that has samples.
     /// `device` is nil for the connection itself.
     func dayHistory(device: UUID?) async -> [ProbeSample] {
+        let now = Date()
         let buckets = try? await history?.buckets(
             device: device?.uuidString ?? HistoryStore.connection, series: Self.latencySeries,
-            since: Date().addingTimeInterval(-86_400), seconds: Self.dayBucket
+            since: now.addingTimeInterval(-86_400), until: now, seconds: Self.dayBucket
         )
         // Each point sits in the middle of its five minutes; the five minutes still running end now.
-        let now = Date()
         return (buckets ?? []).map { $0.sample(at: min(now, $0.start.addingTimeInterval(Double(Self.dayBucket) / 2))) }
     }
 
@@ -332,7 +333,7 @@ extension AppModel {
             pings[id]?.answersFromTheInternet = ProbeTarget.isOnTheInternet(ipv4: address)
         }
         record(sample, device: id.uuidString)
-        // An answer from the internet is evidence for the diagnosis.
+        // An answer from the internet tells the diagnosis that traffic gets past the router.
         await monitor.report(sample, fromTarget: id.uuidString)
         // The target may have been removed while that was under way.
         if pings[id] == nil { await monitor.forget(target: id.uuidString) }

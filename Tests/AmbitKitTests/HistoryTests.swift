@@ -53,7 +53,10 @@ import Testing
         // The next stretch has no samples; the one after has only a failure.
         try await store.record(device: "a", series: "latency", sample: ProbeSample(date: start + 601, failure: .timeout))
 
-        let buckets = try await store.buckets(device: "a", series: "latency", since: start, seconds: 300)
+        // A sample dated after `until` is left out.
+        try await store.record(device: "a", series: "latency", sample: ProbeSample(date: start + 1_300, latencyMs: 500))
+
+        let buckets = try await store.buckets(device: "a", series: "latency", since: start, until: start + 1_200, seconds: 300)
         #expect(buckets == [
             HistoryBucket(start: start, averageMs: 20, failures: 1, count: 3),
             HistoryBucket(start: start + 600, averageMs: nil, failures: 1, count: 1),
@@ -97,7 +100,7 @@ import Testing
             let store = try HistoryStore(url: url)
             try await store.record(device: "a", series: "latency", sample: ProbeSample(date: start, latencyMs: 3))
         }
-        // Fold the write-ahead log into the file, then make the file read-only.
+        // The store is closed, so the file is complete. Drop the side files, then make it read-only.
         for suffix in ["-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
         let before = try Data(contentsOf: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)

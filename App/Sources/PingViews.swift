@@ -83,8 +83,8 @@ private enum PingText {
     /// What this target tells Ambit about the connection.
     static func note(_ reading: PingReading) -> String? {
         switch reading.answersFromTheInternet {
-        case true?: "This address is on the internet. While it answers, Ambit knows the internet is reachable."
-        case false?: "This address is on a local network, so it does not tell Ambit whether the internet is reachable."
+        case true?: "This address is on the internet. If Ambit's own checks fail while it still answers, Ambit says the internet is only partly reachable."
+        case false?: "This address is not on the public internet, so it does not change what Ambit says about your connection."
         case nil: nil
         }
     }

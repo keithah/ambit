@@ -34,6 +34,19 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
         #expect(diagnose(hasGateway: true, router: stats(ms: 4), internet: down, dns: down) == .internetDown)
     }
 
+    @Test func anAnsweringPingTargetRenamesEveryKindOfInternetOutage() {
+        let down = stats(ms: nil, loss: 1, failures: 3)
+        // Router fine, router silent, router never answered: traffic is passing in each case.
+        #expect(diagnose(hasGateway: true, targetAnswering: true, router: stats(), internet: down, dns: stats()) == .internetPartial)
+        #expect(diagnose(hasGateway: true, targetAnswering: true, router: down, internet: down, dns: stats()) == .internetPartial)
+        #expect(diagnose(hasGateway: true, routerHasAnswered: false, targetAnswering: true, router: down, internet: down, dns: stats()) == .internetPartial)
+        // It changes nothing else.
+        #expect(diagnose(hasGateway: true, targetAnswering: true, router: stats(), internet: stats(), dns: stats()) == .online)
+        #expect(diagnose(hasGateway: true, targetAnswering: true, router: stats(), internet: stats(ms: nil, loss: 1, failures: 2), dns: stats()) == .checking)
+        #expect(diagnose(hasGateway: true, targetAnswering: true, router: stats(), internet: stats(), dns: down) == .dnsFailing)
+        #expect(diagnose(hasGateway: false, targetAnswering: true, router: .empty, internet: down, dns: .empty) == .noNetwork)
+    }
+
     @Test func twoFailuresIsNotYetDown() {
         let flaky = stats(ms: 40, loss: 0.16, failures: 2)
         #expect(diagnose(hasGateway: true, router: stats(ms: 4), internet: flaky, dns: stats()) == .online)
@@ -130,14 +143,16 @@ private func stats(ms: Double? = 10, loss: Double = 0, failures: Int = 0, count:
     @Test func readsTheAddressAPingWasAnsweredFrom() {
         #expect(ICMPProbe.parseAnsweringAddress("PING one.one.one.one (1.1.1.1): 56 data bytes\n64 bytes from 1.0.0.1: icmp_seq=0 ttl=57 time=12.345 ms\n") == "1.0.0.1")
         #expect(ICMPProbe.parseAnsweringAddress("Request timeout for icmp_seq 0") == nil)
+        #expect(ICMPProbe.parseAnsweringAddress("92 bytes from 192.168.1.1: Redirect Host(New addr: 192.168.1.254)\n64 bytes from 8.8.8.8: icmp_seq=0 ttl=117 time=9.1 ms\n") == "8.8.8.8")
     }
 
     @Test func onlyPublicAddressesAreOnTheInternet() {
-        for address in ["1.1.1.1", "9.9.9.9", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "192.167.1.1", "223.255.255.1"] {
+        for address in ["1.1.1.1", "9.9.9.9", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "192.167.1.1", "223.255.255.1", "198.17.0.1", "198.20.0.1", "192.0.1.1"] {
             #expect(ProbeTarget.isOnTheInternet(ipv4: address), "\(address)")
         }
         for address in ["10.0.0.2", "192.168.8.1", "192.168.100.1", "172.16.0.1", "172.31.255.1", "127.0.0.1", "169.254.1.1",
                         "100.64.0.1", "100.127.0.1", "0.0.0.0", "224.0.0.1", "255.255.255.255",
+                        "198.18.0.1", "198.19.255.1", "192.0.2.1", "198.51.100.7", "203.0.113.9", "192.0.0.8", "192.88.99.1", "240.0.0.1",
                         "", "1.1.1", "1.1.1.1.1", "1.1.1.256", "a.b.c.d", "1.1.1.-1", "2606:4700::1111", "example.com"] {
             #expect(!ProbeTarget.isOnTheInternet(ipv4: address), "\(address)")
         }
@@ -312,9 +327,10 @@ private actor SwitchingGateway: GatewayFinding {
         #expect(await monitor.runCycle().internetHistory.count == 6)
     }
 
-    @Test func aPingTargetOnTheInternetThatAnswersShowsTheInternetIsReachable() async {
+    @Test func aPingTargetOnTheInternetThatAnswersRenamesAnOutageButNeverEndsIt() async {
+        let gateway = SwitchingGateway()
         let monitor = DiagnosisMonitor(
-            gatewayFinder: FixedGateway(address: "192.168.8.1"),
+            gatewayFinder: gateway,
             icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
             tcp: FixedProbe(sample: ProbeSample(failure: .timeout)),
             dns: FixedProbe(sample: ProbeSample(latencyMs: 5))
@@ -324,28 +340,41 @@ private actor SwitchingGateway: GatewayFinding {
             sample.answeredFrom = address
             return sample
         }
-        // Nothing reported: the built-in targets fail.
-        #expect(await monitor.runCycle().internet.lastMs == nil)
+        for _ in 0..<3 { await monitor.runCycle() }
+        #expect(await monitor.runCycle().verdict == .internetDown)
         // An answer from a local address, or from an unknown one, shows nothing.
         await monitor.report(answer(from: "192.168.8.20"), fromTarget: "nas")
         await monitor.report(answer(from: nil), fromTarget: "unknown")
-        #expect(await monitor.runCycle().internet.lastMs == nil)
-        // An answer from the internet counts.
+        #expect(await monitor.runCycle().verdict == .internetDown)
+        // An answer from the internet renames the outage. The internet reading itself stays failed.
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
-        #expect(await monitor.runCycle().internet.lastMs == 40)
-        // An old answer does not.
-        await monitor.report(answer(from: "9.9.9.9", age: 60), fromTarget: "quad9")
-        #expect(await monitor.runCycle().internet.lastMs == nil)
+        var snapshot = await monitor.runCycle()
+        #expect(snapshot.verdict == .internetPartial)
+        #expect(snapshot.verdict.health == .offline)
+        #expect(snapshot.internet.lastMs == nil)
+        #expect(snapshot.internetHistory.last?.succeeded == false)
+        // An answer just inside the time allowed counts; an old one, or one dated ahead, does not.
+        await monitor.report(answer(from: "9.9.9.9", age: 13), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetPartial)
+        await monitor.report(answer(from: "9.9.9.9", age: 17), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetDown)
+        await monitor.report(answer(from: "9.9.9.9", age: -30), fromTarget: "quad9")
+        #expect(await monitor.runCycle().verdict == .internetDown)
         // Neither does a target that stopped answering, or one that was removed.
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
         await monitor.report(ProbeSample(failure: .timeout), fromTarget: "quad9")
-        #expect(await monitor.runCycle().internet.lastMs == nil)
+        #expect(await monitor.runCycle().verdict == .internetDown)
         await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
         await monitor.forget(target: "quad9")
-        #expect(await monitor.runCycle().internet.lastMs == nil)
+        #expect(await monitor.runCycle().verdict == .internetDown)
+        // An answer that came over the previous network is dropped when the network changes.
+        await monitor.report(answer(from: "9.9.9.9"), fromTarget: "quad9")
+        await gateway.set("10.0.0.1")
+        for _ in 0..<3 { snapshot = await monitor.runCycle() }
+        #expect(snapshot.verdict == .internetDown)
     }
 
-    @Test func aPingTargetDoesNotReplaceABuiltInAnswer() async {
+    @Test func aPingTargetDoesNotChangeAWorkingConnection() async {
         let monitor = DiagnosisMonitor(
             gatewayFinder: FixedGateway(address: "192.168.8.1"),
             icmp: FixedProbe(sample: ProbeSample(latencyMs: 3)),
@@ -355,7 +384,9 @@ private actor SwitchingGateway: GatewayFinding {
         var sample = ProbeSample(latencyMs: 2)
         sample.answeredFrom = "9.9.9.9"
         await monitor.report(sample, fromTarget: "quad9")
-        #expect(await monitor.runCycle().internet.lastMs == 80)
+        let snapshot = await monitor.runCycle()
+        #expect(snapshot.internet.lastMs == 80)
+        #expect(snapshot.verdict == .online)
     }
 
     @Test func gatewayChangeResetsDiagnosisButKeepsChart() async {

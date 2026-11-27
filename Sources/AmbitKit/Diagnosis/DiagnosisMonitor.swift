@@ -48,6 +48,8 @@ public actor DiagnosisMonitor {
     private var routerHasAnswered = false
     /// The latest answer from each ping target that is on the internet, by the target's name.
     private var targetAnswers: [String: ProbeSample] = [:]
+    /// Answers from before this time came over another network and are not counted.
+    private var answersCountFrom = Date.distantPast
     private var inFlight: Task<DiagnosisSnapshot, Never>?
     private var generation = 0
     private var snapshot = DiagnosisSnapshot()
@@ -88,10 +90,10 @@ public actor DiagnosisMonitor {
         snapshot.internetHistory = chartHistory
     }
 
-    /// Takes a ping target's latest sample as evidence about the internet. An answer from an
-    /// address on the internet shows the internet is reachable, so the next cycles count it when
-    /// none of the built-in targets answers. A target that does not answer, or answers from a
-    /// local address, shows nothing either way: it may be switched off, or on this network.
+    /// Takes a ping target's latest sample as evidence for the diagnosis. A recent answer from an
+    /// address on the internet shows that traffic gets past the router, which changes what an
+    /// outage is called (see `diagnose`). A target that does not answer, or answers from a local
+    /// address, shows nothing either way: it may be switched off, or on this network.
     public func report(_ sample: ProbeSample, fromTarget name: String) {
         if sample.succeeded, let address = sample.answeredFrom, ProbeTarget.isOnTheInternet(ipv4: address) {
             targetAnswers[name] = sample
@@ -153,6 +155,9 @@ public actor DiagnosisMonitor {
             internetSamples.removeAll()
             dnsSamples.removeAll()
             routerHasAnswered = false
+            targetAnswers.removeAll()
+            // Leaving a network is what makes earlier answers stale; the first network is not a change.
+            if snapshot.gateway != nil { answersCountFrom = Date() }
         }
         if let routerSample {
             append(routerSample, to: &routerSamples)
@@ -170,14 +175,20 @@ public actor DiagnosisMonitor {
         next.internetHistory = chartHistory
         next.updated = Date()
         next.cycles += 1
+        // Ping targets are pinged on their own schedule; only a recent answer counts.
+        let now = Date()
+        let targetAnswering = targetAnswers.values.contains { answer in
+            answer.date >= answersCountFrom && (0...config.interval * 3).contains(now.timeIntervalSince(answer.date))
+        }
         let verdict = diagnose(
-            hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered,
+            hasGateway: gateway != nil, routerHasAnswered: routerHasAnswered, targetAnswering: targetAnswering,
             router: next.router, internet: next.internet, dns: next.dns,
             thresholds: config.thresholds
         )
         if verdict != next.verdict {
+            // An outage that gets another name is still the same outage, with the same start.
+            if !(verdict.health == .offline && next.verdict.health == .offline) { next.since = Date() }
             next.verdict = verdict
-            next.since = Date()
         }
         snapshot = next
         for continuation in continuations.values { continuation.yield(next) }
@@ -201,12 +212,6 @@ public actor DiagnosisMonitor {
             return collected
         }
         if let best = samples.compactMap(\.latencyMs).min() {
-            return ProbeSample(latencyMs: best)
-        }
-        // Ping targets are pinged on their own schedule; only a recent answer counts.
-        let now = Date()
-        let recent = targetAnswers.values.filter { abs(now.timeIntervalSince($0.date)) <= config.interval * 3 }
-        if let best = recent.compactMap(\.latencyMs).min() {
             return ProbeSample(latencyMs: best)
         }
         return ProbeSample(failure: samples.first?.failure ?? .unknown)
