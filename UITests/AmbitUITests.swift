@@ -16,11 +16,13 @@ final class AmbitUITests: XCTestCase {
         return folder
     }
 
-    /// Starts the app on `dataFolder` and opens its popover.
-    private func launch(dataFolder: URL) -> XCUIApplication {
+    /// Starts the app on `dataFolder` and opens its popover. With `router`, every router the app
+    /// has is answered by that stand-in.
+    private func launch(dataFolder: URL, router: FakeRouter? = nil) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchEnvironment["AMBIT_UI_TEST_DATA"] = dataFolder.path
+        if let router { app.launchEnvironment["AMBIT_UI_TEST_ROUTER_PORT"] = String(router.port) }
         app.launch()
         addTeardownBlock { @MainActor in app.terminate() }
         let item = app.statusItems.firstMatch
@@ -316,5 +318,90 @@ final class AmbitUITests: XCTestCase {
         if !app.buttons["Add device"].waitForExistence(timeout: 3) { item.click() }
         XCTAssertTrue(app.buttons["Add device"].waitForExistence(timeout: 5), "the popover did not open on the first page")
         XCTAssertFalse(remove.exists)
+    }
+
+    // The tests below use `FakeRouter`, a stand-in router on this Mac. In a test run the app keeps
+    // passwords in memory, so nothing reaches the Keychain.
+
+    private func startRouter() throws -> FakeRouter {
+        let router = try FakeRouter()
+        addTeardownBlock { router.stop() }
+        return router
+    }
+
+    /// Starts the app with one saved router that the stand-in answers, and opens the router's page.
+    /// The router has no password yet, so the page asks for it.
+    private func openSavedRouter() throws -> XCUIApplication {
+        let folder = newDataFolder()
+        try seed(kind: "glinet", ["Router"], in: folder)
+        let app = launch(dataFolder: folder, router: try startRouter())
+        let asking = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Enter the router's admin password.")).firstMatch
+        XCTAssertTrue(asking.waitForExistence(timeout: 15), "the row does not ask for the password")
+        click(asking, shows: app.secureTextFields["Admin password"])
+        return app
+    }
+
+    /// On a router's page: types `password` and saves it.
+    private func enter(_ password: String, in app: XCUIApplication, shows result: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let field = app.secureTextFields["Admin password"]
+        let save = app.buttons["Save"]
+        for _ in 0..<3 where !save.isEnabled {
+            field.click()
+            field.typeText(password)
+        }
+        XCTAssertTrue(save.isEnabled, "Save is off after typing a password", file: file, line: line)
+        save.click()
+        XCTAssertTrue(result.waitForExistence(timeout: 20), "saving the password did not show \(result)", file: file, line: line)
+    }
+
+    func testARouterShowsItsReadingsOnceItHasTheRightPassword() throws {
+        let app = try openSavedRouter()
+        enter("not the password", in: app, shows: app.staticTexts["Wrong password. Enter the router's admin password."])
+        enter(FakeRouter.password, in: app, shows: anything(app, reading: "Internet through, Ethernet"))
+        XCTAssertFalse(app.secureTextFields["Admin password"].exists, "the page still asks for the password")
+        XCTAssertTrue(anything(app, reading: "Clients, 3").exists)
+        XCTAssertTrue(anything(app, reading: "Address, \(FakeRouter.lanIP)").exists)
+        XCTAssertTrue(anything(app, reading: "VPN, Home · Connected").exists)
+        XCTAssertTrue(app.buttons["Turn VPN off"].exists)
+
+        click(app.buttons["Back"], shows: app.buttons["Add device"])
+        let online = NSPredicate(format: "label BEGINSWITH 'Router' AND label CONTAINS 'Ethernet · 3 clients' AND label CONTAINS 'VPN on'")
+        XCTAssertTrue(app.buttons.matching(online).firstMatch.waitForExistence(timeout: 5), "the row does not show the router's readings")
+    }
+
+    func testTheVPNSwitchAsksFirstAndThenTurnsTheVPNOff() throws {
+        let app = try openSavedRouter()
+        let off = app.buttons["Turn VPN off"]
+        enter(FakeRouter.password, in: app, shows: off)
+
+        // Cancel leaves the VPN on.
+        let question = app.staticTexts["Turn the VPN off? Traffic will go out unprotected."]
+        let cancel = app.buttons["Cancel"]
+        click(off, shows: question)
+        cancel.click()
+        XCTAssertTrue(question.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(anything(app, reading: "VPN, Home · Connected").exists)
+
+        click(off, shows: question)
+        off.click()
+        XCTAssertTrue(app.buttons["Turn VPN on"].waitForExistence(timeout: 20), "the VPN was not turned off")
+        XCTAssertTrue(anything(app, reading: "VPN, Home · Off").exists)
+        XCTAssertFalse(question.exists)
+    }
+
+    func testARouterAddedByAddressWithItsPasswordIsOnline() throws {
+        let app = launch(dataFolder: newDataFolder(), router: try startRouter())
+        let choice = app.radioButtons["GL.iNet router"]
+        let password = app.secureTextFields["Admin password"]
+        click(app.buttons["Add device"], shows: choice)
+        XCTAssertTrue(app.buttons["Look again"].waitForExistence(timeout: 30), "the search for devices did not end")
+        click(choice, shows: password)
+        let address = app.textFields["Address"]
+        address.click()
+        address.typeText(Self.loopback)
+        password.click()
+        password.typeText(FakeRouter.password)
+        let online = NSPredicate(format: "label BEGINSWITH 'Router' AND label CONTAINS '3 clients'")
+        click(app.buttons["add-by-address"], shows: app.buttons.matching(online).firstMatch)
     }
 }

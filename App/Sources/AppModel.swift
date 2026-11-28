@@ -53,6 +53,9 @@ final class AppModel {
     /// devices and history alone. The updater stays off as well.
     static let testDataFolder = ProcessInfo.processInfo.environment["AMBIT_UI_TEST_DATA"]
         .map { URL(fileURLWithPath: $0, isDirectory: true) }
+    /// The UI tests run a stand-in router on this port of the test Mac. Read only in a test run.
+    static let testRouterPort = testDataFolder == nil
+        ? nil : ProcessInfo.processInfo.environment["AMBIT_UI_TEST_ROUTER_PORT"].flatMap { Int($0) }
 
     @ObservationIgnored private let deviceFile = AppModel.testDataFolder
         .map { DeviceListFile(url: $0.appendingPathComponent("devices.json")) } ?? (try? DeviceListFile.standard())
@@ -60,7 +63,8 @@ final class AppModel {
     @ObservationIgnored private var canSaveDevices = false
     /// The number of the latest poll started for each device. An older poll's result is dropped.
     @ObservationIgnored private var latestPoll: [UUID: Int] = [:]
-    @ObservationIgnored private let passwords = PasswordStore()
+    /// A test run keeps passwords in memory and leaves the Keychain alone.
+    @ObservationIgnored private let passwords = PasswordStore(inMemory: AppModel.testDataFolder != nil)
     /// Nil when the history file cannot be used: graphs then show this run only.
     @ObservationIgnored private let history = AppModel.testDataFolder
         .map { try? HistoryStore(url: $0.appendingPathComponent("samples.sqlite")) } ?? (try? HistoryStore.standard())
@@ -277,7 +281,7 @@ extension AppModel {
         case .glinet:
             routers[id] = RouterReading()
             let passwords = passwords
-            guard let client = try? GLiNetClient(host: device.host, password: { passwords.password(for: id) }) else {
+            guard let client = try? GLiNetClient(host: device.host, port: Self.testRouterPort, password: { passwords.password(for: id) }) else {
                 routers[id]?.condition = .unreachable
                 return
             }
