@@ -165,4 +165,85 @@ final class AmbitUITests: XCTestCase {
         quit.click()
         XCTAssertTrue(app.wait(for: .notRunning, timeout: 10), "the app is still running")
     }
+
+    /// Writes a device list into `folder`: devices of one kind at loopback, where nothing answers as one.
+    private func seed(kind: String, _ names: [String], in folder: URL) throws {
+        let devices = names.map { ["id": UUID().uuidString, "kind": kind, "name": $0, "host": Self.loopback] }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: devices).write(to: folder.appendingPathComponent("devices.json"))
+    }
+
+    /// Anything on the page that reads `text`, whatever kind of element it is.
+    private func anything(_ app: XCUIApplication, reading text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR value == %@", text, text)).firstMatch
+    }
+
+    /// From the first page: fills in "Add by address" for `kind` and presses Add.
+    private func add(_ app: XCUIApplication, kind: String, placeholder: String, host: String, shows result: XCUIElement,
+                     file: StaticString = #filePath, line: UInt = #line) {
+        let choice = app.radioButtons[kind]
+        click(app.buttons["Add device"], shows: choice, file: file, line: line)
+        XCTAssertTrue(app.buttons["Look again"].waitForExistence(timeout: 30), "the search for devices did not end", file: file, line: line)
+        click(choice, shows: app.textFields.matching(NSPredicate(format: "placeholderValue == %@", placeholder)).firstMatch, file: file, line: line)
+        let address = app.textFields["Address"]
+        address.click()
+        address.typeText(host)
+        click(app.buttons["add-by-address"], shows: result, file: file, line: line)
+    }
+
+    // The tests below use a dish and a router at loopback, where nothing answers. They assert what
+    // the pages offer, not the sentence about why the device is silent.
+
+    func testAStarlinkAddedByAddressIsListedAndCanBeRemoved() {
+        let app = launch(dataFolder: newDataFolder())
+        let dish = row(app, "Starlink")
+        add(app, kind: "Starlink", placeholder: "192.168.100.1", host: Self.loopback, shows: dish)
+
+        let remove = app.buttons["Remove device"]
+        click(dish, shows: remove)
+        XCTAssertTrue(anything(app, reading: "Down – Mbps").exists)
+        XCTAssertTrue(anything(app, reading: "Address, \(Self.loopback)").exists)
+        XCTAssertTrue(app.buttons["Stow"].exists)
+
+        // Rebooting asks first; Cancel leaves the dish alone.
+        let cancel = app.buttons["Cancel"]
+        click(app.buttons["Reboot"], shows: app.staticTexts["Reboot the dish? You'll be offline for a few minutes."])
+        cancel.click()
+        XCTAssertTrue(cancel.waitForNonExistence(timeout: 5))
+
+        click(remove, shows: app.staticTexts["Remove Starlink from Ambit?"])
+        click(remove, shows: app.buttons["Add device"])
+        XCTAssertFalse(dish.exists)
+    }
+
+    func testAnAddressThatIsNotOneIsRefusedForADish() {
+        let app = launch(dataFolder: newDataFolder())
+        add(app, kind: "Starlink", placeholder: "192.168.100.1", host: "not an address",
+            shows: app.staticTexts["That is not an address Ambit can use."])
+    }
+
+    func testARouterAsksForItsPasswordWhenAddedByAddress() {
+        let app = launch(dataFolder: newDataFolder())
+        let choice = app.radioButtons["GL.iNet router"]
+        click(app.buttons["Add device"], shows: choice)
+        XCTAssertTrue(app.buttons["Look again"].waitForExistence(timeout: 30))
+        XCTAssertFalse(app.secureTextFields["Admin password"].exists)
+        click(choice, shows: app.secureTextFields["Admin password"])
+        XCTAssertTrue(app.staticTexts["Stored in your Mac's Keychain."].exists)
+        XCTAssertFalse(app.buttons["add-by-address"].isEnabled, "Add is on with no address")
+    }
+
+    func testASavedRouterHasItsPageAndCanBeRemoved() throws {
+        let folder = newDataFolder()
+        try seed(kind: "glinet", ["Router"], in: folder)
+        let app = launch(dataFolder: folder)
+        let router = row(app, "Router")
+        let remove = app.buttons["Remove device"]
+        click(router, shows: remove)
+        XCTAssertTrue(app.links["Open the router's admin page"].exists)
+        XCTAssertTrue(anything(app, reading: "Address, \(Self.loopback)").exists)
+        click(remove, shows: app.staticTexts["Remove Router from Ambit?"])
+        click(remove, shows: app.buttons["Add device"])
+        XCTAssertFalse(router.exists)
+    }
 }
