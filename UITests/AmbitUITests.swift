@@ -112,4 +112,57 @@ final class AmbitUITests: XCTestCase {
         let second = launch(dataFolder: folder)
         XCTAssertTrue(row(second, Self.loopback).waitForExistence(timeout: 5))
     }
+
+    /// Writes a device list into `folder`, as the app would have saved it: ping targets at loopback.
+    private func seed(_ names: [String], in folder: URL) throws {
+        let devices = names.map { ["id": UUID().uuidString, "kind": "ping", "name": $0, "host": Self.loopback] }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: devices).write(to: folder.appendingPathComponent("devices.json"))
+    }
+
+    func testTheConnectionGraphSwitchesBetweenHalfAnHourAndADay() {
+        let app = launch(dataFolder: newDataFolder())
+        XCTAssertTrue(app.groups["Internet latency, last 30 minutes"].exists)
+        click(app.radioButtons["24 h"], shows: app.groups["Internet latency, last 24 hours"])
+        click(app.radioButtons["30 min"], shows: app.groups["Internet latency, last 30 minutes"])
+    }
+
+    func testAPingTargetHasItsOwnGraph() throws {
+        let folder = newDataFolder()
+        try seed(["Office"], in: folder)
+        let app = launch(dataFolder: folder)
+        click(row(app, "Office"), shows: app.groups["Latency to Office, last 30 minutes"])
+        click(app.radioButtons["24 h"], shows: app.groups["Latency to Office, last 24 hours"])
+        // The page shows the address the saved device has.
+        let address = NSPredicate(format: "label == %@ OR value == %@", "Address, \(Self.loopback)", "Address, \(Self.loopback)")
+        XCTAssertTrue(app.descendants(matching: .any).matching(address).firstMatch.exists)
+    }
+
+    func testALongDeviceListScrollsAndKeepsTheFooter() throws {
+        let folder = newDataFolder()
+        try seed((1...8).map { "Target \($0)" }, in: folder)
+        let app = launch(dataFolder: folder)
+        XCTAssertTrue(app.scrollViews.firstMatch.exists, "eight devices are not in a scrolling list")
+        XCTAssertTrue(row(app, "Target 1").exists)
+        XCTAssertTrue(app.buttons["Add device"].isHittable)
+        XCTAssertTrue(app.menuButtons["Settings"].isHittable)
+    }
+
+    func testAShortDeviceListDoesNotScroll() throws {
+        let folder = newDataFolder()
+        try seed(["Target 1", "Target 2"], in: folder)
+        let app = launch(dataFolder: folder)
+        XCTAssertTrue(row(app, "Target 2").exists)
+        XCTAssertFalse(app.scrollViews.firstMatch.exists)
+    }
+
+    func testTheSettingsMenuQuitsTheApp() {
+        let app = launch(dataFolder: newDataFolder())
+        let settings = app.menuButtons["Settings"]
+        let quit = settings.menuItems["Quit Ambit"]
+        click(settings, shows: quit)
+        XCTAssertTrue(settings.menuItems["Check for updates…"].exists)
+        quit.click()
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 10), "the app is still running")
+    }
 }
