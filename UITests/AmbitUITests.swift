@@ -246,4 +246,75 @@ final class AmbitUITests: XCTestCase {
         click(remove, shows: app.buttons["Add device"])
         XCTAssertFalse(router.exists)
     }
+
+    /// A router is asked nothing until it has a password, so this needs no router. Nothing is saved.
+    func testARouterWithoutAPasswordAsksForIt() throws {
+        let folder = newDataFolder()
+        try seed(kind: "glinet", ["Router"], in: folder)
+        let app = launch(dataFolder: folder)
+        let asking = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Enter the router's admin password.")).firstMatch
+        XCTAssertTrue(asking.waitForExistence(timeout: 15), "the row does not ask for the password")
+        click(asking, shows: app.secureTextFields["Admin password"])
+        XCTAssertTrue(app.staticTexts["Enter the router's admin password."].exists)
+        XCTAssertTrue(app.staticTexts["Stored in your Mac's Keychain."].exists)
+        XCTAssertFalse(app.buttons["Save"].isEnabled, "Save is on with no password")
+    }
+
+    func testTheSameDishCannotBeAddedTwiceButItsAddressCanBePinged() throws {
+        let folder = newDataFolder()
+        try seed(kind: "starlink", ["Starlink"], in: folder)
+        let app = launch(dataFolder: folder)
+        add(app, kind: "Starlink", placeholder: "192.168.100.1", host: Self.loopback,
+            shows: app.staticTexts["That device is already added."])
+        // The form keeps the address; as a ping target it is a different device.
+        let asPingTarget = app.textFields.matching(NSPredicate(format: "placeholderValue BEGINSWITH 'Address or name'")).firstMatch
+        click(app.radioButtons["Ping target"], shows: asPingTarget)
+        XCTAssertEqual(asPingTarget.value as? String, Self.loopback)
+        click(app.buttons["add-by-address"], shows: row(app, Self.loopback))
+        XCTAssertTrue(row(app, "Starlink").exists)
+    }
+
+    func testAPingTargetCanBeANameAndSaysItIsNotOnTheInternet() {
+        let app = launch(dataFolder: newDataFolder())
+        let target = row(app, "localhost")
+        // Spaces around the address are dropped.
+        addPingTarget(app, " localhost ", shows: target)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'localhost' AND label CONTAINS 'Answering'")).firstMatch
+            .waitForExistence(timeout: 15))
+        click(target, shows: app.buttons["Remove ping target"])
+        XCTAssertTrue(anything(app, reading: "Address, localhost").exists)
+        let note = "This address is not on the public internet, so it does not change what Ambit says about your connection."
+        XCTAssertTrue(anything(app, reading: note).waitForExistence(timeout: 10))
+    }
+
+    func testBackFromAddDeviceAddsNothing() {
+        let app = launch(dataFolder: newDataFolder())
+        let again = app.buttons["Look again"]
+        click(app.buttons["Add device"], shows: app.radioButtons["Ping target"])
+        XCTAssertTrue(again.waitForExistence(timeout: 30), "the search for devices did not end")
+        // Looking again ends too, and the form is still there.
+        again.click()
+        XCTAssertTrue(again.waitForExistence(timeout: 30), "the second search for devices did not end")
+        let address = app.textFields["Address"]
+        address.click()
+        address.typeText(Self.loopback)
+        click(app.buttons["Back"], shows: app.menuButtons["Settings"])
+        XCTAssertFalse(row(app, Self.loopback).exists)
+        XCTAssertFalse(row(app, "Starlink").exists)
+    }
+
+    func testThePopoverOpensOnTheFirstPageAgain() throws {
+        let folder = newDataFolder()
+        try seed(["Office"], in: folder)
+        let app = launch(dataFolder: folder)
+        let remove = app.buttons["Remove ping target"]
+        click(row(app, "Office"), shows: remove)
+        let item = app.statusItems.firstMatch
+        item.click()
+        XCTAssertTrue(app.buttons["Back"].waitForNonExistence(timeout: 5), "the popover did not close")
+        item.click()
+        if !app.buttons["Add device"].waitForExistence(timeout: 3) { item.click() }
+        XCTAssertTrue(app.buttons["Add device"].waitForExistence(timeout: 5), "the popover did not open on the first page")
+        XCTAssertFalse(remove.exists)
+    }
 }
