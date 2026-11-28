@@ -36,9 +36,11 @@ public actor GLiNetClient {
     static let deniedCallDelay: TimeInterval = 300
 
     /// `password` is asked for at each login, so it can come straight from the Keychain.
-    /// `timeout` bounds each request as a whole.
+    /// `timeout` bounds each request as a whole. `port` is for the UI tests' stand-in router; a real
+    /// router answers on the usual port.
     public init(
         host: String,
+        port: Int? = nil,
         username: String = "root",
         password: @escaping @Sendable () -> String?,
         session: URLSession = .shared,
@@ -46,13 +48,14 @@ public actor GLiNetClient {
         now: @escaping @Sendable () -> Date = { Date() }
     ) throws {
         guard ProbeTarget.isValidHost(host), timeout.isFinite, timeout > 0 else { throw GLiNetError.invalidHost }
+        guard port.map((1...65_535).contains) ?? true else { throw GLiNetError.invalidHost }
         // A colon is valid only inside an IPv6 address, which a URL writes in brackets.
         var literal = host
         if host.contains(":") {
             guard IPv6Address(host) != nil else { throw GLiNetError.invalidHost }
             literal = "[\(host)]"
         }
-        guard let url = URL(string: "http://\(literal)/rpc"), url.host != nil else { throw GLiNetError.invalidHost }
+        guard let url = URL(string: "http://\(literal)\(port.map { ":\($0)" } ?? "")/rpc"), url.host != nil else { throw GLiNetError.invalidHost }
         self.endpoint = url
         self.username = username
         self.password = password

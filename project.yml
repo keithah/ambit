@@ -64,6 +64,8 @@ targets:
         TEST_TARGET_NAME: Ambit
         # With the hardened runtime the ad-hoc signed runner refuses to load the test bundle.
         ENABLE_HARDENED_RUNTIME: NO
+        # The test runner is sandboxed; this lets it listen, for the stand-in router in FakeRouter.swift.
+        CODE_SIGN_ENTITLEMENTS: UITests/AmbitUITests.entitlements
 schemes:
   Ambit:
     build:
